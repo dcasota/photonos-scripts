@@ -313,6 +313,10 @@ pub struct BuildSpec {
     /// Packages built before `make image`, in their own make run (a kernel
     /// profile's wrapper pre-build). Empty for a plain 5.0 build.
     pub prebuild: Vec<String>,
+    /// Build only these packages instead of an image (`--packages`), one make
+    /// run per package, each judged by an RPM of it the run produced. Empty:
+    /// the image. Only for a prebuilt-canister build, see `check_packages`.
+    pub packages: Vec<String>,
     /// The image that composes the media (`poiimage.rs`). None: preflight
     /// builds it from the tree's own installer spec, after the injections.
     pub poi_image: Option<String>,
@@ -351,6 +355,7 @@ impl BuildSpec {
             compose_only: false,
             injections: Vec::new(),
             prebuild: Vec::new(),
+            packages: Vec::new(),
             poi_image: None,
         })
     }
@@ -597,14 +602,56 @@ pub fn render(spec: &BuildSpec) -> String {
         "  common tree  {}\n",
         spec.tree(Tree::Common).display()
     ));
-    out.push_str(&format!(
-        "  make target  {}\n\n",
-        spec.canister.make_target()
-    ));
+    if spec.packages.is_empty() {
+        out.push_str(&format!(
+            "  make target  {}\n\n",
+            spec.canister.make_target()
+        ));
+    } else {
+        out.push_str(&format!(
+            "  make target  {} (one make per package, no image)\n\n",
+            spec.packages.join(", ")
+        ));
+    }
     for (i, st) in spec.cascade().iter().enumerate() {
         out.push_str(&format!("  {:>2}. {}\n", i + 1, st.name()));
     }
     out
+}
+
+/// `--packages` builds single packages instead of an image, and only where
+/// that means one thing. Phase A already narrows itself to `linux` and phase B
+/// exists to rebuild both kernels against phase A's canister; acvp/kat/build
+/// change what the kernel IS. A package list on top of those would either be
+/// ignored or produce a stage no later build can classify. --compose-only
+/// composes an image and builds nothing, so it contradicts a package list.
+pub fn check_packages(spec: &BuildSpec) -> Result<(), String> {
+    if spec.packages.is_empty() {
+        return Ok(());
+    }
+    if spec.canister != CanisterMode::Prebuilt {
+        return Err(format!(
+            "--packages builds against the published canister only; canister {} has its own make target",
+            spec.canister.as_str()
+        ));
+    }
+    if spec.compose_only {
+        return Err("--packages and --compose-only contradict each other: one builds packages, the other builds none".into());
+    }
+    Ok(())
+}
+
+/// Is `file` a binary RPM of package `pkg` - and not of a package whose name
+/// merely starts with it? `linux-esx-6.12.112-6.ph5.x86_64.rpm` must not count
+/// for `linux`, nor `linux-devel-...`: after `<pkg>-` the version follows, and
+/// a version starts with a digit. Source RPMs are not what a build delivers.
+pub fn is_binary_rpm_of(file: &str, pkg: &str) -> bool {
+    let Some(rest) = file.strip_prefix(pkg).and_then(|r| r.strip_prefix('-')) else {
+        return false;
+    };
+    rest.starts_with(|ch: char| ch.is_ascii_digit())
+        && file.ends_with(".rpm")
+        && !file.ends_with(".src.rpm")
 }
 
 #[cfg(test)]
@@ -974,5 +1021,38 @@ mod tests {
                 "{f} release bump missing: {names:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_package_rpm_is_told_apart_from_its_namesakes() {
+        assert!(is_binary_rpm_of("linux-6.12.111-5.ph5.x86_64.rpm", "linux"));
+        assert!(!is_binary_rpm_of("linux-esx-6.12.111-5.ph5.x86_64.rpm", "linux"));
+        assert!(!is_binary_rpm_of("linux-devel-6.12.111-5.ph5.x86_64.rpm", "linux"));
+        assert!(!is_binary_rpm_of("linux-6.12.111-5.ph5.src.rpm", "linux"));
+        assert!(!is_binary_rpm_of("linuxptp-4.4-1.ph5.x86_64.rpm", "linux"));
+        assert!(is_binary_rpm_of("linux-esx-6.12.111-5.ph5.x86_64.rpm", "linux-esx"));
+        assert!(!is_binary_rpm_of("linux-6.12.111-5.ph5.x86_64.rpm.part", "linux"));
+    }
+
+    #[test]
+    fn packages_are_only_built_against_the_published_canister() {
+        let mut s = spec();
+        assert!(check_packages(&s).is_ok());
+        s.packages = vec!["linux".into(), "linux-esx".into()];
+        assert!(check_packages(&s).is_ok());
+        s.canister = CanisterMode::EquivalentB;
+        assert!(check_packages(&s).unwrap_err().contains("own make target"));
+        s.canister = CanisterMode::Prebuilt;
+        s.compose_only = true;
+        assert!(check_packages(&s).unwrap_err().contains("contradict"));
+    }
+
+    #[test]
+    fn the_plan_names_the_packages_instead_of_an_image() {
+        let mut s = spec();
+        assert!(render(&s).contains("make target  image"));
+        s.packages = vec!["linux".into(), "linux-esx".into()];
+        let r = render(&s);
+        assert!(r.contains("make target  linux, linux-esx (one make per package, no image)"), "{r}");
     }
 }

@@ -2958,6 +2958,9 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
     let j = build_threads();
     let jflag = format!("-j{j}");
     let threads = format!("THREADS={j}");
+    if !c.spec.packages.is_empty() {
+        return make_packages(c, &release, &stage, &common_stage, &jflag, &threads);
+    }
     if c.dry {
         c.say(&format!(
             "  would run: make {jflag} {} {} {threads}, up to {MAKE_ATTEMPTS} attempts",
@@ -3119,6 +3122,128 @@ restored from the kernel store or left by an earlier phase A",
         prev_progress = progress;
     }
     Err("exhausted all 10 attempts without producing an ISO".into())
+}
+
+/// `--packages`: one make per package, in the order given, each judged by a
+/// binary RPM of that package newer than the start marker.
+///
+/// make's exit code alone proves nothing here: build.py exits 0 when an RPM
+/// at the spec's NEVR is already in the stage, without building anything. A
+/// package list exists to get a fresh build, so a 0 with no fresh RPM is an
+/// error, never a pass.
+fn make_packages(
+    c: &mut Ctx,
+    release: &Path,
+    stage: &Path,
+    common_stage: &Path,
+    jflag: &str,
+    threads: &str,
+) -> Result<PathBuf, String> {
+    let pkgs = c.spec.packages.clone();
+    if c.dry {
+        for p in &pkgs {
+            c.say(&format!(
+                "  would run: sudo make {jflag} {p} {threads}, up to {MAKE_ATTEMPTS} attempts; \
+it passes only with a {p} RPM newer than the start marker"
+            ));
+        }
+        return Ok(PathBuf::from("(dry-run: no RPMs)"));
+    }
+    // The tree is final here, after every injection: a name with no spec is a
+    // typo, and make would report it as an unknown target only after the
+    // purge and the sandbox cleanup.
+    let specs = release.join("SPECS");
+    for p in &pkgs {
+        let want = format!("{p}.spec");
+        if !crate::build::find_files_rec(&specs, p, ".spec")
+            .iter()
+            .any(|s| basename(s) == want)
+        {
+            return Err(format!("--packages: no {want} under {}", specs.display()));
+        }
+    }
+    c.say("  cleaning sandboxes left by an earlier run");
+    clean_sandboxes(c, stage);
+    let marker = stage.join(".sharukhan-iso-marker");
+    fs::write(&marker, "").map_err(|e| format!("{}: {e}", marker.display()))?;
+    let since = marker
+        .metadata()
+        .and_then(|m| m.modified())
+        .map_err(|e| format!("{}: {e}", marker.display()))?;
+    let rpms = stage.join("RPMS");
+    let fresh = |p: &str| -> Vec<PathBuf> {
+        crate::build::find_files_rec(&rpms, p, ".rpm")
+            .into_iter()
+            .filter(|f| crate::buildmode::is_binary_rpm_of(&basename(f), p))
+            .filter(|f| {
+                fs::metadata(f)
+                    .and_then(|m| m.modified())
+                    .map(|t| t > since)
+                    .unwrap_or(false)
+            })
+            .collect()
+    };
+    let mut produced = Vec::new();
+    for p in &pkgs {
+        let (mut prev_rc, mut prev_progress) = (i32::MIN, u64::MAX);
+        let mut built = None;
+        for attempt in 1..=MAKE_ATTEMPTS {
+            if attempt > 1 {
+                c.say(&format!("  {p} attempt {attempt}: cleaning sandboxes from the previous attempt"));
+                clean_sandboxes(c, stage);
+            }
+            c.say(&format!(
+                "  {p} attempt {attempt}/{MAKE_ATTEMPTS}: sudo make {jflag} {p} {threads} (cwd {})",
+                release.display()
+            ));
+            let t0 = std::time::SystemTime::now();
+            let rc = Command::new("sudo")
+                .args(["make", jflag, p.as_str(), threads])
+                .current_dir(release)
+                .status()
+                .map_err(|e| format!("running make {p}: {e}"))?
+                .code()
+                .unwrap_or(-1);
+            let secs = t0.elapsed().map(|d| d.as_secs()).unwrap_or(0);
+            c.say(&format!(
+                "  {p} attempt {attempt}: make exited {rc} after {}m{:02}s",
+                secs / 60,
+                secs % 60
+            ));
+            let new = fresh(p);
+            if rc == 0 {
+                if new.is_empty() {
+                    return Err(format!(
+                        "make {p} exited 0 but no {p} RPM newer than the start marker is in {}: \
+build.py skipped it because one at the spec's NEVR was already there",
+                        rpms.display()
+                    ));
+                }
+                built = Some(new);
+                break;
+            }
+            let progress = count_newer(&[stage, common_stage], &marker);
+            if attempt > 1 && rc == prev_rc && progress == prev_progress {
+                return Err(format!(
+                    "make {p} failed identically twice (exit {rc}, no new output in between): \
+deterministic, not flaky. Fix it and re-run."
+                ));
+            }
+            prev_rc = rc;
+            prev_progress = progress;
+        }
+        let Some(new) = built else {
+            return Err(format!("make {p}: exhausted all {MAKE_ATTEMPTS} attempts"));
+        };
+        for f in &new {
+            c.say(&format!("  built: {}", f.display()));
+        }
+        produced.extend(new);
+    }
+    produced
+        .into_iter()
+        .max_by_key(|f| fs::metadata(f).and_then(|m| m.modified()).ok())
+        .ok_or_else(|| "--packages produced nothing".to_string())
 }
 
 /// The newest ISO the build wrote: only one modified after `marker`, which is
@@ -3670,6 +3795,7 @@ mod tests {
             compose_only: false,
             injections: vec![],
             prebuild: vec![],
+            packages: vec![],
             poi_image: None,
         }
     }

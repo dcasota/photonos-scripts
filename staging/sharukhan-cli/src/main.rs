@@ -143,7 +143,8 @@ OPTIONS:
                         prove files, units and processes are gone and the
                         package set is back at baseline. Preinstalled packages
                         are tested in place and never removed. (verify, run)
-    --packages <a,b>    only these packages (package lifecycle)
+    --packages <a,b>    only these packages (package lifecycle; build: build
+                        just these at --subrelease, no image, prebuilt canister)
     --pkg-limit <n>     only the first n candidates, by name (package lifecycle)
     --pkg-budget <sec>  wall-clock bound; later packages are recorded as not
                         reached; default 14400 (package lifecycle)
@@ -292,7 +293,8 @@ impl Args {
     /// The lifecycle options, validated; None when --package-lifecycle is
     /// off. A --pkg-* option without it is an error, not silently ignored.
     fn lifecycle(&self) -> Result<Option<pkglife::Opts>, String> {
-        let any_sub = self.packages.is_some()
+        // `build --packages` is the build's own package list, not a lifecycle one.
+        let any_sub = (self.packages.is_some() && self.cmd != "build")
             || self.pkg_limit.is_some()
             || self.pkg_budget.is_some()
             || self.pkg_resume
@@ -326,7 +328,10 @@ impl Args {
 }
 
 fn parse() -> Result<Args, String> {
-    let mut a = std::env::args().skip(1);
+    parse_from(std::env::args().skip(1))
+}
+
+fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
     // `sharukhan --help` puts the flag where the command goes; treat it as the
     // command rather than reporting it as an unknown one.
     let cmd = match a.next() {
@@ -1485,6 +1490,10 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     // rather than purging and rebuilding them. The purge phase verifies that
     // claim against the RPMs and refuses if it does not hold.
     spec.compose_only = args.compose_only;
+    if let Some(l) = &args.packages {
+        spec.packages = pkglife::Opts::parse_packages(l)?;
+    }
+    buildmode::check_packages(&spec)?;
 
     // Opt-in Hyper-V support. Inserted into the injection list rather than
     // bolted on afterwards, so `--dry-run` shows it in the cascade and the
@@ -2048,4 +2057,28 @@ fn cmd_ingest(cfg: &config::Config) -> Result<(), String> {
         s.runs, s.permutations, s.checks, s.packages
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> Args {
+        parse_from(v.iter().map(|s| s.to_string())).unwrap()
+    }
+
+    #[test]
+    fn build_takes_packages_without_the_lifecycle() {
+        let a = args(&["build", "--packages", "linux,linux-esx", "--subrelease", "91"]);
+        assert!(a.lifecycle().unwrap().is_none());
+        assert_eq!(a.packages.as_deref(), Some("linux,linux-esx"));
+    }
+
+    #[test]
+    fn packages_elsewhere_still_need_the_lifecycle() {
+        let e = args(&["verify", "--id", "k03", "--packages", "bash"]).lifecycle().unwrap_err();
+        assert!(e.contains("need --package-lifecycle"), "{e}");
+        let ok = args(&["verify", "--id", "k03", "--package-lifecycle", "--packages", "bash"]);
+        assert!(ok.lifecycle().unwrap().is_some());
+    }
 }
