@@ -50,35 +50,11 @@ pub struct Plan {
     pub work: PathBuf,
 }
 
-/// Evaluate a Photon `%global build_if %{photon_subrelease} <op> <n>` line.
-/// No build_if means the spec builds for every subrelease.
+/// Does a spec build at subrelease `sr`? The evaluator is `subvault::build_if`;
+/// a build_if that depends on the arch cannot be decided from a subrelease.
 pub fn build_if_holds(spec_text: &str, sr: u32) -> Result<bool, String> {
-    for l in spec_text.lines() {
-        let t: Vec<&str> = l.split_whitespace().collect();
-        if t.len() >= 3 && (t[0] == "%global" || t[0] == "%define") && t[1] == "build_if" {
-            let expr = t[2..].join(" ");
-            let e = expr.replace("%{photon_subrelease}", &sr.to_string()).replace("0%{?photon_subrelease}", &sr.to_string());
-            let p: Vec<&str> = e.split_whitespace().collect();
-            if p.len() != 3 {
-                return Err(format!("unsupported build_if: {expr}"));
-            }
-            let (a, op, b) = (p[0].parse::<i64>(), p[1], p[2].parse::<i64>());
-            let (a, b) = match (a, b) {
-                (Ok(a), Ok(b)) => (a, b),
-                _ => return Err(format!("unsupported build_if: {expr}")),
-            };
-            return match op {
-                "==" => Ok(a == b),
-                "!=" => Ok(a != b),
-                ">=" => Ok(a >= b),
-                "<=" => Ok(a <= b),
-                ">" => Ok(a > b),
-                "<" => Ok(a < b),
-                _ => Err(format!("unsupported build_if operator in: {expr}")),
-            };
-        }
-    }
-    Ok(true)
+    crate::subvault::build_if(spec_text, sr)?
+        .ok_or_else(|| "build_if depends on the arch, not on the subrelease".to_string())
 }
 
 /// The spec Photon builds for `sr` in `root`: exactly one candidate's build_if must hold.
