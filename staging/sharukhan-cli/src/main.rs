@@ -45,6 +45,7 @@ mod sha256;
 mod specdata;
 mod specparity;
 mod specresolve;
+mod subvault;
 mod verify;
 mod vm;
 mod vmware;

@@ -1554,6 +1554,7 @@ fn avail_gb(path: &Path) -> Option<u64> {
 pub fn purge(c: &mut Ctx) -> Result<(), String> {
     let stage = c.spec.tree(Tree::Release).join("stage");
     if c.dry {
+        subrelease_preview(c, &stage)?;
         // Name the phase-A kernels explicitly. A dry run that says only
         // "would purge stale RPMs" hides the single most destructive thing
         // this phase does, and the operator cannot check it before it runs.
@@ -1604,6 +1605,9 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
     // The kernel slot first: kernels of another build class leave the stage
     // before any purge reasons about what is in it.
     slot_enter(c, &stage);
+    // Then what another subrelease built, before any purge below can mistake
+    // the mainline's output for a stale copy and delete it.
+    subrelease_enter(c, &stage)?;
     if c.spec.compose_only {
         // Do not purge the kernels - prove they are the ones we want to keep.
         // They were filed in the store when phase B built them.
@@ -2630,7 +2634,7 @@ pub fn purge_rebuilt_content_at(
 /// This is `rpmvercmp` minus the tilde and caret handling, which Photon's
 /// package versions do not use. If one ever does, the segments before it still
 /// decide, and the comparison degrades to equal rather than to a wrong answer.
-fn vercmp(a: &str, b: &str) -> std::cmp::Ordering {
+pub(crate) fn vercmp(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     let seg = |s: &str| -> Vec<String> {
         let mut out = Vec::new();
@@ -3557,6 +3561,13 @@ pub fn deliver_existing(
 /// Run the cascade. `dry` renders every phase without touching anything.
 pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result<PathBuf, String> {
     let mut c = Ctx { spec, dry, log };
+    let r = run_cascade(&mut c);
+    subrelease_exit(&mut c);
+    r
+}
+
+fn run_cascade(c: &mut Ctx) -> Result<PathBuf, String> {
+    let spec = c.spec;
     let mut produced = PathBuf::new();
     for stage in spec.cascade() {
         c.say(&format!("[{}]", stage.name()));
@@ -3566,24 +3577,84 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
                     c.say(&format!("  subrelease pinned to {n}"));
                 }
             }
-            Stage::Sync => sync(&mut c)?,
-            Stage::Reset => reset(&mut c)?,
-            Stage::Inject(i) => inject(&mut c, i)?,
+            Stage::Sync => sync(c)?,
+            Stage::Reset => reset(c)?,
+            Stage::Inject(i) => inject(c, i)?,
             Stage::Sources => {
-                report_subrelease(&mut c)?;
-                sources(&mut c)?
+                report_subrelease(c)?;
+                sources(c)?
             }
-            Stage::Preflight => preflight(&mut c)?,
-            Stage::Purge => purge(&mut c)?,
-            Stage::Make => produced = make_and_deliver(&mut c)?,
+            Stage::Preflight => preflight(c)?,
+            Stage::Purge => purge(c)?,
+            Stage::Make => produced = make_and_deliver(c)?,
             Stage::Post => {
                 c.say(&format!("  produced {}", produced.display()));
-                post_assert(&mut c)?;
-                slot_after(&mut c);
+                post_assert(c)?;
+                slot_after(c);
             }
         }
     }
     Ok(produced)
+}
+
+/// What a pinned-subrelease build moved aside goes back to the stage once the
+/// cascade ends, whether it succeeded or not: those RPMs are other builds'.
+fn subrelease_exit(c: &mut Ctx) {
+    if c.dry || !matches!(c.spec.subrelease, Subrelease::Pinned(_)) {
+        return;
+    }
+    let stage = c.spec.tree(Tree::Release).join("stage");
+    let mut lines = Vec::new();
+    crate::subvault::restore(&stage, &mut |l| lines.push(l.to_string()));
+    for l in lines {
+        c.say(&l);
+    }
+}
+
+/// The dry run's account of `subrelease_enter`: what would move aside, by
+/// name, read from the stage as it is now (the tree is not patched yet in a
+/// dry run, so it can differ from the real run by the variant patch's specs).
+fn subrelease_preview(c: &mut Ctx, stage: &Path) -> Result<(), String> {
+    let Subrelease::Pinned(n) = c.spec.subrelease else {
+        return Ok(());
+    };
+    let plan = crate::subvault::plan_tree(&c.spec.tree(Tree::Release), n)?;
+    let mut hits = Vec::new();
+    for p in crate::build::find_files_rec(&stage.join("RPMS"), "", ".rpm") {
+        if let Some(why) = crate::subvault::hide_reason(&plan, &basename(&p), n) {
+            hits.push(format!("    - {}: {why}", basename(&p)));
+        }
+    }
+    c.say(&format!(
+        "  would move {} RPM(s) of other subreleases aside for subrelease {n}, and back after the build",
+        hits.len()
+    ));
+    for h in hits {
+        c.say(&h);
+    }
+    Ok(())
+}
+
+/// Every build first puts back what an interrupted pinned build left aside;
+/// a pinned build then hides what its subrelease does not build (`subvault`).
+fn subrelease_enter(c: &mut Ctx, stage: &Path) -> Result<(), String> {
+    let mut lines = Vec::new();
+    let res = match c.spec.subrelease {
+        Subrelease::Pinned(n) => {
+            let plan = crate::subvault::plan_tree(&c.spec.tree(Tree::Release), n)?;
+            crate::subvault::vault(stage, &plan, n, &mut |l| lines.push(l.to_string())).map(|k| {
+                lines.push(format!("  {k} RPM(s) of other subreleases moved aside for subrelease {n}"));
+            })
+        }
+        Subrelease::Mainline => {
+            crate::subvault::restore(stage, &mut |l| lines.push(l.to_string()));
+            Ok(())
+        }
+    };
+    for l in lines {
+        c.say(&l);
+    }
+    res
 }
 
 #[cfg(test)]
