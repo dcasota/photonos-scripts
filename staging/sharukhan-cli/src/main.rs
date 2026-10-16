@@ -1944,8 +1944,30 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
     // own code from the configured build root.
     {
         let cfg = config::Config::load();
-        let inputs =
-            specdata::Inputs::from_build_root(&cfg.build_root, &cfg.build_common, &cfg.release);
+        // The common tree a build runs with (common + every common PR), the same
+        // one `variant-patches` checks with; the build root's shared common tree
+        // only when no variant clone exists yet, and then said so.
+        let clone = cfg.work.join("photon-variants");
+        let inputs = match clone
+            .join(".git")
+            .is_dir()
+            .then(|| build::common_check_tree(&cfg, &clone))
+        {
+            Some(Ok(tree)) => specdata::Inputs::from_trees(
+                &tree,
+                cfg.build_root.join(&cfg.release).join("build-config.json"),
+            ),
+            other => {
+                if let Some(Err(e)) = other {
+                    println!("  [note ] {e}");
+                }
+                println!(
+                    "  [note ] no variant clone under {}: the package builder of the build root's common tree is used as found",
+                    cfg.work.display()
+                );
+                specdata::Inputs::from_build_root(&cfg.build_root, &cfg.build_common, &cfg.release)
+            }
+        };
         if let Some(m) = inputs.missing() {
             bad += 1;
             println!("  [FAIL ] package builder parse: cannot run it ({m})");

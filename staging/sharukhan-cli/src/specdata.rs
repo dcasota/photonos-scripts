@@ -70,6 +70,16 @@ impl Inputs {
         }
     }
 
+    /// The package builder and common SPECS of `common` (a checked-out common
+    /// tree), with the release's `build_config`.
+    pub fn from_trees(common: &Path, build_config: PathBuf) -> Inputs {
+        Inputs {
+            package_builder: common.join("support/package-builder"),
+            common_specs: common.join("SPECS"),
+            build_config,
+        }
+    }
+
     /// What is missing to run the check, if anything.
     pub fn missing(&self) -> Option<String> {
         for p in [

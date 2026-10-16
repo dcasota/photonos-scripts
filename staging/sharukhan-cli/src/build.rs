@@ -1488,20 +1488,24 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
     }
 
     let mut failed = Vec::new();
+    // The common tree first: the variants are checked with ITS package builder
+    // and spec checker, the ones a build runs once common-fixes is applied.
+    log("common tree");
+    if let Err(e) = build_common_patch(cfg, &clone, log) {
+        log(&format!("  common: {e}"));
+        failed.push("common");
+    }
+    let common = common_check_tree(cfg, &clone)?;
+    log(&format!("  variants are checked with the package builder of {}", common.display()));
     for v in &VARIANTS {
         log(&format!("variant poi-{}", v.name));
-        match build_variant(cfg, &clone, v, log) {
+        match build_variant(cfg, &clone, v, &common, log) {
             Ok(()) => {}
             Err(e) => {
                 log(&format!("  poi-{}: {e}", v.name));
                 failed.push(v.name);
             }
         }
-    }
-    log("common tree");
-    if let Err(e) = build_common_patch(cfg, &clone, log) {
-        log(&format!("  common: {e}"));
-        failed.push("common");
     }
     if failed.is_empty() {
         Ok(())
@@ -1752,10 +1756,35 @@ fn build_kernel_variant(
     }
 }
 
+/// The common tree a variant is checked with: `variant-common` (origin/common
+/// plus every common PR, what common-fixes.patch applies) checked out at
+/// `<work>/common-check`, or origin/common when no common patch was built.
+///
+/// Never the build root's own common tree. That tree is shared and its state
+/// is whatever the last build or cleanup left: the kernel single-source spec
+/// passed the spec checker for weeks only because a previous build had left
+/// common-fixes applied there, and failed the moment the tree was reset to a
+/// new upstream common - the checker without the common PRs cannot read its
+/// %include layout.
+pub fn common_check_tree(cfg: &Config, clone: &Path) -> Result<PathBuf, String> {
+    let tree = cfg.work.join("common-check");
+    let rev = if git(clone, &["rev-parse", "--verify", "-q", "refs/heads/variant-common"]).is_ok() {
+        "refs/heads/variant-common"
+    } else {
+        "refs/remotes/origin/common"
+    };
+    let _ = git(clone, &["worktree", "remove", "--force", &tree.to_string_lossy()]);
+    let _ = git(clone, &["worktree", "prune"]);
+    git(clone, &["worktree", "add", "--detach", "-q", &tree.to_string_lossy(), rev])
+        .map_err(|e| format!("checking out {rev} for the spec checks: {e}"))?;
+    Ok(tree)
+}
+
 fn build_variant(
     cfg: &Config,
     clone: &Path,
     v: &Variant,
+    common: &Path,
     log: &mut dyn FnMut(&str),
 ) -> Result<(), String> {
     let branch = format!("variant-{}", v.name);
@@ -1817,11 +1846,7 @@ fn build_variant(
     // lost every ISO to a branch adding `Requires: /usr/bin/tar`, which rpm
     // accepts and the builder's SpecData cannot resolve. The clone's working
     // tree is the variant now; parse it with the builder's own code.
-    let inputs = crate::specdata::Inputs::from_build_root(
-        &cfg.build_root,
-        &cfg.build_common,
-        &cfg.release,
-    );
+    let inputs = crate::specdata::Inputs::from_trees(common, clone.join("build-config.json"));
     // ... and the spec checker must accept every spec the variant changes,
     // as build.py's check_spec_files demands before each build (gate 50 lost
     // its ISOs to a license key the checker does not know).
@@ -1854,6 +1879,33 @@ fn build_variant(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn variants_are_checked_with_the_common_prs_not_the_shared_tree() {
+        let root = std::env::temp_dir().join(format!("shk-commoncheck-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let clone = root.join("clone");
+        fs::create_dir_all(&clone).unwrap();
+        let g = |a: &[&str]| git(&clone, a).unwrap();
+        g(&["init", "-q", "-b", "common"]);
+        fs::write(clone.join("check_spec.py"), "pristine\n").unwrap();
+        g(&["add", "-A"]);
+        g(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "upstream"]);
+        g(&["update-ref", "refs/remotes/origin/common", "HEAD"]);
+        let mut cfg = Config::load();
+        cfg.work = root.join("work");
+        // no common patch built: the pristine upstream common
+        let t = common_check_tree(&cfg, &clone).unwrap();
+        assert_eq!(fs::read_to_string(t.join("check_spec.py")).unwrap(), "pristine\n");
+        // with one: its tree, and a second call replaces the first checkout
+        g(&["checkout", "-q", "-b", "variant-common"]);
+        fs::write(clone.join("check_spec.py"), "with the common PRs\n").unwrap();
+        g(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "pr"]);
+        let t = common_check_tree(&cfg, &clone).unwrap();
+        assert_eq!(t, cfg.work.join("common-check"));
+        assert_eq!(fs::read_to_string(t.join("check_spec.py")).unwrap(), "with the common PRs\n");
+        let _ = fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn the_file_walk_stays_out_of_symlinked_dirs_and_skipped_ones() {
