@@ -1995,15 +1995,66 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
                         .iter()
                         .map(|f| wt.join(f))
                         .collect();
-                match specdata::check(
-                    &inputs,
-                    &wt.join("SPECS"),
-                    &changed,
-                    &std::env::temp_dir().join(format!(
-                        "shk-branch-check-logs-{}",
-                        std::process::id()
+                // A common-line branch IS the package builder and spec checker:
+                // it is checked by building the release's specs with its own
+                // code, against a pristine checkout of the release branch - not
+                // by treating its common SPECS as release specs.
+                let rel_wt = std::env::temp_dir().join(format!(
+                    "shk-branch-check-release-{}",
+                    std::process::id()
+                ));
+                let kind = specresolve::is_common_tree(&wt);
+                if kind == Some(true) {
+                    // a run that died here leaves the directory and its registration
+                    let _ = std::fs::remove_dir_all(&rel_wt);
+                    let _ = std::process::Command::new("git")
+                        .arg("-C")
+                        .arg(dir)
+                        .args(["worktree", "prune"])
+                        .status();
+                }
+                let common_ready = kind != Some(true)
+                    || std::process::Command::new("git")
+                        .arg("-C")
+                        .arg(dir)
+                        .args(["worktree", "add", "--detach", "-q"])
+                        .arg(&rel_wt)
+                        .arg(format!("refs/heads/{}", cfg.release))
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                let plan = match (kind, common_ready) {
+                    (Some(false), _) => Ok((inputs, wt.join("SPECS"))),
+                    (Some(true), true) => {
+                        println!(
+                            "  [info ] {branch} is a common tree: the release specs of refs/heads/{} are built with its package builder and checked with its spec checker",
+                            cfg.release
+                        );
+                        Ok((
+                            specdata::Inputs::from_trees(&wt, rel_wt.join("build-config.json")),
+                            rel_wt.join("SPECS"),
+                        ))
+                    }
+                    (Some(true), false) => Err(format!(
+                        "{branch} is a common tree, and refs/heads/{} could not be checked out of {} to check it against",
+                        cfg.release,
+                        dir.display()
                     )),
-                ) {
+                    (None, _) => Err(format!(
+                        "{branch}: build-config.json names neither a common tree nor a release tree"
+                    )),
+                };
+                match plan.and_then(|(inputs, release_specs)| {
+                    specdata::check(
+                        &inputs,
+                        &release_specs,
+                        &changed,
+                        &std::env::temp_dir().join(format!(
+                            "shk-branch-check-logs-{}",
+                            std::process::id()
+                        )),
+                    )
+                }) {
                     Ok(n) => println!(
                         "  [ok   ] the package builder parses all {n} specs of {branch} and resolves every requirement; the spec checker accepts its {} changed spec(s)",
                         changed.len()
@@ -2012,6 +2063,14 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
                         bad += 1;
                         println!("  [FAIL ] the package builder refuses {branch}: {e}");
                     }
+                }
+                if kind == Some(true) {
+                    let _ = std::process::Command::new("git")
+                        .arg("-C")
+                        .arg(dir)
+                        .args(["worktree", "remove", "--force"])
+                        .arg(&rel_wt)
+                        .status();
                 }
                 let _ = std::process::Command::new("git")
                     .arg("-C")

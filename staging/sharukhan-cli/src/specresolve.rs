@@ -228,10 +228,41 @@ pub fn tree_subrelease(tree: &Path) -> Option<u32> {
     }
 }
 
+/// Is `tree` a common tree (build.py, the package builder, common SPECS) or a
+/// release tree? Read from its build-config.json: a common tree names the
+/// release it builds (`release-branch-path`), a release tree names its common
+/// tree (`common-branch-path`). None when it says neither or both - never a
+/// guess, since the two are checked in opposite ways.
+pub fn is_common_tree(tree: &Path) -> Option<bool> {
+    let text = std::fs::read_to_string(tree.join("build-config.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    match (v.get("release-branch-path").is_some(), v.get("common-branch-path").is_some()) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn a_tree_says_whether_it_is_common_or_a_release() {
+        let d = std::env::temp_dir().join(format!("shk-treekind-{}", std::process::id()));
+        fs::create_dir_all(&d).unwrap();
+        let w = |s: &str| fs::write(d.join("build-config.json"), s).unwrap();
+        w(r#"{"release-branch-path": "../5.0", "photon-build-param": {}}"#);
+        assert_eq!(is_common_tree(&d), Some(true));
+        w(r#"{"common-branch-path": "../common", "photon-build-param": {"photon-subrelease": "92"}}"#);
+        assert_eq!(is_common_tree(&d), Some(false));
+        w(r#"{"photon-build-param": {}}"#);
+        assert_eq!(is_common_tree(&d), None);
+        w(r#"{"release-branch-path": "a", "common-branch-path": "b"}"#);
+        assert_eq!(is_common_tree(&d), None);
+        let _ = fs::remove_dir_all(&d);
+    }
     use std::path::PathBuf;
 
     const SKELETON: &str = "\
