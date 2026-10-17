@@ -494,6 +494,19 @@ pub fn spec_for(
         tree: Tree::Release,
         patch: PathBuf::from(patch_dir).join(format!("poi-{poi}.patch")),
     });
+    // The common PRs (package builder, spec checker, spec generator), which
+    // the release tree's specs can depend on: the kernel single-source spec is
+    // unreadable to the upstream kernel-deps generator. Without this a cascade
+    // build used whatever the shared common tree held - a leftover from the
+    // last build-iso made it pass, a clean common tree made `make systemd`
+    // fail in the generator before anything was built.
+    let common = PathBuf::from(patch_dir).join("common-fixes.patch");
+    if common.is_file() {
+        spec.injections.push(Injection::TreePatch {
+            tree: Tree::Common,
+            patch: common,
+        });
+    }
     // Test-only modifications sharukhan owns, applied ON TOP of the variant
     // patch. They are compiled in, so an equivalent-canister build needs no
     // branch checked out anywhere and nothing waiting on review.
@@ -1054,5 +1067,25 @@ mod tests {
         s.packages = vec!["linux".into(), "linux-esx".into()];
         let r = render(&s);
         assert!(r.contains("make target  linux, linux-esx (one make per package, no image)"), "{r}");
+    }
+
+    #[test]
+    fn the_common_prs_are_applied_when_the_variant_dir_has_them() {
+        use std::fs;
+        let d = std::env::temp_dir().join(format!("shk-commonpatch-{}", std::process::id()));
+        fs::create_dir_all(&d).unwrap();
+        let pd = d.to_string_lossy().to_string();
+        let names = |s: &BuildSpec| -> Vec<String> {
+            s.injections.iter().map(|i| match i {
+                Injection::TreePatch { tree, patch } => format!("{}:{}", tree.as_str(), patch.file_name().unwrap().to_string_lossy()),
+                _ => String::new(),
+            }).filter(|x| !x.is_empty()).collect()
+        };
+        let s = spec_for("/root", "common", "5.0", "/out", "minimal-iso", "prebuilt", None, "2.8", &pd, Some(90), None).unwrap();
+        assert_eq!(names(&s), vec!["release:poi-2.8.patch".to_string()]);
+        fs::write(d.join("common-fixes.patch"), "x").unwrap();
+        let s = spec_for("/root", "common", "5.0", "/out", "minimal-iso", "prebuilt", None, "2.8", &pd, Some(90), None).unwrap();
+        assert_eq!(names(&s), vec!["release:poi-2.8.patch".to_string(), "common:common-fixes.patch".to_string()]);
+        let _ = fs::remove_dir_all(&d);
     }
 }
