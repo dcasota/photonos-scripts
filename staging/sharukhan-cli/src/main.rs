@@ -198,6 +198,8 @@ OPTIONS:
     --modes <l>         default,canister_build,acvp_build,kat_build (spec-parity; default)
     --suffixes <l>      name suffixes the new tree adds on purpose, e.g. 6.1 (spec-parity)
     --prep              also run %prep at fuzz 0 on both sides and compare the trees (spec-parity)
+    --normalize-release compare with each side's own Version-Release replaced by a token,
+                        so a Release bump does not hide the rest of a change (spec-parity)
     --neutralize <l>    staged .inc name prefixes replaced by a no-op on both sides for
                         --prep, for host-toolchain checks (spec-parity)
     --severity <level>  filter findings by severity
@@ -278,6 +280,7 @@ struct Args {
     suffixes: Option<String>,
     neutralize: Option<String>,
     prep: bool,
+    normalize_release: bool,
     stage: Option<String>,
     no_accel: bool,
     // ---- package lifecycle ----
@@ -397,6 +400,7 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
         suffixes: None,
         neutralize: None,
         prep: false,
+        normalize_release: false,
         stage: None,
         no_accel: false,
         log: None,
@@ -483,6 +487,7 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
             "--suffixes" => out.suffixes = Some(a.next().ok_or("--suffixes needs a value")?),
             "--neutralize" => out.neutralize = Some(a.next().ok_or("--neutralize needs a value")?),
             "--prep" => out.prep = true,
+            "--normalize-release" => out.normalize_release = true,
             "--stage" => out.stage = Some(a.next().ok_or("--stage needs a value")?),
             "--no-accel" => out.no_accel = true,
             "--package-lifecycle" => out.package_lifecycle = true,
@@ -1857,6 +1862,7 @@ fn cmd_spec_parity(args: &Args) -> Result<(), String> {
         arches: list(&args.arch, specparity::DEFAULT_ARCHES),
         modes: list(&args.modes, specparity::DEFAULT_MODES),
         suffixes: list(&args.suffixes, &[]),
+        normalize_release: args.normalize_release,
         work,
     };
     println!("spec-parity: base={base} new={new} pkg={} specs={:?}", plan.pkg_dir, plan.specs);

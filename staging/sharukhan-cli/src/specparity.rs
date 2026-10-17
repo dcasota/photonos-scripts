@@ -47,6 +47,9 @@ pub struct Plan {
     /// Name suffixes a restructured tree adds on purpose (e.g. "6.1"); stripped
     /// from script lines before they are compared.
     pub suffixes: Vec<String>,
+    /// Replace each side's own Version-Release by a token before comparing, so
+    /// a Release bump does not hide what else a change does (`--normalize-release`).
+    pub normalize_release: bool,
     pub work: PathBuf,
 }
 
@@ -316,6 +319,44 @@ pub fn facts(spec: &Path, staged: &Path, sr: u32, arch: &str, mode: &str, suffix
     f
 }
 
+/// The Version-Release most of a cell's packages carry: the spec's own.
+/// None when the cell has no packages (refused) or no clear majority.
+pub fn own_vr(f: &Facts) -> Option<String> {
+    let mut count: BTreeMap<String, usize> = BTreeMap::new();
+    for k in f.packages.keys() {
+        // name-epoch:version-release.arch
+        let Some((_, evr_arch)) = k.rsplit_once(':') else { continue };
+        let Some((vr, _arch)) = evr_arch.rsplit_once('.') else { continue };
+        *count.entry(vr.to_string()).or_default() += 1;
+    }
+    let total: usize = count.values().sum();
+    count.into_iter().max_by_key(|(_, n)| *n).filter(|(_, n)| *n * 2 > total).map(|(vr, _)| vr)
+}
+
+/// Replace the cell's own Version-Release, and its Release where a script uses
+/// it alone (`-%{release}`), by tokens in package records, BuildRequires and
+/// scripts. The changelog is left alone: a new entry is a real change.
+pub fn normalize_release(f: &mut Facts) {
+    let Some(vr) = own_vr(f) else { return };
+    let Some((_, rel)) = vr.split_once('-') else { return };
+    // A Release alone is only replaced where a script quotes it as a whole
+    // value ("-%{release}"): unquoted, "2.ph5" also matches inside unrelated
+    // names such as fips-canister-5.0.0-6.1.75-2.ph5-secure.
+    // linux-esx appends its flavour inside the quotes ("-%{release}-esx").
+    let (rel_quoted, rel_flavour) = (format!("\"-{rel}\""), format!("\"-{rel}-"));
+    let n = |s: &str| {
+        s.replace(&vr, "<VR>")
+            .replace(&rel_quoted, "\"-<REL>\"")
+            .replace(&rel_flavour, "\"-<REL>-")
+    };
+    f.packages = std::mem::take(&mut f.packages)
+        .into_iter()
+        .map(|(k, v)| (n(&k), v.iter().map(|x| n(x)).collect()))
+        .collect();
+    f.buildrequires = f.buildrequires.iter().map(|x| n(x)).collect();
+    f.scripts = f.scripts.iter().map(|x| n(x)).collect();
+}
+
 /// Hard differences, and script lines that differ (warnings).
 pub fn compare(a: &Facts, b: &Facts) -> (Vec<String>, Vec<String>) {
     let mut hard = vec![];
@@ -437,8 +478,12 @@ pub fn run(plan: &Plan, prep: bool, neutralize: &[String]) -> Result<usize, Stri
             let sb = stage_for(&b_spec, "new")?;
             for arch in &plan.arches {
                 for mode in &plan.modes {
-                    let fa = facts(&a_spec, &sa, sr, arch, mode, &plan.suffixes);
-                    let fb = facts(&b_spec, &sb, sr, arch, mode, &plan.suffixes);
+                    let mut fa = facts(&a_spec, &sa, sr, arch, mode, &plan.suffixes);
+                    let mut fb = facts(&b_spec, &sb, sr, arch, mode, &plan.suffixes);
+                    if plan.normalize_release {
+                        normalize_release(&mut fa);
+                        normalize_release(&mut fb);
+                    }
                     let (hard, warn) = compare(&fa, &fb);
                     let cell = format!("sr{sr} {spec} {arch} {mode}");
                     let state = if fa.refused.is_some() && fb.refused.is_some() {
@@ -603,5 +648,31 @@ mod tests {
         fs::write(d.join("t/b/x.patch"), "2").unwrap();
         assert!(stage(&d.join("t"), &d.join("s2")).unwrap_err().contains("two different files named x.patch"));
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_release_bump_alone_does_not_make_a_cell_differ_once_normalized() {
+        let mk = |rel: &str| {
+            let mut f = Facts::default();
+            let vr = format!("6.12.111-{rel}.ph5");
+            f.packages.insert(format!("linux-0:{vr}.x86_64"), [format!("P linux = 0:{vr}")].into_iter().collect());
+            f.packages.insert(format!("linux-devel-0:{vr}.x86_64"), BTreeSet::new());
+            f.scripts = vec![format!("depmod -a {vr}"), format!("sed -i 's/X/\"-{rel}.ph5\"/' .config"), "tar -x fips-canister-5.0.0-6.1.75-2.ph5-secure.tar.bz2".into(), format!("sed -i 's/V=\"-esx\"/V=\"-{rel}.ph5-esx\"/' .config"), "make".into()];
+            f
+        };
+        let (mut a, mut b) = (mk("3"), mk("4"));
+        assert_eq!(own_vr(&a).as_deref(), Some("6.12.111-3.ph5"));
+        assert!(!compare(&a, &b).0.is_empty());
+        normalize_release(&mut a);
+        normalize_release(&mut b);
+        let (hard, warn) = compare(&a, &b);
+        assert!(hard.is_empty() && warn.is_empty(), "{hard:?} {warn:?}");
+        // an unrelated name that contains the Release string is left alone
+        let mut c = mk("2");
+        normalize_release(&mut c);
+        assert!(c.scripts.iter().any(|l| l.contains("6.1.75-2.ph5-secure")), "{:?}", c.scripts);
+        // a real script change still shows
+        b.scripts.push("sed -i '/PAD/d' .config".into());
+        assert_eq!(compare(&a, &b).1, vec!["+ sed -i '/PAD/d' .config".to_string()]);
     }
 }
