@@ -172,6 +172,10 @@ OPTIONS:
                         when one is already published at that kernel NEVR).
                         The matrix uses prebuilt and equivalent only.
     --force             rebuild even on a cache hit (build-iso)
+    --compose-only      compose the image from the phase-B kernels already in
+                        the stage, proven to be phase B's, instead of purging
+                        and rebuilding them (build; build-iso with canister
+                        equivalent once its canister is built)
     --hyperv            build Hyper-V guest support IN (=y) rather than as
                         modules, so an Azure guest's installer kernel finds
                         VMBus storage and network without initrd modules
@@ -652,6 +656,7 @@ fn main() -> ExitCode {
             args.kernel.as_deref(),
             args.force,
             args.allow_build,
+            args.compose_only,
             args.wait_idle,
         ),
         "build" => cmd_build(&args),
@@ -1207,6 +1212,7 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
             poi: p.to_string(),
             canister: c.to_string(),
             kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
+            compose_only: false,
         };
         // The same decision `run` takes: present AND built from today's inputs.
         let stale = match build::plan(cfg, &req, false, true) {

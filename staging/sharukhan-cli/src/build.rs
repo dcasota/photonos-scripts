@@ -23,6 +23,11 @@ pub struct IsoRequest {
     /// A kernel profile (`sharukhan wrapper`), e.g. `7.3-rc4`; None builds
     /// the release's own kernel.
     pub kernel: Option<String>,
+    /// `--compose-only`: compose the image from the phase-B kernels already
+    /// in the stage, proven to be phase B's, instead of purging and
+    /// rebuilding them. Only an equivalent build whose canister is already
+    /// built has such kernels.
+    pub compose_only: bool,
 }
 
 impl IsoRequest {
@@ -437,6 +442,12 @@ fn resolve_in(
     log: &mut dyn FnMut(&str),
 ) -> Result<PathBuf, String> {
     let img = req.img()?;
+    if req.compose_only && req.canister != "equivalent" {
+        return Err(format!(
+            "--compose-only keeps proven phase-B kernels, which only --canister equivalent builds (got {})",
+            req.canister
+        ));
+    }
     let dest = cfg.iso_dir(&req.iso_type, &req.poi, &req.canister);
     let iso = match plan_in(cfg, req, force, allow_build, kb)? {
         Plan::Cached(iso) => {
@@ -650,6 +661,13 @@ and failing to look are different things, and only the first is worth hours."
         (vec![req.canister.as_str()], String::new())
     };
 
+    if req.compose_only && phases.contains(&"equivalent-a") {
+        return Err(format!(
+            "--compose-only needs phase-B kernels linked against an existing canister, \
+and none is built for {nevr}: phase A has to build it first. Run without --compose-only."
+        ));
+    }
+
     for phase in &phases {
         if phases.len() > 1 {
             log(&format!("--- {phase} ---"));
@@ -699,6 +717,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
                 kb,
             )?;
             spec.poi_image = Some(composer.tag.clone());
+            spec.compose_only = req.compose_only;
             crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
             continue;
         }
@@ -2005,7 +2024,7 @@ mod tests {
     }
 
     fn plan_req() -> IsoRequest {
-        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into(), kernel: None }
+        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into(), kernel: None, compose_only: false }
     }
 
     /// `run --dry-run --allow-build` once built an ISO: it called `resolve`,
@@ -2057,6 +2076,19 @@ mod tests {
         assert!(inputs_diff(&with, &with.replace("73ce", "0bad")).unwrap().contains("composer"));
     }
 
+    /// build-iso parsed --compose-only and dropped it, so a run asked to keep
+    /// its proven kernels purged them and spent hours rebuilding.
+    #[test]
+    fn compose_only_outside_an_equivalent_build_is_refused_before_any_side_effect() {
+        let (c, root) = plan_cfg("composeonly");
+        let mut req = plan_req();
+        req.compose_only = true;
+        let err = resolve(&c, &req, false, true, &mut |_| {}).unwrap_err();
+        assert!(err.contains("only --canister equivalent builds"), "{err}");
+        assert!(!c.iso_cache.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// A missing variant patch used to be noticed only AFTER resolve had
     /// purged the cached photon-os-installer RPMs from stage/RPMS.
     #[test]
@@ -2075,6 +2107,7 @@ mod tests {
             poi: "2.8".into(),
             canister: "prebuilt".into(),
             kernel: None,
+            compose_only: false,
         };
         assert_eq!(r("minimal").img().unwrap(), "minimal-iso");
         assert_eq!(r("full").img().unwrap(), "iso");
@@ -2394,12 +2427,14 @@ mod tests {
             poi: "2.8".into(),
             canister: "prebuilt".into(),
             kernel: None,
+            compose_only: false,
         };
         let b = IsoRequest {
             iso_type: "full".into(),
             poi: "2.8".into(),
             canister: "build".into(),
             kernel: None,
+            compose_only: false,
         };
         assert_eq!(a.key(), "full-poi2.8-prebuilt");
         assert_ne!(a.key(), b.key());
