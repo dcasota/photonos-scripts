@@ -10,7 +10,7 @@
 //! would test a different builder than the one that ships.
 
 use crate::buildmode::{
-    BuildSpec, CanisterMode, Embedded, Fixup, Injection, Stage, Subrelease, Tree,
+    BuildSpec, CanisterMode, Embedded, Fixup, ImgType, Injection, Stage, Subrelease, Tree,
 };
 use crate::sha256;
 use std::fs;
@@ -3005,6 +3005,19 @@ restored from the kernel store or left by an earlier phase A",
     c.say("  cleaning sandboxes left by an earlier run");
     clean_sandboxes(c, &stage);
 
+    // The package builder skips an image package that is already built
+    // without looking at its Requires (specdata::DEPS_DRIVER), so a runtime
+    // dependency whose spec moved to a new NEVR is never built. Those go into
+    // the pre-build, ahead of the kernel profile's own.
+    let mut prebuild = c.spec.prebuild.clone();
+    if target == "image" {
+        for spec in unbuilt_runtime_specs(c, &release, &stage)? {
+            if !prebuild.contains(&spec) {
+                prebuild.push(spec);
+            }
+        }
+    }
+
     let marker = stage.join(".sharukhan-iso-marker");
     let _ = fs::write(&marker, "");
     let (mut prev_rc, mut prev_progress) = (i32::MIN, u64::MAX);
@@ -3024,14 +3037,14 @@ restored from the kernel store or left by an earlier phase A",
         // base sandbox, so after the phase-B purge invalidates sandboxBase
         // every package fails with "special device overlay does not exist".
         // The per-package target goes through buildPackages, which creates it.
-        if target == "image" && !c.spec.prebuild.is_empty() {
+        if target == "image" && !prebuild.is_empty() {
             c.say(&format!(
                 "  attempt {attempt}/{MAKE_ATTEMPTS}: pre-build {} package(s): {}",
-                c.spec.prebuild.len(),
-                c.spec.prebuild.join(", ")
+                prebuild.len(),
+                prebuild.join(", ")
             ));
             let mut prc = 0;
-            for p in &c.spec.prebuild {
+            for p in &prebuild {
                 prc = Command::new("sudo")
                     .args(["make", &jflag, p.as_str(), &threads])
                     .current_dir(&release)
@@ -3135,6 +3148,53 @@ restored from the kernel store or left by an earlier phase A",
 /// at the spec's NEVR is already in the stage, without building anything. A
 /// package list exists to get a fresh build, so a 0 with no fresh RPM is an
 /// error, never a pass.
+/// The package lists build.py builds for `img` before it runs poi. The full
+/// ISO builds every spec, so nothing it needs can be left unbuilt.
+fn image_package_lists(common: &Path, img: ImgType) -> Vec<PathBuf> {
+    let data = common.join("common/data");
+    let list = match img {
+        ImgType::Iso => return Vec::new(),
+        ImgType::MinimalIso => "packages_minimal.json",
+        ImgType::BasicIso => "packages_basic.json",
+        ImgType::RtIso => "packages_rt.json",
+    };
+    vec![data.join(list), data.join("packages_installer_initrd.json")]
+}
+
+/// The specs an already-built image package needs at runtime whose RPMs are
+/// not in the stage, named and logged; see specdata::DEPS_DRIVER.
+fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Vec<String>, String> {
+    let common = c.spec.tree(Tree::Common);
+    let lists = image_package_lists(&common, c.spec.img);
+    if lists.is_empty() && c.spec.prebuild.is_empty() {
+        return Ok(Vec::new());
+    }
+    let inputs = crate::specdata::Inputs::from_trees(&common, release.join("build-config.json"));
+    let unbuilt = crate::specdata::unbuilt_runtime_deps(
+        &inputs,
+        &release.join("SPECS"),
+        &stage.join("RPMS"),
+        &c.spec.prebuild,
+        &lists,
+        &stage.join("sharukhan-runtime-deps"),
+    )
+    .map_err(|e| format!("resolving the image's runtime dependencies: {e}"))?;
+    let mut specs: Vec<String> = Vec::new();
+    for u in &unbuilt {
+        c.say(&format!(
+            "  {}-{} is not built, and the already-built {} requires it: pre-building {}",
+            u.spec, u.version, u.needed_by, u.spec
+        ));
+        if !specs.contains(&u.spec) {
+            specs.push(u.spec.clone());
+        }
+    }
+    if unbuilt.is_empty() {
+        c.say("  every runtime dependency of the image's already-built packages is built");
+    }
+    Ok(specs)
+}
+
 fn make_packages(
     c: &mut Ctx,
     release: &Path,

@@ -50,6 +50,163 @@ if files:
 print("SPECCHECK-OK %d" % len(files))
 "#;
 
+/// The runtime-dependency driver. The package builder skips a requested
+/// package whose RPMs are already in the stage before it looks at that
+/// package's `Requires:`, so a dependency whose spec moved to a new NEVR since
+/// is never built: `minimal` stays built, `docker` 29.8.0-3 never is, and
+/// photon-iso-builder's tdnf then fails on the older docker's requirements.
+/// This walks the install requirements from the image's package lists with
+/// SpecData's own resolution, descending only through packages whose RPMs are
+/// all present (an unbuilt one is the builder's to build, with its
+/// dependencies), and names every spec reached that way whose RPMs are not.
+const DEPS_DRIVER: &str = r#"
+import json, os, sys
+pb, common_specs, release_specs, cfg, logdir, rpmdir, roots_file = sys.argv[1:8]
+lists = sys.argv[8:]
+sys.path.insert(0, pb)
+from constants import constants
+c = json.load(open(cfg))
+p = c["photon-build-param"]
+constants.addSpecPath(common_specs)
+constants.addSpecPath(release_specs)
+os.makedirs(logdir, exist_ok=True)
+constants.setLogPath(logdir)
+constants.setLogLevel("error")
+constants.setDist(p["photon-dist-tag"])
+constants.setReleaseVersion(p["photon-release-version"])
+constants.setSubreleaseVersion(p["photon-subrelease"])
+constants.setPhotonBranch(c["photon-branch"])
+constants.setRpmPath(rpmdir)
+constants.initialize()
+from SpecData import SPECS
+d = SPECS.getData()
+arch = constants.buildArch
+names = [l.strip() for l in open(roots_file) if l.strip()]
+for f in lists:
+    j = json.load(open(f))
+    names += j["packages"] + j.get("packages_" + arch, [])
+def built(spec, ver):
+    for r in d.getRPMPackages(spec, ver):
+        a = d.getBuildArch(r, ver)
+        if not os.path.isfile(os.path.join(rpmdir, a, f"{r}-{ver}.{a}.rpm")):
+            return False
+    return True
+def requires(pkg, ver):
+    for obj in d.getSpecObjects(pkg):
+        if obj.version == ver:
+            for dep in obj.installRequiresPackages.get(pkg, []):
+                v = d._getProperVersion(dep)
+                if not v:
+                    raise Exception(f"Could not find proper version for {dep.package}")
+                yield dep.package, v
+            return
+    raise Exception(f"Invalid package: {pkg}-{ver}")
+seen, todo = set(), []
+for n in names:
+    if not d.isRPMPackage(n):
+        raise Exception(f"{n} is listed for the image but no spec builds it")
+    for v in d.getVersions(n):
+        todo.append((n, v))
+cache, reported = {}, set()
+while todo:
+    pkg, ver = todo.pop()
+    if (pkg, ver) in seen:
+        continue
+    seen.add((pkg, ver))
+    spec = d.getSpecNameForVersion(pkg, ver)
+    if (spec, ver) not in cache:
+        cache[(spec, ver)] = built(spec, ver)
+    if not cache[(spec, ver)]:
+        continue
+    for dp, dv in requires(pkg, ver):
+        ds = d.getSpecNameForVersion(dp, dv)
+        if (ds, dv) not in cache:
+            cache[(ds, dv)] = built(ds, dv)
+        if cache[(ds, dv)]:
+            todo.append((dp, dv))
+        elif (ds, dv) not in reported:
+            reported.add((ds, dv))
+            print(f"UNBUILT {ds} {dv} {pkg}-{ver}")
+print("DEPS-OK %d" % len(seen))
+"#;
+
+/// A spec an already-built package needs at runtime whose RPMs are missing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unbuilt {
+    /// The spec's name, which is also its `make` target.
+    pub spec: String,
+    /// version-release.dist, as SpecData names it
+    pub version: String,
+    /// The first already-built package found requiring it, with its version.
+    pub needed_by: String,
+}
+
+/// Parse the dependency driver's output.
+pub fn parse_unbuilt(stdout: &str) -> Option<Vec<Unbuilt>> {
+    stdout.lines().find(|l| l.starts_with("DEPS-OK "))?;
+    Some(
+        stdout
+            .lines()
+            .filter_map(|l| {
+                let mut f = l.strip_prefix("UNBUILT ")?.split_whitespace();
+                let (spec, version, needed_by) = (f.next()?, f.next()?, f.next()?);
+                f.next().is_none().then(|| Unbuilt {
+                    spec: spec.into(),
+                    version: version.into(),
+                    needed_by: needed_by.into(),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// The specs whose RPMs are missing from `rpm_dir` although an already-built
+/// package reachable from `roots` or the package lists `lists` requires them
+/// at runtime, resolved by the package builder's SpecData over the common
+/// SPECS and `release_specs`. The builder itself never builds these (see
+/// DEPS_DRIVER).
+pub fn unbuilt_runtime_deps(
+    inputs: &Inputs,
+    release_specs: &Path,
+    rpm_dir: &Path,
+    roots: &[String],
+    lists: &[PathBuf],
+    log_dir: &Path,
+) -> Result<Vec<Unbuilt>, String> {
+    if let Some(m) = inputs.missing() {
+        return Err(format!("cannot run the package builder's spec parser: {m}"));
+    }
+    for p in lists {
+        if !p.is_file() {
+            return Err(format!("package list {} does not exist", p.display()));
+        }
+    }
+    std::fs::create_dir_all(log_dir).map_err(|e| format!("{}: {e}", log_dir.display()))?;
+    let roots_file = log_dir.join("runtime-roots.txt");
+    let text: String = roots.iter().map(|r| format!("{r}\n")).collect();
+    std::fs::write(&roots_file, text).map_err(|e| format!("{}: {e}", roots_file.display()))?;
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(DEPS_DRIVER)
+        .arg(&inputs.package_builder)
+        .arg(&inputs.common_specs)
+        .arg(release_specs)
+        .arg(&inputs.build_config)
+        .arg(log_dir)
+        .arg(rpm_dir)
+        .arg(&roots_file)
+        .args(lists)
+        .current_dir(&inputs.package_builder)
+        .output()
+        .map_err(|e| format!("running python3: {e}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    match (out.status.success(), parse_unbuilt(&stdout)) {
+        (true, Some(u)) => Ok(u),
+        _ => Err(builder_error(&stdout, &stderr)),
+    }
+}
+
 /// Where the pieces of a build root are.
 pub struct Inputs {
     /// common/support/package-builder
@@ -200,6 +357,70 @@ mod tests {
         let i = Inputs::from_build_root(&t, "common", "5.0");
         let r = check(&i, &t.join("SPECS"), &[], &t.join("logs"));
         assert!(r.unwrap_err().contains("cannot run the package builder's spec parser"));
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn the_dependency_drivers_lines_are_read_only_after_it_finished() {
+        let out = "UNBUILT docker 29.8.0-3.ph5 minimal-5.0-9.ph5\nDEPS-OK 12\n";
+        assert_eq!(
+            parse_unbuilt(out).unwrap(),
+            vec![Unbuilt {
+                spec: "docker".into(),
+                version: "29.8.0-3.ph5".into(),
+                needed_by: "minimal-5.0-9.ph5".into(),
+            }]
+        );
+        assert!(parse_unbuilt("UNBUILT docker 29.8.0-3.ph5 minimal-5.0-9.ph5\n").is_none());
+        assert!(parse_unbuilt("UNBUILT a b c d\nDEPS-OK 1\n").unwrap().is_empty());
+    }
+
+    /// Against the real gate build root and 5.0: with only minimal's RPMs in
+    /// the stage, the requirements of the already-built minimal are named
+    /// (docker among them, the gate-70 failure); with no RPM at all minimal
+    /// is the builder's to build and nothing is named.
+    #[test]
+    fn an_already_built_packages_unbuilt_requirement_is_named() {
+        let root = Path::new("/root/photon-mc/gate/build-root");
+        let repo = Path::new("/root/photon-mc/gate/photon.git");
+        let i = Inputs::from_build_root(root, "common", "5.0");
+        if i.missing().is_some() || !repo.is_dir() {
+            return;
+        }
+        let t = std::env::temp_dir().join(format!("shk-specdeps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(&t).unwrap();
+        let ok = Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "git --git-dir={} archive 5.0 SPECS | tar -x -C {} --exclude='*.patch' --exclude='*.tar.*' --exclude='*.tgz' --exclude='*.zip'",
+                repo.display(),
+                t.display()
+            ))
+            .status()
+            .unwrap();
+        assert!(ok.success());
+        let spec = std::fs::read_to_string(t.join("SPECS/minimal/minimal.spec")).unwrap();
+        let v = crate::specresolve::field(&spec, "Version:").unwrap();
+        let r = crate::specresolve::field(&spec, "Release:").unwrap();
+        let r = r.trim_end_matches("%{?dist}");
+        let cfg: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&i.build_config).unwrap()).unwrap();
+        let dist = cfg["photon-build-param"]["photon-dist-tag"].as_str().unwrap();
+        let arch = std::env::consts::ARCH;
+        let rpms = t.join("RPMS");
+        std::fs::create_dir_all(rpms.join(arch)).unwrap();
+        let roots = vec!["minimal".to_string()];
+        let logs = t.join("logs");
+        let none = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &roots, &[], &logs).unwrap();
+        assert!(none.is_empty(), "{none:?}");
+        std::fs::write(rpms.join(arch).join(format!("minimal-{v}-{r}{dist}.{arch}.rpm")), "").unwrap();
+        let some = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &roots, &[], &logs).unwrap();
+        let docker = some.iter().find(|u| u.spec == "docker").unwrap_or_else(|| panic!("{some:?}"));
+        assert_eq!(docker.needed_by, format!("minimal-{v}-{r}{dist}"));
+        let bad = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &["zz-no-such".into()], &[], &logs)
+            .unwrap_err();
+        assert!(bad.contains("zz-no-such is listed for the image but no spec builds it"), "{bad}");
         let _ = std::fs::remove_dir_all(&t);
     }
 
