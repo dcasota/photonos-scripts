@@ -1930,6 +1930,32 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
             bad += 1;
             println!("  [FAIL ] {f}: {e}");
         }
+        // One entry per PR and spec, one change line of at most 10 words
+        // (memory.db rule changelog-one-entry-one-line).
+        // Only a changelog the branch still has: a deleted or moved file, or
+        // an include without one, adds no entry here.
+        let mine = branchguard::file_at(dir, branch, &f);
+        let is_changelog = mine.contains("%changelog")
+            || (f.ends_with(".inc") && f.rsplit('/').next().is_some_and(|n| n.contains("changelog")));
+        if !is_changelog {
+            continue;
+        }
+        let reference = branchguard::package_changelogs(dir, &base, &f);
+        let before = branchguard::file_at(dir, &base, &f);
+        let problems = branchguard::single_entry_problems(
+            &reference,
+            &before,
+            &mine,
+            "Daniel Casota <dcasota@gmail.com>",
+            10,
+        );
+        if problems.is_empty() {
+            println!("  [ok   ] {f}: at most one added %changelog entry, one change line of at most 10 words");
+        }
+        for p in problems {
+            bad += 1;
+            println!("  [FAIL ] {f}: {p}");
+        }
     }
 
     for rev in branchguard::commits_between(dir, target, branch)? {

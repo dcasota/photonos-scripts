@@ -155,6 +155,87 @@ pub fn changelog_version_is_new(base: &str, target: &str, branch: &str) -> Chang
     }
 }
 
+/// The entries of a %changelog as blocks: the `* ` header line and the lines
+/// under it, blank lines dropped.
+pub fn entry_blocks(text: &str) -> Vec<Vec<String>> {
+    let body = match text.find("%changelog") {
+        Some(i) => &text[i..],
+        None => text,
+    };
+    let mut out: Vec<Vec<String>> = Vec::new();
+    // A `%` line (another file's %changelog in package_changelogs' joined
+    // text) ends the entry before it.
+    let mut open = false;
+    for line in body.lines() {
+        if line.starts_with("* ") {
+            out.push(vec![line.trim_end().to_string()]);
+            open = true;
+        } else if line.starts_with('%') {
+            open = false;
+        } else if open && !line.trim().is_empty() {
+            if let Some(cur) = out.last_mut() {
+                cur.push(line.trim_end().to_string());
+            }
+        }
+    }
+    out
+}
+
+/// One %changelog entry per PR and spec, in one short line.
+///
+/// `reference` holds every changelog of the package at the merge-base (so an
+/// entry that only moved between a spec and an include is not new), `before`
+/// the same file at the merge-base, `branch` the file on the branch. The
+/// branch may add exactly one entry, on top, by `author`, with exactly one
+/// change line of at most `max_words` words. It may replace an entry only
+/// when that entry is `author`'s own: a stacked PR amends its parent's entry
+/// instead of appending one.
+pub fn single_entry_problems(
+    reference: &str,
+    before: &str,
+    branch: &str,
+    author: &str,
+    max_words: usize,
+) -> Vec<String> {
+    let known = entry_blocks(reference);
+    let mut known_before = entry_blocks(before);
+    known_before.extend(known.iter().cloned());
+    let now = entry_blocks(branch);
+    let added: Vec<&Vec<String>> = now.iter().filter(|e| !known_before.contains(e)).collect();
+    let mut out = Vec::new();
+    if added.len() > 1 {
+        out.push(format!("adds {} %changelog entries; one per PR", added.len()));
+    }
+    for e in &added {
+        if !e[0].contains(author) {
+            out.push(format!("the added entry is not by {author}: {}", e[0]));
+        }
+        if e.len() != 2 {
+            out.push(format!(
+                "the added entry has {} change lines; it must have exactly one",
+                e.len() - 1
+            ));
+        }
+        for l in &e[1..] {
+            let words = l.trim_start_matches(|c| c == '-' || c == ' ').split_whitespace().count();
+            if words > max_words {
+                out.push(format!("change line of {words} words (at most {max_words}): {}", l.trim()));
+            }
+        }
+    }
+    if let Some(first) = added.first() {
+        if now.first() != Some(*first) {
+            out.push("the added entry is not the top entry".into());
+        }
+    }
+    for e in entry_blocks(before) {
+        if !now.contains(&e) && !e[0].contains(author) {
+            out.push(format!("changes or drops an existing entry: {}", e[0]));
+        }
+    }
+    out
+}
+
 /// The top entry must not be older than the entry beneath it.
 ///
 /// Only the top pair is compared. The historical tail belongs to upstream and
@@ -283,6 +364,11 @@ pub fn three_texts(
 /// Every changelog of the package `path` belongs to, at `rev`: the .spec and
 /// *changelog*.inc files in any SPECS/<pkg>/ or SPECS/<subrelease>/<pkg>/
 /// directory with the same package directory name (Photon's layout).
+/// `path` at `rev`, or empty when it does not exist there.
+pub fn file_at(dir: &Path, rev: &str, path: &str) -> String {
+    git(dir, &["show", &format!("{rev}:{path}")]).unwrap_or_default()
+}
+
 pub fn package_changelogs(dir: &Path, rev: &str, path: &str) -> String {
     let Some(pkg) = Path::new(path).parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) else {
         return String::new();
@@ -515,5 +601,35 @@ mod tests {
             other => panic!("expected a duplicate, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn one_short_entry_passes_and_every_breach_is_named() {
+        let a = "Daniel Casota <dcasota@gmail.com>";
+        let base = "%changelog\n* Mon Oct 19 2026 X Y <x@y> 1.0-1\n- Update\n";
+        let ok = "%changelog\n* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Fix the thing\n* Mon Oct 19 2026 X Y <x@y> 1.0-1\n- Update\n";
+        assert!(single_entry_problems(base, base, ok, a, 10).is_empty());
+        let two = "%changelog\n* Thu Oct 22 2026 Daniel Casota <dcasota@gmail.com> 1.0-3\n- More\n* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Fix\n* Mon Oct 19 2026 X Y <x@y> 1.0-1\n- Update\n";
+        assert!(single_entry_problems(base, base, two, a, 10).iter().any(|p| p.contains("adds 2")));
+        let long = "%changelog\n* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- one two three four five six seven eight nine ten eleven\n- second\n* Mon Oct 19 2026 X Y <x@y> 1.0-1\n- Update\n";
+        let p = single_entry_problems(base, base, long, a, 10);
+        assert!(p.iter().any(|p| p.contains("2 change lines")), "{p:?}");
+        assert!(p.iter().any(|p| p.contains("11 words")), "{p:?}");
+        let altered = "%changelog\n* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Fix\n* Mon Oct 19 2026 X Y <x@y> 1.0-1\n- Update, reworded\n";
+        assert!(single_entry_problems(base, base, altered, a, 10).iter().any(|p| p.contains("changes or drops")));
+    }
+
+    #[test]
+    fn a_stacked_pr_may_amend_its_parents_entry_and_a_moved_entry_is_not_new() {
+        let a = "Daniel Casota <dcasota@gmail.com>";
+        let parent = "%changelog\n* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Fix A\n* Mon Oct 19 2026 X Y <x@y> 1.0-1\n- Update\n";
+        let child = "%changelog\n* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Fix A and B\n* Mon Oct 19 2026 X Y <x@y> 1.0-1\n- Update\n";
+        assert!(single_entry_problems(parent, parent, child, a, 10).is_empty());
+        // the whole history moved from the spec into an include
+        assert!(single_entry_problems(parent, "", parent, a, 10).is_empty());
+        // several files joined, as package_changelogs returns them: the last
+        // entry of one does not swallow the next file's %changelog line
+        let joined = format!("{parent}\n%changelog\n* Mon Oct 19 2026 X Y <x@y> 2.0-1\n- Other\n");
+        assert!(single_entry_problems(&joined, "", parent, a, 10).is_empty());
     }
 }
