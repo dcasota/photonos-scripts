@@ -337,6 +337,25 @@ pub fn ensure(log: &mut dyn FnMut(&str)) -> Result<String, String> {
     Ok(tag)
 }
 
+/// The tag the current definition and locks produce, and whether an image
+/// with that tag and label exists - without building anything.
+pub fn current_image() -> Result<(String, bool), String> {
+    let ctx = context_dir();
+    let rpms_lock = fs::read_to_string(ctx.join("rpms.sha256"))
+        .map_err(|_| format!("{} has no rpms.sha256: run `sharukhan builder lock`", ctx.display()))?;
+    let base_id = run("docker", &["image", "inspect", BASE_IMAGE, "--format", "{{.Id}}"])
+        .map_err(|e| format!("the base image {BASE_IMAGE}: {e}"))?
+        .trim()
+        .to_string();
+    if base_id != BASE_IMAGE_ID {
+        return Err(format!("{BASE_IMAGE} is {base_id}, not the pinned {BASE_IMAGE_ID}"));
+    }
+    let hash = inputs_hash(&base_id, &rpms_lock, &wheels_sha256()?);
+    let tag = format!("sharukhan/photon-builder:{hash}");
+    let built = label(&tag).as_deref() == Some(hash.as_str());
+    Ok((tag, built))
+}
+
 fn normalize(name: &str) -> String {
     name.to_lowercase().replace(['_', '.'], "-")
 }

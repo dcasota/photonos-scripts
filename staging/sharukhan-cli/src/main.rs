@@ -18,6 +18,7 @@ mod des;
 mod disk;
 mod evidence;
 mod guest;
+mod health;
 mod identity;
 mod ingest;
 mod isoboot;
@@ -1195,6 +1196,15 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
             format!("{} finding(s)", memory::count(&c, "finding")),
         ),
         Err(e) => check("database", false, e),
+    }
+
+    println!("automation");
+    for i in health::automation(&cfg.memory_db, 900) {
+        match i.level {
+            health::Level::Ok => check(&i.label, true, i.detail),
+            health::Level::Fail => check(&i.label, false, i.detail),
+            health::Level::Warn => println!("  [warn] {:<22} {}", i.label, i.detail),
+        }
     }
 
     if bad > 0 {
