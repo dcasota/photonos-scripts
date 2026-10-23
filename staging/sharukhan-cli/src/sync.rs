@@ -356,6 +356,20 @@ pub fn map_path(path: &str, renames: &BTreeMap<String, String>, dirs: &BTreeMap<
     path.to_string()
 }
 
+/// Equal once what a sync itself rewrites is set aside: a spec's Release
+/// values and `%changelog`, the entry header lines of a changelog .inc.
+pub fn same_beyond_bookkeeping(path: &str, a: &str, b: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if path.ends_with(".spec") {
+        mask(a) == mask(b)
+    } else if name.contains("changelog") && name.ends_with(".inc") {
+        let body = |t: &str| t.lines().filter(|l| !l.starts_with("* ")).map(str::to_string).collect::<Vec<_>>();
+        body(a) == body(b)
+    } else {
+        a == b
+    }
+}
+
 pub struct RebaseResult {
     pub head: String,
     pub commits: Vec<String>,
@@ -414,7 +428,13 @@ fn replay(
             let cur = fs::read_to_string(&abs).ok();
             match kind {
                 "D" => {
-                    if cur.is_some() && cur != prev {
+                    // a parent's rebase renumbers and re-dates its own entries;
+                    // only a change beyond that is upstream's
+                    let differs = match (&cur, &prev) {
+                        (Some(c), Some(p)) => !same_beyond_bookkeeping(&target, c, p),
+                        (c, p) => c.is_some() != p.is_some(),
+                    };
+                    if cur.is_some() && differs {
                         return Err(format!("{target}: deleted by the PR but changed upstream"));
                     }
                     if cur.is_some() {
@@ -856,6 +876,16 @@ pub fn cli(args: &[String]) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bookkeeping_is_not_an_upstream_change() {
+        let a = "Release: 2%{?dist}\nBuildRequires: x\n%changelog\n* Mon Oct 19 2026 D <d> 1-2\n- y\n";
+        let b = "Release: 3%{?dist}\nBuildRequires: x\n%changelog\n* Fri Oct 23 2026 D <d> 1-3\n- y\n";
+        assert!(same_beyond_bookkeeping("SPECS/90/linux/linux.spec", a, b));
+        assert!(!same_beyond_bookkeeping("SPECS/90/linux/linux.spec", a, &b.replace("x", "z")));
+        assert!(same_beyond_bookkeeping("SPECS/linux/linux-esx-6.12-changelog.inc", "* Mon a 1\n- y\n", "* Fri b 2\n- y\n"));
+        assert!(!same_beyond_bookkeeping("SPECS/linux/x.patch", "a\n", "b\n"));
+    }
 
     #[test]
     fn a_release_increments_its_last_component_and_keeps_its_shape() {
