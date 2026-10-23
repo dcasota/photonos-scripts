@@ -1271,15 +1271,29 @@ pub const VARIANTS: [Variant; 2] = [
     Variant {
         name: "2.8",
         branches: &[
-            "fix/poi-fips-sshd-algorithms",
+            // fix/poi-release-dhcp-leases is stacked on
+            // fix/poi-fips-sshd-algorithms (#28) and listed instead of it
+            // (range rule): it adds 0011, with which the installer environment
+            // releases its DHCP leases before it reboots into the installed
+            // system. Without it a MAC-affine DHCP server keeps the address for
+            // the installer's client identifier until the lease expires, and the
+            // installed system boots without IPv4 (wait-online fails).
+            "fix/poi-release-dhcp-leases",
             "fix/aide-libgcrypt-versioned-requires",
-            "fix-selinux-relabel",
+            // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
+            // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
+            // audit_backlog_limit=8192 next to audit=1.
+            "fix/stig-audit-backlog-limit",
             // fix/systemd-subpackage-files-once is stacked on
             // fix/systemd-groups-and-stig-variant (#22) and listed instead of
             // it (range rule): systemd 257.13-7 ships each file of
             // systemd-container and systemd-journal-remote in one package.
-            "fix/systemd-subpackage-files-once",
-            "fix/stig-harden-reachable",
+            // fix/systemd-subpackage-files-once (#79, on #22) is carried by
+            // systemd-43741-pending-requests (#87), stacked on it (range rule).
+            // fix/systemd-90-dhcpdecline-raw-socket is stacked on it and listed
+            // instead (range rule): SPECS/90 systemd 253.19 broadcasts DHCPDECLINE
+            // through a raw socket (the subrelease-90 counterpart of #87).
+            "fix/systemd-90-dhcpdecline-raw-socket",
             // Upstream-bound only. fix/canister-equivalent-mode used to be
             // listed here; it is a TEST-ONLY change with no destination in
             // vmware/photon, so it moved to src/embedded/ and is applied by
@@ -1357,6 +1371,15 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/iptables-alternatives-ghost",
             "fix/sendmail-alias-database",
             "fix/wavefront-proxy-stop-status",
+            // rpm -V on the FIPS rows: distro.cnf follows the FIPS provider
+            "fix/openssl-distro-cnf-verify",
+            // audit records lost under audit.STIG.rules' -b 640
+            "fix/audit-stig-backlog",
+            // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
+            // when a DHCP/NDisc client stops (systemd#43741 backport)
+            "systemd-43741-pending-requests",
+            // docker-init linked statically so `docker run --init` works (#88)
+            "fix/docker-init-static-5.0",
         ],
     },
     Variant {
@@ -1377,15 +1400,26 @@ pub const VARIANTS: [Variant; 2] = [
             // rule): it adds 0010, the png/tga loaders for the BIOS El Torito
             // image, without which BIOS GRUB stops on an image-format error and
             // falls back to the plain text menu.
-            "fix/poi-2.9-eltorito-theme-modules",
+            // fix/poi-2.9-release-dhcp-leases is stacked on
+            // fix/poi-2.9-eltorito-theme-modules (#38) and listed instead of it
+            // (range rule): the same 0011 as the 2.8 variant, so the installer
+            // environment releases its DHCP leases before it reboots.
+            "fix/poi-2.9-release-dhcp-leases",
             "fix/aide-libgcrypt-versioned-requires",
-            "fix-selinux-relabel",
+            // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
+            // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
+            // audit_backlog_limit=8192 next to audit=1.
+            "fix/stig-audit-backlog-limit",
             // fix/systemd-subpackage-files-once is stacked on
             // fix/systemd-groups-and-stig-variant (#22) and listed instead of
             // it (range rule): systemd 257.13-7 ships each file of
             // systemd-container and systemd-journal-remote in one package.
-            "fix/systemd-subpackage-files-once",
-            "fix/stig-harden-reachable",
+            // fix/systemd-subpackage-files-once (#79, on #22) is carried by
+            // systemd-43741-pending-requests (#87), stacked on it (range rule).
+            // fix/systemd-90-dhcpdecline-raw-socket is stacked on it and listed
+            // instead (range rule): SPECS/90 systemd 253.19 broadcasts DHCPDECLINE
+            // through a raw socket (the subrelease-90 counterpart of #87).
+            "fix/systemd-90-dhcpdecline-raw-socket",
             // Upstream-bound only. fix/canister-equivalent-mode used to be
             // listed here; it is a TEST-ONLY change with no destination in
             // vmware/photon, so it moved to src/embedded/ and is applied by
@@ -1463,6 +1497,15 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/iptables-alternatives-ghost",
             "fix/sendmail-alias-database",
             "fix/wavefront-proxy-stop-status",
+            // rpm -V on the FIPS rows: distro.cnf follows the FIPS provider
+            "fix/openssl-distro-cnf-verify",
+            // audit records lost under audit.STIG.rules' -b 640
+            "fix/audit-stig-backlog",
+            // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
+            // when a DHCP/NDisc client stops (systemd#43741 backport)
+            "systemd-43741-pending-requests",
+            // docker-init linked statically so `docker run --init` works (#88)
+            "fix/docker-init-static-5.0",
         ],
     },
 ];
