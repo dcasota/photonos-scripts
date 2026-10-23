@@ -792,16 +792,21 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             .open(&build_log)
             .map_err(|e| format!("{}: {e}", build_log.display()))?;
         let err = logf.try_clone().map_err(|e| format!("{e}"))?;
-        let rc = Command::new("sh")
-            .arg(stage_dir.join("runPh5_normal.sh"))
-            .arg(&cfg.build_root)
-            .arg(&cfg.build_common)
-            .arg(&cfg.release)
-            .arg(&dest)
-            .arg(img)
-            .arg(phase)
-            .env("MC_CANISTER_NEVR", &nevr)
-            .env("MC_POI_IMAGE", &composer.tag)
+        let script_args: Vec<std::ffi::OsString> = vec![
+            cfg.build_root.clone().into(),
+            cfg.build_common.clone().into(),
+            cfg.release.clone().into(),
+            dest.clone().into(),
+            img.into(),
+            (*phase).into(),
+        ];
+        let rc = crate::builder::script_command(
+            &stage_dir.join("runPh5_normal.sh"),
+            &script_args,
+            &[("MC_CANISTER_NEVR", nevr.as_str()), ("MC_POI_IMAGE", composer.tag.as_str())],
+            &[dest.clone()],
+            log,
+        )?
             .stdout(Stdio::from(logf))
             .stderr(Stdio::from(err))
             .status()

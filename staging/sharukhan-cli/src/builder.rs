@@ -417,6 +417,67 @@ pub fn container_make(image: &str, root: &Path, release: &Path, args: &[&str]) -
     c
 }
 
+/// `sh <script> <args>` with `envs`: on the host, or in the builder container
+/// like `make` (the script runs make itself), with `extra` directories outside
+/// the shared root (an ISO destination) bind-mounted at the same paths.
+pub fn script_command(
+    script: &Path,
+    args: &[OsString],
+    envs: &[(&str, &str)],
+    extra: &[PathBuf],
+    log: &mut dyn FnMut(&str),
+) -> Result<Command, String> {
+    match mode()? {
+        Mode::Host => {
+            let mut c = Command::new("sh");
+            c.arg(script).args(args);
+            for (k, v) in envs {
+                c.env(k, v);
+            }
+            Ok(c)
+        }
+        Mode::Container => {
+            let root = shared_root();
+            if !under(script, &root) {
+                return Err(format!(
+                    "{} is outside the builder's shared root {}",
+                    script.display(),
+                    root.display()
+                ));
+            }
+            check_shared(&root)?;
+            let image = ensure(log)?;
+            Ok(container_script(&image, &root, script, args, envs, extra))
+        }
+    }
+}
+
+pub fn container_script(
+    image: &str,
+    root: &Path,
+    script: &Path,
+    args: &[OsString],
+    envs: &[(&str, &str)],
+    extra: &[PathBuf],
+) -> Command {
+    let mut c = Command::new("docker");
+    c.args(["run", "--rm", "--privileged", "--network", "host"])
+        .args(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
+        .arg("--mount")
+        .arg(format!(
+            "type=bind,src={r},dst={r},bind-propagation=rshared",
+            r = root.display()
+        ));
+    for d in extra.iter().filter(|d| !under(d, root)) {
+        c.arg("-v").arg(format!("{0}:{0}", d.display()));
+    }
+    for (k, v) in envs {
+        c.arg("-e").arg(format!("{k}={v}"));
+    }
+    c.arg("-w").arg(root).arg(image).arg("sh").arg(script).args(args);
+    c
+}
+
 /// The directories a Python tool needs to see: the shared root, `cwd`, and
 /// for every absolute path argument outside the root its nearest existing
 /// directory. `/` itself is never mounted.
@@ -753,6 +814,24 @@ mod tests {
         assert!(j.contains("/var/run/docker.sock:/var/run/docker.sock"));
         assert!(j.contains("type=bind,src=/r,dst=/r,bind-propagation=rshared"));
         assert!(j.ends_with("-w /r/5.0 img:x make -j8 tini"), "{j}");
+    }
+
+    #[test]
+    fn a_container_script_gets_its_environment_and_its_destination() {
+        let c = container_script(
+            "img:x",
+            Path::new("/r"),
+            Path::new("/r/work/run.sh"),
+            &["/r/build-root".into(), "/mnt/c/iso".into()],
+            &[("MC_POI_IMAGE", "poi:1")],
+            &[PathBuf::from("/mnt/c/iso"), PathBuf::from("/r/inside")],
+        );
+        let j: Vec<String> = c.get_args().map(|s| s.to_string_lossy().to_string()).collect();
+        let j = j.join(" ");
+        assert!(j.contains("-v /mnt/c/iso:/mnt/c/iso"), "{j}");
+        assert!(!j.contains("/r/inside:/r/inside"), "{j}");
+        assert!(j.contains("-e MC_POI_IMAGE=poi:1"), "{j}");
+        assert!(j.ends_with("img:x sh /r/work/run.sh /r/build-root /mnt/c/iso"), "{j}");
     }
 
     #[test]
