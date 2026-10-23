@@ -769,9 +769,66 @@ pub fn restore_refs(results: &Path, run: i64, repo: &Path) -> Result<usize, Stri
     Ok(n)
 }
 
+/// The outcome of a drive as an event, so it reaches the same channels.
+fn announce(c: &Connection, run: i64, outcome: &str) -> Result<(), String> {
+    let kind = if outcome == "done" || outcome.starts_with("preview finished") {
+        "sync-done"
+    } else if outcome.starts_with("needs a decision") {
+        "sync-needs-decision"
+    } else if outcome.starts_with("waiting") {
+        "sync-awaiting-approval"
+    } else if outcome.starts_with("superseded") {
+        "sync-superseded"
+    } else if outcome.starts_with("paused") || outcome.starts_with("aborted") {
+        return Ok(());
+    } else {
+        "sync-failed"
+    };
+    crate::watch::record(c, kind, &format!("sync run {run}"), None, None, outcome).map(|_| ())
+}
+
+/// Seconds since an event's stamp, if it parses.
+fn age_s(at: &str) -> Option<i64> {
+    Some(crate::health::epoch(&now())? - crate::health::epoch(at)?)
+}
+
+/// `sync auto`: start a run when the fork's base moved and stayed quiet.
+pub fn auto(c: &Connection, fork: &str, repo: &Path, results: &Path, quiet_s: i64) -> Result<String, String> {
+    if let Ok((id, state)) = c.query_row(
+        "SELECT id, state FROM sync_run WHERE state IN ('running', 'paused', 'needs-decision', 'awaiting-approval') ORDER BY id DESC LIMIT 1",
+        [],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+    ) {
+        return Ok(format!("run {id} is {state}; nothing started"));
+    }
+    let subjects = [format!("{fork}:5.0"), format!("{fork}:common")];
+    let moves: Vec<(i64, String)> = c
+        .prepare("SELECT id, at FROM event WHERE kind = 'upstream-moved' AND subject IN (?1, ?2) AND state IN ('new','notified') ORDER BY id")
+        .and_then(|mut s| s.query_map(rusqlite::params![subjects[0], subjects[1]], |r| Ok((r.get(0)?, r.get(1)?))).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
+    let Some((_, last)) = moves.last() else { return Ok("the fork's bases did not move".into()) };
+    if let Some(a) = age_s(last) {
+        if a < quiet_s {
+            return Ok(format!("the fork moved {a}s ago; waiting for {quiet_s}s of quiet"));
+        }
+    }
+    if !in_host_namespace() {
+        return Err("sync auto builds and installs: run it in the host mount namespace".into());
+    }
+    let publish = std::env::var("MC_PUBLISH_DCASOTA").unwrap_or_else(|_| "auto".into());
+    let id = start(c, fork, repo, &["5.0", "common"], &publish, None)?;
+    for (e, _) in &moves {
+        c.execute("UPDATE event SET state = 'handled', handled_at = ?1 WHERE id = ?2", rusqlite::params![now(), e]).map_err(sql)?;
+    }
+    crate::watch::record(c, "sync-started", &format!("sync run {id}"), None, None, &format!("{} fork move(s)", moves.len()))?;
+    let out = drive(c, id, results, None)?;
+    announce(c, id, &out)?;
+    Ok(format!("run {id}: {out}"))
+}
+
 pub fn cli(args: &[String]) -> Option<u8> {
     let sub = args.first().map(String::as_str)?;
-    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline") {
+    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto") {
         return None;
     }
     let cfg = crate::config::Config::load();
@@ -807,13 +864,34 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 let against = args.iter().position(|a| a == "--against").and_then(|i| args.get(i + 1)).map(String::as_str);
                 let id = start(&c, fork, &repo, &["5.0", "common"], &publish, against)?;
                 println!("sync run {id} started");
-                drive(&c, id, &results, until)
+                let out = drive(&c, id, &results, until)?;
+                announce(&c, id, &out)?;
+                Ok(out)
             }
-            "resume" => drive(&c, num(1)?, &results, until),
+            "resume" => {
+                let id = num(1)?;
+                let out = drive(&c, id, &results, until)?;
+                announce(&c, id, &out)?;
+                Ok(out)
+            }
+            "auto" => {
+                let quiet: i64 = args
+                    .iter()
+                    .position(|a| a == "--quiet")
+                    .and_then(|i| args.get(i + 1))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(7200);
+                let r = auto(&c, "dcasota/photon", Path::new("/root/photon-mc/gate/photon.git"), &results, quiet)?;
+                let channels = crate::watch::parse_channels(std::env::var("MC_NOTIFY").ok().as_deref())?;
+                crate::watch::notify(&c, &channels)?;
+                Ok(r)
+            }
             "approve" => {
                 let id = num(1)?;
                 c.execute("UPDATE sync_run SET approved = 1 WHERE id = ?1", [id]).map_err(sql)?;
-                drive(&c, id, &results, until)
+                let out = drive(&c, id, &results, until)?;
+                announce(&c, id, &out)?;
+                Ok(out)
             }
             "abort" => {
                 let id = num(1)?;
@@ -928,6 +1006,17 @@ mod tests {
     fn porcelain_lines_keep_their_first_character() {
         let t = " M build-config.json\n?? common/data/x.json\nR  a.spec -> b.spec\n";
         assert_eq!(porcelain_paths(t), vec!["build-config.json", "common/data/x.json", "a.spec", "b.spec"]);
+    }
+
+    #[test]
+    fn auto_waits_for_a_fork_move_and_for_quiet() {
+        let c = db();
+        let r = Path::new("/nonexistent");
+        assert_eq!(auto(&c, "dcasota/photon", r, r, 7200).unwrap(), "the fork's bases did not move");
+        crate::watch::record(&c, "upstream-moved", "vmware/photon:5.0", None, None, "1 commit(s)").unwrap();
+        assert_eq!(auto(&c, "dcasota/photon", r, r, 7200).unwrap(), "the fork's bases did not move", "vmware moving is not a trigger");
+        crate::watch::record(&c, "upstream-moved", "dcasota/photon:5.0", None, None, "3 commit(s)").unwrap();
+        assert!(auto(&c, "dcasota/photon", r, r, 7200).unwrap().contains("waiting for 7200s of quiet"));
     }
 
     #[test]

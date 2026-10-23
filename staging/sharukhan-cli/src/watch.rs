@@ -67,6 +67,12 @@ pub const KINDS: &[&str] = &[
     "pr-reviewed",
     "watch-error",
     "watch-recovered",
+    "sync-started",
+    "sync-needs-decision",
+    "sync-awaiting-approval",
+    "sync-superseded",
+    "sync-failed",
+    "sync-done",
 ];
 
 /// What is watched: branch heads, and (reference, fork) pairs.
