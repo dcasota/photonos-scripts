@@ -569,6 +569,21 @@ pub fn for_variant(
 
 /// Point build.py at `tag`: `photon-build-param.poi-image` in the COMMON
 /// tree's build-config.json, where build.py reads it - then read it back.
+/// The packages the composer's installer adds to the media for STIG installs
+/// (`KS_STIG_PACKAGES` in its photon_installer/stigenable.py). isoBuilder
+/// extends the media's package list with them, so they must be built like the
+/// image's own lists: a PR that changes aide must not compose media with the
+/// stale aide left in the stage.
+pub fn composer_stig_set(image: &str) -> Result<Vec<String>, String> {
+    let py = in_image(
+        image,
+        "cat \"$(python3 -c 'import photon_installer, os; print(os.path.dirname(photon_installer.__file__))')/stigenable.py\"",
+        &[],
+    )?;
+    crate::oracle::parse_ks_stig_packages(&py)
+        .ok_or_else(|| format!("{image}: photon_installer/stigenable.py has no KS_STIG_PACKAGES list"))
+}
+
 pub fn point_build_config(common_tree: &Path, tag: &str) -> Result<Option<String>, String> {
     let cfg_path = common_tree.join("build-config.json");
     let text = fs::read_to_string(&cfg_path).map_err(|e| format!("{}: {e}", cfg_path.display()))?;

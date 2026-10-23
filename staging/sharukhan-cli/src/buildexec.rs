@@ -3168,12 +3168,22 @@ fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Ve
     if lists.is_empty() && c.spec.prebuild.is_empty() {
         return Ok(Vec::new());
     }
+    // The composer adds its installer's STIG set to the media's package list,
+    // so those packages are roots too (aide reaches the media only that way).
+    let mut roots = c.spec.prebuild.clone();
+    if let (Some(image), false) = (c.spec.poi_image.as_deref(), lists.is_empty()) {
+        for p in crate::poiimage::composer_stig_set(image)? {
+            if !roots.contains(&p) {
+                roots.push(p);
+            }
+        }
+    }
     let inputs = crate::specdata::Inputs::from_trees(&common, release.join("build-config.json"));
     let unbuilt = crate::specdata::unbuilt_runtime_deps(
         &inputs,
         &release.join("SPECS"),
         &stage.join("RPMS"),
-        &c.spec.prebuild,
+        &roots,
         &lists,
         &stage.join("sharukhan-runtime-deps"),
     )

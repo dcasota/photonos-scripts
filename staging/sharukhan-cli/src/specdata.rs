@@ -60,6 +60,8 @@ print("SPECCHECK-OK %d" % len(files))
 /// SpecData's own resolution, descending only through packages whose RPMs are
 /// all present (an unbuilt one is the builder's to build, with its
 /// dependencies), and names every spec reached that way whose RPMs are not.
+/// The extra roots (the kernel profile's pre-build, the composer's STIG set)
+/// are in no package list the builder builds, so an unbuilt one is named too.
 const DEPS_DRIVER: &str = r#"
 import json, os, sys
 pb, common_specs, release_specs, cfg, logdir, rpmdir, roots_file = sys.argv[1:8]
@@ -82,7 +84,8 @@ constants.initialize()
 from SpecData import SPECS
 d = SPECS.getData()
 arch = constants.buildArch
-names = [l.strip() for l in open(roots_file) if l.strip()]
+extra = [l.strip() for l in open(roots_file) if l.strip()]
+names = list(extra)
 for f in lists:
     j = json.load(open(f))
     names += j["packages"] + j.get("packages_" + arch, [])
@@ -118,6 +121,10 @@ while todo:
     if (spec, ver) not in cache:
         cache[(spec, ver)] = built(spec, ver)
     if not cache[(spec, ver)]:
+        # An extra root is built by no package list, so nobody else would.
+        if pkg in extra and (spec, ver) not in reported:
+            reported.add((spec, ver))
+            print(f"UNBUILT {spec} {ver} {pkg}(root)")
         continue
     for dp, dv in requires(pkg, ver):
         ds = d.getSpecNameForVersion(dp, dv)
@@ -378,10 +385,11 @@ mod tests {
         assert!(parse_unbuilt("UNBUILT a b c d\nDEPS-OK 1\n").unwrap().is_empty());
     }
 
-    /// Against the real gate build root and 5.0: with only minimal's RPMs in
-    /// the stage, the requirements of the already-built minimal are named
-    /// (docker among them, the gate-70 failure); with no RPM at all minimal
-    /// is the builder's to build and nothing is named.
+    /// Against the real gate build root and 5.0: with no RPM at all, the extra
+    /// root itself is named, because no package list builds it (aide reaches
+    /// the media only through the installer's STIG set); with only minimal's
+    /// RPMs in the stage, the requirements of the already-built minimal are
+    /// named (docker among them, the gate-70 failure) and minimal is not.
     #[test]
     fn an_already_built_packages_unbuilt_requirement_is_named() {
         let root = Path::new("/root/photon-mc/gate/build-root");
@@ -415,12 +423,15 @@ mod tests {
         std::fs::create_dir_all(rpms.join(arch)).unwrap();
         let roots = vec!["minimal".to_string()];
         let logs = t.join("logs");
-        let none = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &roots, &[], &logs).unwrap();
-        assert!(none.is_empty(), "{none:?}");
+        let root_only = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &roots, &[], &logs).unwrap();
+        assert_eq!(root_only.len(), 1, "{root_only:?}");
+        assert_eq!(root_only[0].spec, "minimal");
+        assert_eq!(root_only[0].needed_by, "minimal(root)");
         std::fs::write(rpms.join(arch).join(format!("minimal-{v}-{r}{dist}.{arch}.rpm")), "").unwrap();
         let some = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &roots, &[], &logs).unwrap();
         let docker = some.iter().find(|u| u.spec == "docker").unwrap_or_else(|| panic!("{some:?}"));
         assert_eq!(docker.needed_by, format!("minimal-{v}-{r}{dist}"));
+        assert!(!some.iter().any(|u| u.spec == "minimal"), "{some:?}");
         let bad = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &["zz-no-such".into()], &[], &logs)
             .unwrap_err();
         assert!(bad.contains("zz-no-such is listed for the image but no spec builds it"), "{bad}");
