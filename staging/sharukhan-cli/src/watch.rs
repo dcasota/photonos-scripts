@@ -73,6 +73,7 @@ pub const KINDS: &[&str] = &[
     "sync-superseded",
     "sync-failed",
     "sync-done",
+    "sync-description-edited",
 ];
 
 /// What is watched: branch heads, and (reference, fork) pairs.

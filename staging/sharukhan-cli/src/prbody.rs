@@ -11,6 +11,15 @@
 //! a missing section, a stale Dependencies line, run-internal numbers or a
 //! session link. A body that fails the lint is not published automatically:
 //! it is escalation material.
+//!
+//! Paths and Releases are not what makes a description true; the change is.
+//! So the lint also compares the PR's own change before and after the rebase
+//! (`own_change`: the lines it adds and removes, with Release values and
+//! changelogs left out and old paths mapped through the base's moves). Only
+//! when the rebase moved the very same change is the carried text as true as
+//! it was. A change that differs (a conflict resolved, a commit upstream
+//! absorbed, a context line the PR also edits) makes the description a
+//! decision, whatever its paths say.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -35,6 +44,8 @@ pub struct Facts {
     pub old_tree: BTreeSet<String>,
     /// the PR number this one is stacked on
     pub parent: Option<u64>,
+    /// files whose own change differs after the rebase (empty: the same change)
+    pub change_differs: Vec<String>,
 }
 
 fn path_char(c: char) -> bool {
@@ -212,6 +223,12 @@ pub fn lint(body: &str, f: &Facts) -> Vec<String> {
     for t in stale {
         p.push(format!("`{t}` is gone from the head and its base since the sync"));
     }
+    if !f.change_differs.is_empty() {
+        p.push(format!(
+            "the PR's own change is not the same after the rebase ({}): the description may no longer be true",
+            f.change_differs.join(", ")
+        ));
+    }
     for (old, new) in &f.releases {
         if old != new && replace_token(body, old, "\u{0}", release_char).contains('\u{0}') {
             p.push(format!("Release {old} is named, but the PR now introduces {new}"));
@@ -274,10 +291,69 @@ fn show(repo: &Path, rev: &str, path: &str) -> String {
     git(repo, &["show", &format!("{rev}:{path}")]).unwrap_or_default()
 }
 
+pub type Change = BTreeMap<(String, char, String), i64>;
+
+/// Lines a revision pair adds (+) and removes (-), as a multiset per path.
+/// Spec Release values are masked and `%changelog` dropped, changelog .inc
+/// files are left out: those are what a sync renumbers, not what a PR changes.
+pub fn own_change(repo: &Path, base: &str, head: &str, moves: &BTreeMap<String, String>) -> Result<Change, String> {
+    let mut out = Change::new();
+    for p in git(repo, &["diff", "--no-renames", "--name-only", base, head])?.lines() {
+        let name = p.rsplit('/').next().unwrap_or(p);
+        if name.contains("changelog") && name.ends_with(".inc") {
+            continue;
+        }
+        let (mut a, mut b) = (show(repo, base, p), show(repo, head, p));
+        if p.ends_with(".spec") {
+            a = crate::sync::mask(&a);
+            b = crate::sync::mask(&b);
+        }
+        let key = moved(p, moves).unwrap_or_else(|| p.to_string());
+        let mut count: BTreeMap<&str, i64> = BTreeMap::new();
+        for l in b.lines() {
+            *count.entry(l).or_default() += 1;
+        }
+        for l in a.lines() {
+            *count.entry(l).or_default() -= 1;
+        }
+        for (l, n) in count.into_iter().filter(|(_, n)| *n != 0) {
+            let sign = if n > 0 { '+' } else { '-' };
+            *out.entry((key.clone(), sign, l.to_string())).or_default() += n.abs();
+        }
+    }
+    Ok(out)
+}
+
+/// Paths where two changes differ.
+pub fn differing_paths(old: &Change, new: &Change) -> Vec<String> {
+    let mut paths = BTreeSet::new();
+    for (k, v) in old {
+        if new.get(k) != Some(v) {
+            paths.insert(k.0.clone());
+        }
+    }
+    for (k, v) in new {
+        if old.get(k) != Some(v) {
+            paths.insert(k.0.clone());
+        }
+    }
+    paths.into_iter().collect()
+}
+
 /// The facts of one PR moved from `old_head` on `old_base` to `new_head` on
 /// `new_base`. For a stacked PR the bases are its root's: a Release the stack
 /// introduced is the PR's to name, whichever member wrote the entry.
-pub fn gather(repo: &Path, old_base: &str, new_base: &str, old_head: &str, new_head: &str, parent: Option<u64>) -> Result<Facts, String> {
+/// `own` is where the PR's own commits start, before and after the sync (its
+/// parent's old and new head when stacked); without it the root bases.
+pub fn gather(
+    repo: &Path,
+    old_base: &str,
+    new_base: &str,
+    old_head: &str,
+    new_head: &str,
+    parent: Option<u64>,
+    own: Option<(&str, &str)>,
+) -> Result<Facts, String> {
     let renames = crate::sync::base_renames(repo, old_base, new_base)?;
     let mut f = Facts { parent, ..Facts::default() };
     f.paths.extend(crate::sync::dir_moves(&renames));
@@ -315,6 +391,13 @@ pub fn gather(repo: &Path, old_base: &str, new_base: &str, old_head: &str, new_h
     for a in base_amb {
         f.base_releases.remove(&a);
     }
+    // the PR's own commits start where it branched, not at the base's tip
+    let (own_old, own_new) = own.unwrap_or((old_base, new_base));
+    let fork_old = git(repo, &["merge-base", own_old, old_head])?.trim().to_string();
+    let fork_new = git(repo, &["merge-base", own_new, new_head])?.trim().to_string();
+    let before = own_change(repo, &fork_old, old_head, &f.paths)?;
+    let after = own_change(repo, &fork_new, new_head, &BTreeMap::new())?;
+    f.change_differs = differing_paths(&before, &after);
     Ok(f)
 }
 
@@ -427,6 +510,26 @@ mod tests {
         assert_eq!(version_releases("Version: 253.19\nRelease: 17.2.3%{?dist}\n"), vec!["253.19-17.2.3"]);
         pair_releases("Version: 1\nRelease: 1\n", "Version: 1\nRelease: 2\nVersion: 2\nRelease: 1\n", &mut m, &mut amb);
         assert!(!m.contains_key("1-1"));
+    }
+
+    #[test]
+    fn a_differing_change_makes_the_description_a_decision() {
+        let mut f = facts();
+        f.change_differs = vec!["SPECS/92/linux/linux.spec".into()];
+        let body = good(false);
+        assert!(lint(&body, &f).iter().any(|l| l.contains("may no longer be true")));
+    }
+
+    #[test]
+    fn changes_compare_as_line_multisets() {
+        let mut a = Change::new();
+        a.insert(("x".into(), '+', "l".into()), 1);
+        let mut b = a.clone();
+        assert!(differing_paths(&a, &b).is_empty());
+        b.insert(("y".into(), '-', "m".into()), 1);
+        assert_eq!(differing_paths(&a, &b), vec!["y".to_string()]);
+        *b.get_mut(&("x".to_string(), '+', "l".to_string())).unwrap() = 2;
+        assert_eq!(differing_paths(&a, &b), vec!["x".to_string(), "y".to_string()]);
     }
 
     #[test]

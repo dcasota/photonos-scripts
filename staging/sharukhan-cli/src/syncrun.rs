@@ -619,13 +619,32 @@ fn carried_body(ctx: &Ctx, n: i64, root: &str, parent: Option<i64>, old_head: &s
     }
     let current = String::from_utf8_lossy(&o.stdout).trim_end().to_string() + "\n";
     let (old_base, _) = &ctx.bases[root];
-    let facts = crate::prbody::gather(&ctx.repo, old_base, &format!("refs/sync/base/{root}"), old_head, new_head, parent.map(|p| p as u64))?;
+    // a stacked PR's own commits start at its parent's head, before and after
+    let own: Option<(String, String)> = match parent {
+        None => None,
+        Some(p) => ctx
+            .c
+            .query_row("SELECT gh_head, coalesce(new_head, gh_head) FROM sync_pr WHERE run_id = ?1 AND number = ?2", rusqlite::params![ctx.run, p], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .ok(),
+    };
+    let facts = crate::prbody::gather(
+        &ctx.repo,
+        old_base,
+        &format!("refs/sync/base/{root}"),
+        old_head,
+        new_head,
+        parent.map(|p| p as u64),
+        own.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+    )?;
     let carried = crate::prbody::rewrite(&current, &facts);
     let problems = crate::prbody::lint(&carried, &facts);
     Ok((current, carried, problems))
 }
 
 fn put_body(ctx: &Ctx, n: i64, file: &Path, want: &str) -> Result<(), String> {
+    let before = fs::read_to_string(file.with_extension("orig")).unwrap_or_default();
     let o = Command::new("gh")
         .args(["pr", "edit", &n.to_string(), "-R", &ctx.fork, "--body-file"])
         .arg(file)
@@ -639,6 +658,19 @@ fn put_body(ctx: &Ctx, n: i64, file: &Path, want: &str) -> Result<(), String> {
     if got.trim_end() != want.trim_end() {
         return Err(format!("#{n}: GitHub shows a different description after the edit"));
     }
+    let lines = before.lines().zip(want.lines()).filter(|(a, b)| a != b).count() + before.lines().count().abs_diff(want.lines().count());
+    crate::watch::record(
+        ctx.c,
+        "sync-description-edited",
+        &format!("{}#{n}", ctx.fork),
+        None,
+        None,
+        &format!(
+            "sync run {} carried the description ({lines} line(s): moved paths, Releases; the PR's own change is the same); \
+             previous text in PUBLISH/{n}.orig, `sharukhan sync body --restore {} {n}` puts it back",
+            ctx.run, ctx.run
+        ),
+    )?;
     Ok(())
 }
 
@@ -670,6 +702,10 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
         let (current, carried, problems) = carried_body(ctx, *n, root, *parent, lease, new)?;
         let file = bodies.join(format!("{n}.body"));
         fs::write(&file, &carried).map_err(|e| format!("{}: {e}", file.display()))?;
+        let orig = bodies.join(format!("{n}.orig"));
+        if !orig.exists() {
+            fs::write(&orig, &current).map_err(|e| format!("{}: {e}", orig.display()))?;
+        }
         let changed = carried != current;
         let note = match (problems.is_empty(), changed) {
             (true, true) => "description carried (changed)".to_string(),
@@ -964,9 +1000,22 @@ pub fn cli(args: &[String]) -> Option<u8> {
         let until = until_arg.as_deref();
         let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(String::as_str);
         match sub {
+            "body" if args.get(1).map(String::as_str) == Some("--restore") => {
+                // put back the description a sync replaced
+                let id = num(2)?;
+                let n = num(3)?;
+                let fork: String = c.query_row("SELECT fork FROM sync_run WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
+                let orig = results.join("sync").join(id.to_string()).join("PUBLISH").join(format!("{n}.orig"));
+                let text = fs::read_to_string(&orig).map_err(|e| format!("{}: {e}", orig.display()))?;
+                let o = Command::new("gh").args(["pr", "edit", &n.to_string(), "-R", &fork, "--body-file"]).arg(&orig).output().map_err(|e| format!("gh: {e}"))?;
+                if !o.status.success() {
+                    return Err(format!("gh pr edit {n}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+                }
+                Ok(format!("#{n}: description of before run {id} restored ({} lines)", text.lines().count()))
+            }
             "body" => {
                 // a description carried to a candidate head, without publishing
-                let usage = "sync body --pr <n> --old-base <rev> --new-base <rev> --new-head <rev> [--parent <n>] [--out <file>]";
+                let usage = "sync body --pr <n> --old-base <rev> --new-base <rev> --new-head <rev> [--parent <n> --own-old <rev> --own-new <rev>] [--out <file>]\n       sync body --restore <run> <n>";
                 let repo = Path::new(flag("--repo").unwrap_or("/root/photon-mc/gate/photon.git"));
                 let n: u64 = flag("--pr").and_then(|v| v.parse().ok()).ok_or(usage)?;
                 let pr = crate::sync::open_prs("dcasota/photon")?.into_iter().find(|p| p.number == n).ok_or("no such open PR")?;
@@ -978,6 +1027,7 @@ pub fn cli(args: &[String]) -> Option<u8> {
                     &pr.gh_head,
                     flag("--new-head").ok_or(usage)?,
                     parent,
+                    flag("--own-old").zip(flag("--own-new")),
                 )?;
                 let o = Command::new("gh").args(["pr", "view", &n.to_string(), "-R", "dcasota/photon", "--json", "body", "--jq", ".body"]).output().map_err(|e| format!("gh: {e}"))?;
                 let body = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
@@ -1011,7 +1061,7 @@ pub fn cli(args: &[String]) -> Option<u8> {
                     };
                     let parent_n = parent.as_ref().and_then(|b| prs.iter().find(|p| &p.head_ref == b)).map(|p| p.number);
                     let base = git(repo, &["rev-parse", &format!("refs/heads/{root}")])?;
-                    let facts = crate::prbody::gather(repo, &base, &base, &pr.gh_head, &pr.gh_head, parent_n)?;
+                    let facts = crate::prbody::gather(repo, &base, &base, &pr.gh_head, &pr.gh_head, parent_n, None)?;
                     let o = Command::new("gh")
                         .args(["pr", "view", &pr.number.to_string(), "-R", fork, "--json", "body", "--jq", ".body"])
                         .output()
