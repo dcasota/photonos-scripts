@@ -78,6 +78,7 @@ pub fn automation(memory_db: &Path, watch_interval_s: i64) -> Vec<Item> {
 
     // host units the automation relies on
     v.push(unit("sharukhan-watch.service", "records upstream moves and PR changes"));
+    v.push(unit("sharukhan-sync.timer", "starts a sync when the fork's base moved"));
     let builder = crate::builder::mode().unwrap_or(crate::builder::Mode::Host);
     if builder == crate::builder::Mode::Container {
         v.push(unit("photon-mc-gate-shared.service", "makes the builder's mounts reach the host"));
@@ -110,6 +111,18 @@ pub fn automation(memory_db: &Path, watch_interval_s: i64) -> Vec<Item> {
                     format!("{}s ago, more than twice the {watch_interval_s}s interval: the watcher is not cycling", n - t),
                 ),
                 _ => item("watch heartbeat", Level::Warn, "none recorded yet"),
+            });
+            let active: Option<(i64, String, String)> = c
+                .query_row(
+                    "SELECT id, state, coalesce(detail,'') FROM sync_run WHERE state IN ('running','paused','needs-decision','awaiting-approval') ORDER BY id DESC LIMIT 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok();
+            v.push(match active {
+                None => item("sync run", Level::Ok, "none active"),
+                Some((id, st, d)) if st == "running" => item("sync run", Level::Ok, format!("run {id} running: {d}")),
+                Some((id, st, d)) => item("sync run", Level::Warn, format!("run {id} {st}: {d}")),
             });
             let open: Vec<String> = c
                 .prepare("SELECT kind || ' ' || subject FROM event WHERE state IN ('new','notified') ORDER BY id")
