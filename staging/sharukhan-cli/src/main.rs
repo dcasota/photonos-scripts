@@ -47,6 +47,7 @@ mod specdata;
 mod specparity;
 mod specresolve;
 mod subvault;
+mod sync;
 mod verify;
 mod vm;
 mod vmware;
@@ -575,6 +576,9 @@ fn main() -> ExitCode {
     }
     if argv.first().map(String::as_str) == Some("builder") {
         return ExitCode::from(builder::cli(&argv[1..]));
+    }
+    if argv.first().map(String::as_str) == Some("sync") {
+        return ExitCode::from(sync::cli(&argv[1..]));
     }
     if let Some(c @ ("watch" | "events")) = argv.first().map(String::as_str) {
         return ExitCode::from(watch::cli(c, &argv[1..]));

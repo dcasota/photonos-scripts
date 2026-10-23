@@ -510,9 +510,16 @@ pub fn python_mounts(root: &Path, cwd: &Path, args: &[OsString]) -> Result<Vec<P
 /// `python3 <args>` in `cwd`: on the host or in the builder container, with no
 /// network and only the directories the call names.
 pub fn python_command(cwd: &Path, args: &[OsString], log: &mut dyn FnMut(&str)) -> Result<Command, String> {
+    tool_command("python3", cwd, args, log)
+}
+
+/// Any tool of the builder (`python3`, `rpmspec`, ...) in `cwd`: on the host,
+/// or in the builder container with no network and only the directories the
+/// call names mounted.
+pub fn tool_command(prog: &str, cwd: &Path, args: &[OsString], log: &mut dyn FnMut(&str)) -> Result<Command, String> {
     match mode()? {
         Mode::Host => {
-            let mut c = Command::new("python3");
+            let mut c = Command::new(prog);
             c.args(args).current_dir(cwd);
             Ok(c)
         }
@@ -524,7 +531,7 @@ pub fn python_command(cwd: &Path, args: &[OsString], log: &mut dyn FnMut(&str)) 
             for d in python_mounts(&root, cwd, args)? {
                 c.arg("-v").arg(format!("{0}:{0}", d.display()));
             }
-            c.arg("-w").arg(cwd).arg(image).arg("python3").args(args);
+            c.arg("-w").arg(cwd).arg(image).arg(prog).args(args);
             Ok(c)
         }
     }
