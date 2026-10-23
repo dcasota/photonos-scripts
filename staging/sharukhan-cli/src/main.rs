@@ -8,6 +8,7 @@ mod b64;
 mod branchguard;
 mod build;
 mod buildexec;
+mod builder;
 mod buildmode;
 mod canister;
 mod card;
@@ -570,6 +571,9 @@ fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.first().map(String::as_str) == Some("wrapper") {
         return ExitCode::from(wrapper::cli::main(&argv[1..]));
+    }
+    if argv.first().map(String::as_str) == Some("builder") {
+        return ExitCode::from(builder::cli(&argv[1..]));
     }
     let args = match parse() {
         Ok(a) => a,

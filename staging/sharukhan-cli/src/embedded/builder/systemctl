@@ -1,0 +1,11 @@
+#!/bin/bash
+# The builder container has no init. build.py runs `systemctl start docker` before it talks
+# to docker; here the host's daemon is reached through the mounted socket, so "started"
+# means "answers". Every other systemctl call is refused, not faked.
+if [ "$#" -eq 2 ] && [ "$1" = start ] && [ "$2" = docker ]; then
+  docker version >/dev/null 2>&1 && exit 0
+  echo "systemctl (builder): the host docker daemon does not answer on /var/run/docker.sock" >&2
+  exit 1
+fi
+echo "systemctl (builder): not available in the builder container: systemctl $*" >&2
+exit 1

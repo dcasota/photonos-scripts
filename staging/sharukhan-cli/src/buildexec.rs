@@ -324,11 +324,13 @@ fn kernel_spec_check(c: &Ctx, tree: &Path, which: &[&str]) -> Result<(bool, Vec<
     let common = c.spec.tree(Tree::Common);
     let sub = crate::specresolve::tree_subrelease(tree).unwrap_or(92);
     let specs = tree.join("SPECS/linux");
-    let out = Command::new("python3")
-        .arg(common.join("support/spec-checker/check_spec.py"))
-        .args(["--subrelease", &sub.to_string()])
-        .args(which.iter().map(|w| specs.join(w)))
-        .current_dir(&common)
+    let mut args: Vec<std::ffi::OsString> = vec![
+        common.join("support/spec-checker/check_spec.py").into(),
+        "--subrelease".into(),
+        sub.to_string().into(),
+    ];
+    args.extend(which.iter().map(|w| specs.join(w).into_os_string()));
+    let out = crate::builder::python_command(&common, &args, &mut |l| eprintln!("{l}"))?
         .output()
         .map_err(|e| format!("running the spec checker: {e}"))?;
     let text = format!(
@@ -3045,9 +3047,7 @@ restored from the kernel store or left by an earlier phase A",
             ));
             let mut prc = 0;
             for p in &prebuild {
-                prc = Command::new("sudo")
-                    .args(["make", &jflag, p.as_str(), &threads])
-                    .current_dir(&release)
+                prc = crate::builder::make_command(&release, &[&jflag, p.as_str(), &threads], &mut |l| c.say(l))?
                     .status()
                     .map_err(|e| format!("running the pre-build of {p}: {e}"))?
                     .code()
@@ -3080,14 +3080,13 @@ restored from the kernel store or left by an earlier phase A",
         }
         args.push(&threads);
         c.say(&format!(
-            "  attempt {attempt}/{MAKE_ATTEMPTS}: sudo {} (cwd {})",
+            "  attempt {attempt}/{MAKE_ATTEMPTS}: {} (cwd {}, builder {:?})",
             args.join(" "),
-            release.display()
+            release.display(),
+            crate::builder::mode()?
         ));
         let t0 = std::time::SystemTime::now();
-        let rc = Command::new("sudo")
-            .args(&args)
-            .current_dir(&release)
+        let rc = crate::builder::make_command(&release, &args[1..], &mut |l| c.say(l))?
             .status()
             .map_err(|e| format!("running make: {e}"))?
             .code()
@@ -3261,9 +3260,7 @@ it passes only with a {p} RPM newer than the start marker"
                 release.display()
             ));
             let t0 = std::time::SystemTime::now();
-            let rc = Command::new("sudo")
-                .args(["make", jflag, p.as_str(), threads])
-                .current_dir(release)
+            let rc = crate::builder::make_command(release, &[jflag, p.as_str(), threads], &mut |l| c.say(l))?
                 .status()
                 .map_err(|e| format!("running make {p}: {e}"))?
                 .code()

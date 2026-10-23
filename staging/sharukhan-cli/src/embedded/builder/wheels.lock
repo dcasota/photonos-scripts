@@ -1,0 +1,11 @@
+# requirement sha256 file - the Python modules of the builder image, pinned by hash
+boolean.py==4.0 2876f2051d7d6394a531d82dc6eb407faa0b01a0a0b3083817ccd7323b8d96bd boolean.py-4.0-py3-none-any.whl
+certifi==2024.12.14 1275f7a45be9464efc1173084eaa30f866fe2e47d389406136d332ed4967ec56 certifi-2024.12.14-py3-none-any.whl
+charset_normalizer==3.4.1 d98b1668f06378c6dbefec3b92299716b931cd4e6061f3c875a71ced1780ab85 charset_normalizer-3.4.1-py3-none-any.whl
+docker==7.1.0 c96b93b7f0a746f9e77d325bcfb87422a3d8bd4f03136ae8a85b37f1898d5fc0 docker-7.1.0-py3-none-any.whl
+idna==3.10 946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3 idna-3.10-py3-none-any.whl
+license_expression==30.4.4 421788fdcadb41f049d2dc934ce666626265aeccefddd25e162a26f23bcbf8a4 license_expression-30.4.4-py3-none-any.whl
+packaging==26.0 b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529 packaging-26.0-py3-none-any.whl
+pyyaml==6.0.3 c458b6d084f9b935061bc36216e8a69a7e293a2f1e68bf956dcd9e6cbcd143f5 pyyaml-6.0.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+requests==2.32.5 2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6 requests-2.32.5-py3-none-any.whl
+urllib3==2.6.3 bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4 urllib3-2.6.3-py3-none-any.whl

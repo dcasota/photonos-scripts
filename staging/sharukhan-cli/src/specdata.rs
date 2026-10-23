@@ -15,6 +15,7 @@
 //! `SPECS.getData()` parses every spec and resolves every requirement; any
 //! exception it raises is the build's own error, returned verbatim.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -185,18 +186,19 @@ pub fn unbuilt_runtime_deps(
     let roots_file = log_dir.join("runtime-roots.txt");
     let text: String = roots.iter().map(|r| format!("{r}\n")).collect();
     std::fs::write(&roots_file, text).map_err(|e| format!("{}: {e}", roots_file.display()))?;
-    let out = Command::new("python3")
-        .arg("-c")
-        .arg(DEPS_DRIVER)
-        .arg(&inputs.package_builder)
-        .arg(&inputs.common_specs)
-        .arg(release_specs)
-        .arg(&inputs.build_config)
-        .arg(log_dir)
-        .arg(rpm_dir)
-        .arg(&roots_file)
-        .args(lists)
-        .current_dir(&inputs.package_builder)
+    let mut args: Vec<OsString> = vec![
+        "-c".into(),
+        DEPS_DRIVER.into(),
+        inputs.package_builder.clone().into(),
+        inputs.common_specs.clone().into(),
+        release_specs.into(),
+        inputs.build_config.clone().into(),
+        log_dir.into(),
+        rpm_dir.into(),
+        roots_file.clone().into(),
+    ];
+    args.extend(lists.iter().map(|l| l.clone().into_os_string()));
+    let out = crate::builder::python_command(&inputs.package_builder, &args, &mut |l| eprintln!("{l}"))?
         .output()
         .map_err(|e| format!("running python3: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -275,17 +277,18 @@ pub fn check(
         .map(|p| format!("{}\n", p.display()))
         .collect();
     std::fs::write(&list, text).map_err(|e| format!("{}: {e}", list.display()))?;
-    let out = Command::new("python3")
-        .arg("-c")
-        .arg(DRIVER)
-        .arg(&inputs.package_builder)
-        .arg(&inputs.common_specs)
-        .arg(release_specs)
-        .arg(&inputs.build_config)
-        .arg(log_dir)
-        .arg(&list)
-        // SpecData resolves some paths relative to its own directory
-        .current_dir(&inputs.package_builder)
+    let args: Vec<OsString> = vec![
+        "-c".into(),
+        DRIVER.into(),
+        inputs.package_builder.clone().into(),
+        inputs.common_specs.clone().into(),
+        release_specs.into(),
+        inputs.build_config.clone().into(),
+        log_dir.into(),
+        list.clone().into(),
+    ];
+    // SpecData resolves some paths relative to its own directory
+    let out = crate::builder::python_command(&inputs.package_builder, &args, &mut |l| eprintln!("{l}"))?
         .output()
         .map_err(|e| format!("running python3: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
