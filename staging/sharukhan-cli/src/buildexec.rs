@@ -3170,9 +3170,20 @@ fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Ve
     }
     // The composer adds its installer's STIG set to the media's package list,
     // so those packages are roots too (aide reaches the media only that way).
+    // The composer is the image poi.py will run: the common tree's poi-image,
+    // which preflight pointed at the variant's composer, else poi.py's default.
     let mut roots = c.spec.prebuild.clone();
-    if let (Some(image), false) = (c.spec.poi_image.as_deref(), lists.is_empty()) {
-        for p in crate::poiimage::composer_stig_set(image)? {
+    if !lists.is_empty() {
+        let cfg = common.join("build-config.json");
+        let image = fs::read_to_string(&cfg)
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v["photon-build-param"]["poi-image"].as_str().map(str::to_string))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "photon/installer".to_string());
+        let stig = crate::poiimage::composer_stig_set(&image)?;
+        c.say(&format!("  the composer {image} adds its STIG set to the media: {}", stig.join(" ")));
+        for p in stig {
             if !roots.contains(&p) {
                 roots.push(p);
             }
