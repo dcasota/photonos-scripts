@@ -276,10 +276,17 @@ fn merge3(base: &str, ours: &str, theirs: &str) -> Result<String, ()> {
 /// The new content of a spec the PR changed: merged with Release and changelog
 /// masked, Release = base + 1, the PR's top entry redated and renumbered on
 /// top of the base's changelog.
-pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, date: &str) -> Result<(String, String), String> {
+pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, date: &str, stacked: bool) -> Result<(String, String), String> {
     let merged = merge3(&mask(prev), &mask(cur), &mask(pr)).map_err(|_| "conflict beyond Release and %changelog".to_string())?;
     let base_rel = release_value(base).ok_or("no Release in the base")?;
-    let next = next_release(&base_rel).ok_or_else(|| format!("cannot increment Release {base_rel}"))?;
+    // A stacked PR amends its parent's entry: same Release, its line replaces
+    // the parent's, so the stack still adds exactly one entry.
+    let parent_entry = stacked && changelog_body(base).lines().next().is_some_and(|l| l.starts_with("* ") && l.contains(AUTHOR));
+    let next = if parent_entry {
+        base_rel.clone()
+    } else {
+        next_release(&base_rel).ok_or_else(|| format!("cannot increment Release {base_rel}"))?
+    };
     let version = merged
         .lines()
         .find_map(|l| l.strip_prefix("Version:").map(|v| v.trim().to_string()))
@@ -288,12 +295,17 @@ pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, d
     if entry.len() < 2 || !entry[0].starts_with("* ") || !entry[0].contains(AUTHOR) {
         return Err(format!("the top changelog entry of the PR is not its own: {}", entry.first().unwrap_or(&"")));
     }
-    let out = format!(
-        "{}* {date} {AUTHOR} {version}-{next}\n{}\n{}",
-        merged.replace(REL_MASK, &next),
-        entry[1],
-        changelog_body(base)
-    );
+    let rest: String = if parent_entry {
+        // drop the parent's entry: its header and its lines up to the next entry
+        let body = changelog_body(base);
+        let mut lines = body.lines();
+        lines.next();
+        let tail: Vec<&str> = lines.skip_while(|l| !l.starts_with("* ")).collect();
+        if tail.is_empty() { String::new() } else { tail.join("\n") + "\n" }
+    } else {
+        changelog_body(base).to_string()
+    };
+    let out = format!("{}* {date} {AUTHOR} {version}-{next}\n{}\n{}", merged.replace(REL_MASK, &next), entry[1], rest);
     Ok((out, format!("{version}-{next}")))
 }
 
@@ -307,6 +319,41 @@ pub fn base_renames(repo: &Path, old: &str, new: &str) -> Result<BTreeMap<String
             (f.len() == 3).then(|| (f[1].to_string(), f[2].to_string()))
         })
         .collect())
+}
+
+/// Directories the base moved as a whole: every file it renamed out of `a/`
+/// went to the same `b/`. A file a PR adds in `a/` belongs in `b/`.
+pub fn dir_moves(renames: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut seen: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for (old, new) in renames {
+        let (Some(od), Some(nd)) = (Path::new(old).parent(), Path::new(new).parent()) else { continue };
+        if Path::new(old).file_name() != Path::new(new).file_name() || od == nd {
+            continue;
+        }
+        let (od, nd) = (od.to_string_lossy().to_string(), nd.to_string_lossy().to_string());
+        let e = seen.entry(od).or_insert_with(|| Some(nd.clone()));
+        if e.as_deref() != Some(nd.as_str()) {
+            *e = None; // split across targets: not a directory move
+        }
+    }
+    seen.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))).collect()
+}
+
+/// Where a PR path lands on the new base: its own rename, else the move of its
+/// directory (deepest first), else unchanged.
+pub fn map_path(path: &str, renames: &BTreeMap<String, String>, dirs: &BTreeMap<String, String>) -> String {
+    if let Some(n) = renames.get(path) {
+        return n.clone();
+    }
+    let mut d = Path::new(path).parent();
+    while let Some(dir) = d {
+        let key = dir.to_string_lossy().to_string();
+        if let Some(to) = dirs.get(&key) {
+            return format!("{to}{}", &path[key.len()..]);
+        }
+        d = dir.parent();
+    }
+    path.to_string()
 }
 
 pub struct RebaseResult {
@@ -326,11 +373,12 @@ pub fn rebase(
     new_base: &str,
     date: &str,
     work: &Path,
+    stacked: bool,
 ) -> Result<RebaseResult, String> {
     let renames = base_renames(repo, old_base, new_base)?;
     let _ = git_in(repo, &["worktree", "remove", "--force", &work.to_string_lossy()]);
     git_in(repo, &["worktree", "add", "--detach", &work.to_string_lossy(), new_base])?;
-    let r = replay(repo, work, src, own_base, new_base, date, &renames);
+    let r = replay(repo, work, src, own_base, new_base, date, &renames, stacked);
     let _ = git_in(repo, &["worktree", "remove", "--force", &work.to_string_lossy()]);
     r
 }
@@ -343,11 +391,13 @@ fn replay(
     new_base: &str,
     date: &str,
     renames: &BTreeMap<String, String>,
+    stacked: bool,
 ) -> Result<RebaseResult, String> {
     let commits: Vec<String> = git_in(repo, &["rev-list", "--reverse", &format!("{own_base}..{src}")])?
         .lines()
         .map(str::to_string)
         .collect();
+    let dirs = dir_moves(renames);
     let mut res = RebaseResult { head: String::new(), commits: vec![], dropped: vec![], releases: BTreeMap::new() };
     for c in &commits {
         let changes = git_in(repo, &["diff-tree", "--no-commit-id", "-r", "--name-status", "--no-renames", &format!("{c}^"), c])?;
@@ -357,7 +407,7 @@ fn replay(
                 continue;
             }
             let (kind, path) = (f[0], f[1]);
-            let target = renames.get(path).cloned().unwrap_or_else(|| path.to_string());
+            let target = map_path(path, renames, &dirs);
             let abs = w.join(&target);
             let prev = show(repo, &format!("{c}^"), path);
             let pr = show(repo, c, path);
@@ -388,7 +438,7 @@ fn replay(
                     let out = if target.ends_with(".spec") {
                         let base_spec = show(repo, new_base, &target).ok_or_else(|| format!("{target}: not in the base"))?;
                         let pr_head = show(repo, src, path).unwrap_or_else(|| pr.clone());
-                        let (text, vr) = rebase_spec(&prev, &cur, &pr, &pr_head, &base_spec, date)
+                        let (text, vr) = rebase_spec(&prev, &cur, &pr, &pr_head, &base_spec, date, stacked)
                             .map_err(|e| format!("{target}: {e}"))?;
                         res.releases.insert(target.clone(), vr);
                         text
@@ -684,7 +734,7 @@ fn today() -> String {
 
 const USAGE: &str = "usage:
   sharukhan sync analyze --repo <git dir> --fork <owner/repo> --base <name>=<old>..<new> [--base ...]
-  sharukhan sync rebase  --repo <git dir> --src <ref> --own-base <rev> --old-base <rev> --new-base <rev> --branch <name> [--date 'Wed Oct 21 2026']
+  sharukhan sync rebase  --repo <git dir> --src <ref> --own-base <rev> --old-base <rev> --new-base <rev> --branch <name> [--stacked] [--date 'Wed Oct 21 2026']
   sharukhan sync verify  --repo <git dir> --base <rev> --common <common tree> <ref>...";
 
 pub fn cli(args: &[String]) -> u8 {
@@ -735,7 +785,8 @@ pub fn cli(args: &[String]) -> u8 {
                 let branch = need("--branch")?;
                 let work = repo.join(format!(".sharukhan-sync-{}", branch.replace('/', "-")));
                 let date = opt(rest, "--date").map(str::to_string).unwrap_or_else(today);
-                let r = rebase(&repo, need("--src")?, need("--own-base")?, need("--old-base")?, need("--new-base")?, &date, &work);
+                let stacked = rest.iter().any(|a| a == "--stacked");
+                let r = rebase(&repo, need("--src")?, need("--own-base")?, need("--old-base")?, need("--new-base")?, &date, &work, stacked);
                 match r {
                     Ok(res) => {
                         git_in(&repo, &["update-ref", &format!("refs/heads/{branch}"), &res.head])?;
@@ -839,17 +890,50 @@ mod tests {
         );
         // upstream moved to 1.1-1 meanwhile
         let base = head("1", "1.1", "", "* Thu Oct 22 2026 X Y <x@y> 1.1-1\n- Update to 1.1\n* Mon Oct 19 2026 X Y <x@y> 1.0-3\n- Old\n");
-        let (out, vr) = rebase_spec(&prev, &base, &pr, &pr, &base, "Fri Oct 23 2026").unwrap();
+        let (out, vr) = rebase_spec(&prev, &base, &pr, &pr, &base, "Fri Oct 23 2026", false).unwrap();
         assert_eq!(vr, "1.1-2");
         assert!(out.contains("Version: 1.1\nRelease: 2%{?dist}\nPatch9: fix.patch\n"), "{out}");
         assert!(out.contains("%changelog\n* Fri Oct 23 2026 Daniel Casota <dcasota@gmail.com> 1.1-2\n- Fix the thing\n* Thu Oct 22 2026 X Y <x@y> 1.1-1\n"), "{out}");
         assert_eq!(out.matches("Daniel Casota").count(), 1);
         // a PR whose top entry is not its own is refused
         let foreign = head("4", "1.0", "Patch9: fix.patch", "* Tue Oct 20 2026 X Y <x@y> 1.0-4\n- Not mine\n");
-        assert!(rebase_spec(&prev, &base, &foreign, &foreign, &base, "Fri Oct 23 2026").unwrap_err().contains("not its own"));
+        assert!(rebase_spec(&prev, &base, &foreign, &foreign, &base, "Fri Oct 23 2026", false).unwrap_err().contains("not its own"));
         // a real conflict is refused, not resolved
         let other = head("1", "1.1", "Patch9: other.patch", "");
-        assert!(rebase_spec(&prev, &other, &pr, &pr, &base, "Fri Oct 23 2026").unwrap_err().contains("conflict"));
+        assert!(rebase_spec(&prev, &other, &pr, &pr, &base, "Fri Oct 23 2026", false).unwrap_err().contains("conflict"));
+    }
+
+    #[test]
+    fn a_stacked_pr_amends_its_parents_entry_instead_of_adding_one() {
+        let spec = |rel: &str, extra: &str, cl: &str| format!("Name: p\nVersion: 2.0\nRelease: {rel}%{{?dist}}\n{extra}\n%changelog\n{cl}");
+        let up = "* Thu Oct 22 2026 X Y <x@y> 2.0-1\n- Update\n";
+        // the rebased parent: one entry of ours on top of upstream
+        let parent = spec("2", "Patch1: a.patch", &format!("* Fri Oct 23 2026 Daniel Casota <dcasota@gmail.com> 2.0-2\n- Do A\n{up}"));
+        // the child before the rebase: on the old parent, its line replaced the parent's
+        let prev = spec("2", "Patch1: a.patch", "* Mon Oct 19 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Do A\n");
+        let pr = spec("2", "Patch1: a.patch\nPatch2: b.patch", "* Tue Oct 20 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Do A and B\n");
+        let (out, vr) = rebase_spec(&prev, &parent, &pr, &pr, &parent, "Fri Oct 23 2026", true).unwrap();
+        assert_eq!(vr, "2.0-2", "the stack keeps the parent's Release");
+        assert_eq!(out.matches("Daniel Casota").count(), 1, "{out}");
+        assert!(out.contains("2.0-2\n- Do A and B\n* Thu Oct 22 2026 X Y <x@y> 2.0-1"), "{out}");
+        // a root PR on a base whose top entry happens to be ours still adds one
+        let (_, vr2) = rebase_spec(&prev, &parent, &pr, &pr, &parent, "Fri Oct 23 2026", false).unwrap();
+        assert_eq!(vr2, "2.0-3");
+    }
+
+    #[test]
+    fn files_added_in_a_moved_directory_follow_the_move() {
+        let mut r = BTreeMap::new();
+        r.insert("SPECS/linux/linux.spec".to_string(), "SPECS/92/linux/linux.spec".to_string());
+        r.insert("SPECS/linux/patches/a.patch".to_string(), "SPECS/92/linux/patches/a.patch".to_string());
+        r.insert("SPECS/x/one".to_string(), "SPECS/y/one".to_string());
+        r.insert("SPECS/x/two".to_string(), "SPECS/z/two".to_string());
+        let d = dir_moves(&r);
+        assert_eq!(map_path("SPECS/linux/canister_config.inc", &r, &d), "SPECS/92/linux/canister_config.inc");
+        assert_eq!(map_path("SPECS/linux/patches/new.patch", &r, &d), "SPECS/92/linux/patches/new.patch");
+        assert_eq!(map_path("SPECS/linux/linux.spec", &r, &d), "SPECS/92/linux/linux.spec");
+        assert_eq!(map_path("SPECS/x/three", &r, &d), "SPECS/x/three", "a split directory is not a move");
+        assert_eq!(map_path("SPECS/other/f", &r, &d), "SPECS/other/f");
     }
 
     #[test]
