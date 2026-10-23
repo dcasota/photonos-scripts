@@ -154,3 +154,31 @@ CREATE TABLE IF NOT EXISTS rule (
     superseded_by INTEGER REFERENCES rule(id)
 );
 CREATE INDEX IF NOT EXISTS idx_rule_scope ON rule(scope);
+
+-- Upstream watch (src/watch.rs): last seen heads/pairs/PRs, typed events, liveness.
+CREATE TABLE IF NOT EXISTS upstream_head (
+    repo      TEXT NOT NULL,           -- owner/name, or a pseudo source (ahead:, pr:)
+    ref       TEXT NOT NULL,           -- branch, pair or PR number
+    value     TEXT NOT NULL,           -- sha, commits ahead, or PR state|head|comments|reviews
+    seen_at   TEXT NOT NULL,
+    PRIMARY KEY (repo, ref)
+);
+CREATE TABLE IF NOT EXISTS event (
+    id          INTEGER PRIMARY KEY,
+    at          TEXT NOT NULL,
+    source      TEXT NOT NULL,         -- watch
+    kind        TEXT NOT NULL,         -- see watch.rs KINDS
+    subject     TEXT NOT NULL,
+    old         TEXT,
+    new         TEXT,
+    detail      TEXT NOT NULL,
+    state       TEXT NOT NULL DEFAULT 'new',   -- new | notified | handled | ignored
+    notified_at TEXT,
+    handled_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_event_state ON event(state);
+CREATE TABLE IF NOT EXISTS heartbeat (
+    name   TEXT PRIMARY KEY,
+    at     TEXT NOT NULL,
+    detail TEXT
+);

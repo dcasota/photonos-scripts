@@ -52,6 +52,7 @@ mod vm;
 mod vmware;
 mod vmx;
 mod vnc;
+mod watch;
 mod winpath;
 mod wrapper;
 
@@ -574,6 +575,9 @@ fn main() -> ExitCode {
     }
     if argv.first().map(String::as_str) == Some("builder") {
         return ExitCode::from(builder::cli(&argv[1..]));
+    }
+    if let Some(c @ ("watch" | "events")) = argv.first().map(String::as_str) {
+        return ExitCode::from(watch::cli(c, &argv[1..]));
     }
     let args = match parse() {
         Ok(a) => a,
