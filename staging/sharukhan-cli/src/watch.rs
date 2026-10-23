@@ -66,6 +66,7 @@ pub const KINDS: &[&str] = &[
     "pr-commented",
     "pr-reviewed",
     "watch-error",
+    "watch-recovered",
 ];
 
 /// What is watched: branch heads, and (reference, fork) pairs.
@@ -331,8 +332,17 @@ pub fn cycle(conn: &Connection, w: &Watch) -> Result<Vec<i64>, String> {
     if !seeded && seen > 0 {
         ids.push(record(conn, "watch-seeded", "watch", None, None, &format!("{seen} branch head(s) recorded"))?);
     }
-    for e in errors {
-        ids.push(record(conn, "watch-error", "watch", None, None, &e)?);
+    // An outage repeats the same error every cycle: record it when it changes,
+    // and once when it clears, not every time.
+    let errs = errors.join(" | ");
+    let last = remembered(conn, "error", "watch").unwrap_or_default();
+    if errs != last {
+        if errs.is_empty() {
+            ids.push(record(conn, "watch-recovered", "watch", None, None, &format!("cleared: {last}"))?);
+        } else {
+            ids.push(record(conn, "watch-error", "watch", None, None, &errs)?);
+        }
+        remember(conn, "error", "watch", &errs)?;
     }
     conn.execute(
         "INSERT INTO heartbeat (name, at, detail) VALUES ('watch', ?1, ?2) \
@@ -558,6 +568,30 @@ mod tests {
         assert!(text.contains("upstream-moved vmware/photon:5.0: 2 commit(s), ahead"), "{text}");
         assert_eq!(notify(&c, &[Channel::File(t.to_string_lossy().into())]).unwrap(), 0);
         let _ = std::fs::remove_file(&t);
+    }
+
+    #[test]
+    fn an_outage_is_one_error_event_and_one_recovery_not_one_per_cycle() {
+        let c = db();
+        // a watch with only an unreachable head: every cycle fails the same way
+        let w = Watch {
+            heads: vec![("no-such-owner-zz/no-such-repo-zz".into(), "x".into())],
+            pairs: vec![],
+            pr_repos: vec![],
+        };
+        let errors = |c: &Connection| -> i64 {
+            c.query_row("SELECT count(*) FROM event WHERE kind = 'watch-error'", [], |r| r.get(0)).unwrap()
+        };
+        cycle(&c, &w).unwrap();
+        cycle(&c, &w).unwrap();
+        assert_eq!(errors(&c), 1);
+        let ok = Watch { heads: vec![], pairs: vec![], pr_repos: vec![] };
+        cycle(&c, &ok).unwrap();
+        let rec: i64 = c.query_row("SELECT count(*) FROM event WHERE kind = 'watch-recovered'", [], |r| r.get(0)).unwrap();
+        assert_eq!(rec, 1);
+        cycle(&c, &ok).unwrap();
+        let rec2: i64 = c.query_row("SELECT count(*) FROM event WHERE kind = 'watch-recovered'", [], |r| r.get(0)).unwrap();
+        assert_eq!(rec2, 1);
     }
 
     #[test]
