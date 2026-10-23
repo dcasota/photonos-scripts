@@ -20,10 +20,14 @@
 //! * Nothing reaches GitHub before PUBLISH. Rebased heads live in the gate
 //!   repository as sync/<run>/<branch>; PREPARE points the gate's branches at
 //!   them so variant patches and builds use them, and records the old values.
-//! * PUBLISH pushes with --force-with-lease against the PR heads ANALYZE saw.
-//!   Until PR descriptions are generated from evidence (step 5) it waits for
-//!   `sync approve`, whatever publish_dcasota says: pushing code under a
-//!   description that no longer matches it is not publishing.
+//! * PUBLISH pushes with --force-with-lease against the PR heads ANALYZE saw,
+//!   then puts each PR's description, carried to the new head by `prbody`,
+//!   and checks GitHub shows both. With publish_dcasota=auto it goes ahead
+//!   only when every description passes the lint; otherwise, and always with
+//!   publish_dcasota=approve, it waits for `sync approve`. An approved push
+//!   whose description fails the lint leaves that description as it was and
+//!   says so: pushing code under a description that no longer matches it is
+//!   not publishing, so that PR stays a decision.
 
 use rusqlite::Connection;
 use std::collections::BTreeMap;
@@ -68,7 +72,7 @@ CREATE TABLE IF NOT EXISTS sync_pr (
     gh_head     TEXT NOT NULL,     -- the lease: GitHub's head when ANALYZE ran
     action      TEXT NOT NULL,     -- keep | rebase
     new_head    TEXT,              -- sync/<run>/<branch> after REBASE
-    state       TEXT NOT NULL,     -- pending | rebased | refused | verified | failed | published
+    state       TEXT NOT NULL,     -- pending | rebased | refused | verified | failed | pushed (description unfit) | published
     detail      TEXT,
     PRIMARY KEY (run_id, number)
 );
@@ -220,8 +224,9 @@ pub fn inputs_moved(c: &Connection, run: i64, fork: &str, bases: &BTreeMap<Strin
             return Ok(Some(format!("{source} {root} moved from {} to {}", &new[..9.min(new.len())], &now_head[..9])));
         }
     }
+    // a PR this run pushed is expected at its new head
     let leases: Vec<(i64, String)> = c
-        .prepare("SELECT number, gh_head FROM sync_pr WHERE run_id = ?1")
+        .prepare("SELECT number, CASE WHEN state IN ('pushed','published') THEN new_head ELSE gh_head END FROM sync_pr WHERE run_id = ?1")
         .and_then(|mut s| s.query_map([run], |r| Ok((r.get(0)?, r.get(1)?))).map(|x| x.flatten().collect()))
         .map_err(sql)?;
     if leases.is_empty() {
@@ -247,6 +252,7 @@ struct Ctx<'a> {
     repo: PathBuf,
     bases: BTreeMap<String, (String, String)>,
     dir: PathBuf,
+    publish: String,
 }
 
 enum Outcome {
@@ -602,27 +608,111 @@ fn gate(ctx: &Ctx) -> Result<Outcome, String> {
     }
 }
 
+/// One PR's description carried to its new head: (current, carried, lint problems).
+fn carried_body(ctx: &Ctx, n: i64, root: &str, parent: Option<i64>, old_head: &str, new_head: &str) -> Result<(String, String, Vec<String>), String> {
+    let o = Command::new("gh")
+        .args(["pr", "view", &n.to_string(), "-R", &ctx.fork, "--json", "body", "--jq", ".body"])
+        .output()
+        .map_err(|e| format!("gh pr view: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("gh pr view {n}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    let current = String::from_utf8_lossy(&o.stdout).trim_end().to_string() + "\n";
+    let (old_base, _) = &ctx.bases[root];
+    let facts = crate::prbody::gather(&ctx.repo, old_base, &format!("refs/sync/base/{root}"), old_head, new_head, parent.map(|p| p as u64))?;
+    let carried = crate::prbody::rewrite(&current, &facts);
+    let problems = crate::prbody::lint(&carried, &facts);
+    Ok((current, carried, problems))
+}
+
+fn put_body(ctx: &Ctx, n: i64, file: &Path, want: &str) -> Result<(), String> {
+    let o = Command::new("gh")
+        .args(["pr", "edit", &n.to_string(), "-R", &ctx.fork, "--body-file"])
+        .arg(file)
+        .output()
+        .map_err(|e| format!("gh pr edit: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("gh pr edit {n}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    let o = Command::new("gh").args(["pr", "view", &n.to_string(), "-R", &ctx.fork, "--json", "body", "--jq", ".body"]).output().map_err(|e| format!("{e}"))?;
+    let got = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
+    if got.trim_end() != want.trim_end() {
+        return Err(format!("#{n}: GitHub shows a different description after the edit"));
+    }
+    Ok(())
+}
+
 fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
-    let rows: Vec<(i64, String, String, String)> = ctx
+    // `pushed`: an earlier pass pushed the code and left an unfit description;
+    // only the description is looked at again (someone may have rewritten it)
+    let pushed: BTreeMap<i64, ()> = ctx
         .c
-        .prepare("SELECT number, branch, gh_head, new_head FROM sync_pr WHERE run_id = ?1 AND state = 'verified'")
-        .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map(|x| x.flatten().collect()))
+        .prepare("SELECT number FROM sync_pr WHERE run_id = ?1 AND state = 'pushed'")
+        .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, ()))).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
+    let rows: Vec<(i64, String, String, String, String, Option<i64>)> = ctx
+        .c
+        .prepare(
+            "SELECT p.number, p.branch, p.gh_head, p.new_head, p.root, (SELECT q.number FROM sync_pr q WHERE q.run_id = p.run_id AND q.branch = p.parent) \
+             FROM sync_pr p WHERE p.run_id = ?1 AND p.state IN ('verified', 'pushed')",
+        )
+        .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))).map(|x| x.flatten().collect()))
         .map_err(sql)?;
     if rows.is_empty() {
         return Ok(Outcome::Skipped("nothing to publish".into()));
     }
-    if !approved {
-        let table: Vec<String> = rows.iter().map(|(n, b, old, new)| format!("#{n} {b} {}..{}", &old[..9], &new[..9])).collect();
-        fs::write(ctx.dir.join("PUBLISH.table"), table.join("\n") + "\n").map_err(|e| format!("{e}"))?;
+    let bodies = ctx.dir.join("PUBLISH");
+    fs::create_dir_all(&bodies).map_err(|e| format!("{}: {e}", bodies.display()))?;
+    let mut table = Vec::new();
+    let mut plan = Vec::new();
+    let mut unfit = 0;
+    for (n, branch, lease, new, root, parent) in &rows {
+        let (current, carried, problems) = carried_body(ctx, *n, root, *parent, lease, new)?;
+        let file = bodies.join(format!("{n}.body"));
+        fs::write(&file, &carried).map_err(|e| format!("{}: {e}", file.display()))?;
+        let changed = carried != current;
+        let note = match (problems.is_empty(), changed) {
+            (true, true) => "description carried (changed)".to_string(),
+            (true, false) => "description unchanged".to_string(),
+            (false, _) => format!("DESCRIPTION UNFIT: {}", problems.join("; ")),
+        };
+        unfit += !problems.is_empty() as usize;
+        table.push(format!("#{n} {branch} {}..{} {note}", &lease[..9], &new[..9]));
+        plan.push((*n, branch.clone(), lease.clone(), new.clone(), file, carried, changed && problems.is_empty(), problems));
+    }
+    fs::write(ctx.dir.join("PUBLISH.table"), table.join("\n") + "\n").map_err(|e| format!("{e}"))?;
+    if !approved && (ctx.publish != "auto" || unfit > 0) {
+        let why = if unfit > 0 {
+            format!("{unfit} description(s) fail the lint")
+        } else {
+            "publish_dcasota=approve".to_string()
+        };
         return Ok(Outcome::Waiting(format!(
-            "{} push(es) prepared (PUBLISH.table); PR descriptions are not generated yet, so `sharukhan sync approve {}` is required",
+            "{} push(es) prepared (PUBLISH.table, PUBLISH/<n>.body); {why}, so `sharukhan sync approve {}` is required",
             rows.len(),
             ctx.run
         )));
     }
     let url = format!("https://github.com/{}.git", ctx.fork);
     let mut log = Vec::new();
-    for (n, branch, lease, new) in &rows {
+    let mut left = Vec::new();
+    for (n, branch, lease, new, file, carried, put, problems) in &plan {
+        if pushed.contains_key(n) {
+            if *put {
+                if let Err(e) = put_body(ctx, *n, file, carried) {
+                    fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
+                    return Ok(Outcome::Failed(format!("#{n}: description not updated: {e}")));
+                }
+            }
+            if problems.is_empty() {
+                ctx.c.execute("UPDATE sync_pr SET state = 'published' WHERE run_id = ?1 AND number = ?2", rusqlite::params![ctx.run, n]).map_err(sql)?;
+                log.push(format!("#{n} {branch} pushed earlier, description now fit"));
+            } else {
+                left.push(format!("#{n}"));
+                log.push(format!("#{n} {branch} pushed earlier, description still unfit"));
+            }
+            continue;
+        }
         let o = Command::new("git")
             .arg("-C")
             .arg(&ctx.repo)
@@ -642,13 +732,37 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
             std::thread::sleep(std::time::Duration::from_secs(10));
         }
         if &gh != new {
+            fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
             return Ok(Outcome::Failed(format!("#{n}: GitHub reports {gh} after the push, not {new}")));
         }
-        ctx.c.execute("UPDATE sync_pr SET state = 'published' WHERE run_id = ?1 AND number = ?2", rusqlite::params![ctx.run, n]).map_err(sql)?;
-        log.push(format!("#{n} {branch} {}..{} verified on GitHub", &lease[..9], &new[..9]));
+        if *put {
+            if let Err(e) = put_body(ctx, *n, file, carried) {
+                fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
+                return Ok(Outcome::Failed(format!("#{n} pushed, description not updated: {e}")));
+            }
+        }
+        let st = if problems.is_empty() { "published" } else { "pushed" };
+        ctx.c.execute("UPDATE sync_pr SET state = ?1 WHERE run_id = ?2 AND number = ?3", rusqlite::params![st, ctx.run, n]).map_err(sql)?;
+        let desc = if !problems.is_empty() {
+            left.push(format!("#{n}"));
+            "description left as it was (fails the lint)"
+        } else if *put {
+            "description updated"
+        } else {
+            "description unchanged"
+        };
+        log.push(format!("#{n} {branch} {}..{} verified on GitHub, {desc}", &lease[..9], &new[..9]));
     }
     fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").map_err(|e| format!("{e}"))?;
-    Ok(Outcome::Done(format!("{} PR(s) pushed and verified", rows.len())))
+    if left.is_empty() {
+        Ok(Outcome::Done(format!("{} PR(s) pushed and verified", rows.len())))
+    } else {
+        Ok(Outcome::NeedsDecision(format!(
+            "the descriptions of {} fail the lint (PUBLISH.table); rewrite them on GitHub, then `sharukhan sync resume {}`",
+            left.join(" "),
+            ctx.run
+        )))
+    }
 }
 
 fn done(ctx: &Ctx) -> Result<Outcome, String> {
@@ -667,8 +781,10 @@ fn done(ctx: &Ctx) -> Result<Outcome, String> {
 /// Run the remaining stages of `run` until it finishes or stops.
 pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> Result<String, String> {
     recover(c, run)?;
-    let (fork, repo, bases, approved): (String, String, String, i64) = c
-        .query_row("SELECT fork, repo, bases, approved FROM sync_run WHERE id = ?1", [run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+    let (fork, repo, bases, approved, publish_mode): (String, String, String, i64, String) = c
+        .query_row("SELECT fork, repo, bases, approved, publish FROM sync_run WHERE id = ?1", [run], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
         .map_err(sql)?;
     c.execute("UPDATE sync_run SET pid = ?1, state = 'running' WHERE id = ?2", rusqlite::params![std::process::id() as i64, run]).map_err(sql)?;
     let ctx = Ctx {
@@ -678,6 +794,7 @@ pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> R
         repo: PathBuf::from(repo),
         bases: parse_bases(&bases)?,
         dir: results.join("sync").join(run.to_string()),
+        publish: publish_mode,
     };
     fs::create_dir_all(&ctx.dir).map_err(|e| format!("{}: {e}", ctx.dir.display()))?;
     for name in STAGES {
@@ -828,7 +945,7 @@ pub fn auto(c: &Connection, fork: &str, repo: &Path, results: &Path, quiet_s: i6
 
 pub fn cli(args: &[String]) -> Option<u8> {
     let sub = args.first().map(String::as_str)?;
-    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto") {
+    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto" | "lint" | "body") {
         return None;
     }
     let cfg = crate::config::Config::load();
@@ -845,7 +962,72 @@ pub fn cli(args: &[String]) -> Option<u8> {
             }
         }
         let until = until_arg.as_deref();
+        let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(String::as_str);
         match sub {
+            "body" => {
+                // a description carried to a candidate head, without publishing
+                let usage = "sync body --pr <n> --old-base <rev> --new-base <rev> --new-head <rev> [--parent <n>] [--out <file>]";
+                let repo = Path::new(flag("--repo").unwrap_or("/root/photon-mc/gate/photon.git"));
+                let n: u64 = flag("--pr").and_then(|v| v.parse().ok()).ok_or(usage)?;
+                let pr = crate::sync::open_prs("dcasota/photon")?.into_iter().find(|p| p.number == n).ok_or("no such open PR")?;
+                let parent = flag("--parent").and_then(|v| v.parse().ok());
+                let facts = crate::prbody::gather(
+                    repo,
+                    flag("--old-base").ok_or(usage)?,
+                    flag("--new-base").ok_or(usage)?,
+                    &pr.gh_head,
+                    flag("--new-head").ok_or(usage)?,
+                    parent,
+                )?;
+                let o = Command::new("gh").args(["pr", "view", &n.to_string(), "-R", "dcasota/photon", "--json", "body", "--jq", ".body"]).output().map_err(|e| format!("gh: {e}"))?;
+                let body = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
+                let carried = crate::prbody::rewrite(&body, &facts);
+                if let Some(out) = flag("--out") {
+                    fs::write(out, &carried).map_err(|e| format!("{out}: {e}"))?;
+                }
+                let mut r = String::new();
+                for (a, b) in &facts.releases {
+                    r.push_str(&format!("release {a} -> {b}\n"));
+                }
+                let moved_lines = body.lines().zip(carried.lines()).filter(|(a, b)| a != b).count();
+                r.push_str(&format!("{moved_lines} line(s) changed\n"));
+                let p = crate::prbody::lint(&carried, &facts);
+                r.push_str(&if p.is_empty() { "lint: ok".to_string() } else { format!("lint: {}", p.join("\n      ")) });
+                Ok(r)
+            }
+            "lint" => {
+                // the descriptions on GitHub against the heads they describe now
+                let fork = "dcasota/photon";
+                let repo = Path::new("/root/photon-mc/gate/photon.git");
+                let only: Vec<u64> = args[1..].iter().filter_map(|a| a.trim_start_matches('#').parse().ok()).collect();
+                let prs = crate::sync::open_prs(fork)?;
+                let roots = ["5.0", "common"];
+                let mut out = String::new();
+                let mut bad = 0;
+                for pr in prs.iter().filter(|p| only.is_empty() || only.contains(&p.number)) {
+                    let Some((root, parent)) = crate::sync::root_base(pr, &prs, &roots) else {
+                        out.push_str(&format!("#{} base {} is not a sync root\n", pr.number, pr.base));
+                        continue;
+                    };
+                    let parent_n = parent.as_ref().and_then(|b| prs.iter().find(|p| &p.head_ref == b)).map(|p| p.number);
+                    let base = git(repo, &["rev-parse", &format!("refs/heads/{root}")])?;
+                    let facts = crate::prbody::gather(repo, &base, &base, &pr.gh_head, &pr.gh_head, parent_n)?;
+                    let o = Command::new("gh")
+                        .args(["pr", "view", &pr.number.to_string(), "-R", fork, "--json", "body", "--jq", ".body"])
+                        .output()
+                        .map_err(|e| format!("gh: {e}"))?;
+                    let body = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
+                    let p = crate::prbody::lint(&body, &facts);
+                    if p.is_empty() {
+                        out.push_str(&format!("#{} ok\n", pr.number));
+                    } else {
+                        bad += 1;
+                        out.push_str(&format!("#{} {}\n", pr.number, p.join("\n    ")));
+                    }
+                }
+                out.push_str(&format!("{bad} description(s) fail the lint"));
+                Ok(out)
+            }
             "baseline" => {
                 let root = args.get(1).ok_or("sync baseline <root> <sha>")?;
                 let sha = args.get(2).ok_or("sync baseline <root> <sha>")?;

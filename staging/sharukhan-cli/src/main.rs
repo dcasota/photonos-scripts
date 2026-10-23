@@ -37,6 +37,7 @@ mod oracle;
 mod phases;
 mod pkglife;
 mod poiimage;
+mod prbody;
 mod proc;
 mod remaster;
 mod report;
