@@ -22,7 +22,7 @@ use std::process::Command;
 /// The driver, run with the package builder's directory on `sys.path`.
 const DRIVER: &str = r#"
 import json, os, sys
-pb, common_specs, release_specs, cfg, logdir, changed = sys.argv[1:7]
+pb, common_specs, release_specs, cfg, logdir, changed, preq = sys.argv[1:8]
 sys.path.insert(0, pb)
 from constants import constants
 c = json.load(open(cfg))
@@ -37,8 +37,7 @@ constants.setReleaseVersion(p["photon-release-version"])
 constants.setSubreleaseVersion(p["photon-subrelease"])
 constants.setPhotonBranch(c["photon-branch"])
 # build.py's initialize_constants: the release's toolchain lists and providedBy overrides
-preq = os.path.join(os.path.dirname(os.path.abspath(release_specs)), "data", "builder-pkg-preq.json")
-if os.path.isfile(preq):
+if preq:
     constants.setReleasePkgPreqPath(preq)
 constants.initialize()
 from SpecData import SPECS
@@ -68,8 +67,8 @@ print("SPECCHECK-OK %d" % len(files))
 /// are in no package list the builder builds, so an unbuilt one is named too.
 const DEPS_DRIVER: &str = r#"
 import json, os, sys
-pb, common_specs, release_specs, cfg, logdir, rpmdir, roots_file = sys.argv[1:8]
-lists = sys.argv[8:]
+pb, common_specs, release_specs, cfg, logdir, rpmdir, roots_file, preq = sys.argv[1:9]
+lists = sys.argv[9:]
 sys.path.insert(0, pb)
 from constants import constants
 c = json.load(open(cfg))
@@ -85,8 +84,7 @@ constants.setSubreleaseVersion(p["photon-subrelease"])
 constants.setPhotonBranch(c["photon-branch"])
 constants.setRpmPath(rpmdir)
 # build.py's initialize_constants: the release's toolchain lists and providedBy overrides
-preq = os.path.join(os.path.dirname(os.path.abspath(release_specs)), "data", "builder-pkg-preq.json")
-if os.path.isfile(preq):
+if preq:
     constants.setReleasePkgPreqPath(preq)
 constants.initialize()
 from SpecData import SPECS
@@ -221,6 +219,7 @@ pub fn unbuilt_runtime_deps(
         log_dir.into(),
         rpm_dir.into(),
         roots_file.clone().into(),
+        preq_arg(release_specs),
     ];
     args.extend(lists.iter().map(|l| l.clone().into_os_string()));
     let out = crate::builder::python_command(&inputs.package_builder, &args, &mut |l| eprintln!("{l}"))?
@@ -231,6 +230,16 @@ pub fn unbuilt_runtime_deps(
     match (out.status.success(), parse_unbuilt(&stdout)) {
         (true, Some(u)) => Ok(u),
         _ => Err(builder_error(&stdout, &stderr)),
+    }
+}
+
+/// The release's data/builder-pkg-preq.json beside `release_specs`, passed to
+/// the drivers by path (so the builder container mounts it), or "" if absent.
+fn preq_arg(release_specs: &Path) -> OsString {
+    let p = release_specs.parent().map(|r| r.join("data/builder-pkg-preq.json"));
+    match p {
+        Some(p) if p.is_file() => p.into_os_string(),
+        _ => OsString::new(),
     }
 }
 
@@ -311,6 +320,7 @@ pub fn check(
         inputs.build_config.clone().into(),
         log_dir.into(),
         list.clone().into(),
+        preq_arg(release_specs),
     ];
     // SpecData resolves some paths relative to its own directory
     let out = crate::builder::python_command(&inputs.package_builder, &args, &mut |l| eprintln!("{l}"))?
