@@ -3544,13 +3544,24 @@ pub(crate) fn store_iso(dest: &Path, store: &Path) -> Result<PathBuf, String> {
     if !store.is_dir() {
         return Err(format!("{} is not a directory", store.display()));
     }
-    let target = store.join(format!("{dir}__{}", basename(dest)));
-    if target.exists() {
-        return Err(format!("{} already exists", target.display()));
-    }
     // The checksum is taken before and compared after, whether the move was a
     // rename or a copy: the store is on another filesystem (drvfs) as often as not.
     let before = sha256::file(dest)?;
+    // A rebuild of the same commit has the same file name. Identical bytes
+    // already in the store: keep that copy and link to it. Different bytes:
+    // store this one beside it under a time-stamped name, never overwrite.
+    let mut target = store.join(format!("{dir}__{}", basename(dest)));
+    if target.exists() {
+        if sha256::file(&target)? == before {
+            fs::remove_file(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+            std::os::unix::fs::symlink(&target, dest).map_err(|e| format!("link {}: {e}", dest.display()))?;
+            return Ok(target);
+        }
+        target = store.join(format!("{dir}__{}-{}", crate::job::stamp(), basename(dest)));
+        if target.exists() {
+            return Err(format!("{} already exists", target.display()));
+        }
+    }
     if fs::rename(dest, &target).is_err() {
         let size = fs::copy(dest, &target).map_err(|e| format!("copy to {}: {e}", target.display()))?;
         let want = fs::metadata(dest).map(|m| m.len()).map_err(|e| format!("{}: {e}", dest.display()))?;
@@ -3773,13 +3784,24 @@ mod tests {
         assert!(iso.is_symlink());
         assert_eq!(fs::canonicalize(&iso).unwrap(), fs::canonicalize(&target).unwrap());
         assert_eq!(fs::read(&iso).unwrap(), b"iso bytes");
-        // a second ISO of the same name is refused, never overwritten
+        // a rebuild with different bytes is stored beside the old one, never over it
         let again = cache.join("x.iso");
         fs::write(&again, b"other").unwrap();
         fs::write(store.join("minimal-poi2.8-prebuilt__x.iso"), b"kept").unwrap();
-        assert!(store_iso(&again, &store).unwrap_err().contains("already exists"));
+        let t2 = store_iso(&again, &store).unwrap();
+        assert_ne!(t2, store.join("minimal-poi2.8-prebuilt__x.iso"));
+        assert!(t2.file_name().unwrap().to_string_lossy().ends_with("-x.iso"), "{t2:?}");
         assert_eq!(fs::read(store.join("minimal-poi2.8-prebuilt__x.iso")).unwrap(), b"kept");
-        assert!(again.is_file() && !again.is_symlink());
+        assert_eq!(fs::read(&again).unwrap(), b"other");
+        assert!(again.is_symlink());
+        // identical bytes already in the store: linked, not duplicated
+        let same = cache.join("y.iso");
+        fs::write(&same, b"same").unwrap();
+        fs::write(store.join("minimal-poi2.8-prebuilt__y.iso"), b"same").unwrap();
+        assert_eq!(store_iso(&same, &store).unwrap(), store.join("minimal-poi2.8-prebuilt__y.iso"));
+        assert!(same.is_symlink());
+        let again = cache.join("z.iso");
+        fs::write(&again, b"z").unwrap();
         assert!(store_iso(&again, &root.join("missing")).unwrap_err().contains("is not a directory"));
         fs::remove_dir_all(&root).ok();
     }
