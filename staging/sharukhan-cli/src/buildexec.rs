@@ -3504,7 +3504,7 @@ carry no canister-consuming {}",
 /// file by its real Windows path - VMware cannot follow a WSL symlink. An
 /// existing target is never overwritten. A rename that cannot cross
 /// filesystems falls back to copy, size check and removal.
-fn store_iso(dest: &Path, store: &Path) -> Result<PathBuf, String> {
+pub(crate) fn store_iso(dest: &Path, store: &Path) -> Result<PathBuf, String> {
     let dir = dest
         .parent()
         .and_then(|d| d.file_name())
@@ -3518,6 +3518,9 @@ fn store_iso(dest: &Path, store: &Path) -> Result<PathBuf, String> {
     if target.exists() {
         return Err(format!("{} already exists", target.display()));
     }
+    // The checksum is taken before and compared after, whether the move was a
+    // rename or a copy: the store is on another filesystem (drvfs) as often as not.
+    let before = sha256::file(dest)?;
     if fs::rename(dest, &target).is_err() {
         let size = fs::copy(dest, &target).map_err(|e| format!("copy to {}: {e}", target.display()))?;
         let want = fs::metadata(dest).map(|m| m.len()).map_err(|e| format!("{}: {e}", dest.display()))?;
@@ -3525,7 +3528,14 @@ fn store_iso(dest: &Path, store: &Path) -> Result<PathBuf, String> {
             let _ = fs::remove_file(&target);
             return Err(format!("copied {size} of {want} bytes to {}", target.display()));
         }
+        if sha256::file(&target)? != before {
+            let _ = fs::remove_file(&target);
+            return Err(format!("{}: sha256 differs after the copy", target.display()));
+        }
         fs::remove_file(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+    } else if sha256::file(&target)? != before {
+        let _ = fs::rename(&target, dest);
+        return Err(format!("{}: sha256 differs after the move", target.display()));
     }
     std::os::unix::fs::symlink(&target, dest).map_err(|e| format!("link {}: {e}", dest.display()))?;
     Ok(target)

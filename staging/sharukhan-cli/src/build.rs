@@ -862,6 +862,14 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
     if let Ok(h) = sha256::file(&produced) {
         let _ = fs::write(dest.join("photon.iso.sha256"), format!("{h}\n"));
     }
+    // The ISO store, as the cascade does it (buildexec::write_sidecars): this
+    // path left every prebuilt ISO in the cache.
+    if let Some(store) = std::env::var_os("MC_ISO_STORE").filter(|v| !v.is_empty()) {
+        match crate::buildexec::store_iso(&produced, Path::new(&store)) {
+            Ok(target) => log(&format!("stored in {}, linked as {}", target.display(), produced.display())),
+            Err(e) => log(&format!("[warn] MC_ISO_STORE: {e}; the ISO stays in the cache")),
+        }
+    }
     fs::write(dest.join(INPUTS_FILE), &inputs)
         .map_err(|e| format!("{}: {e}", dest.join(INPUTS_FILE).display()))?;
     log(&format!("cached: {}", iso.display()));
