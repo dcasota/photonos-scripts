@@ -36,6 +36,10 @@ constants.setDist(p["photon-dist-tag"])
 constants.setReleaseVersion(p["photon-release-version"])
 constants.setSubreleaseVersion(p["photon-subrelease"])
 constants.setPhotonBranch(c["photon-branch"])
+# build.py's initialize_constants: the release's toolchain lists and providedBy overrides
+preq = os.path.join(os.path.dirname(os.path.abspath(release_specs)), "data", "builder-pkg-preq.json")
+if os.path.isfile(preq):
+    constants.setReleasePkgPreqPath(preq)
 constants.initialize()
 from SpecData import SPECS
 d = SPECS.getData()
@@ -80,6 +84,10 @@ constants.setReleaseVersion(p["photon-release-version"])
 constants.setSubreleaseVersion(p["photon-subrelease"])
 constants.setPhotonBranch(c["photon-branch"])
 constants.setRpmPath(rpmdir)
+# build.py's initialize_constants: the release's toolchain lists and providedBy overrides
+preq = os.path.join(os.path.dirname(os.path.abspath(release_specs)), "data", "builder-pkg-preq.json")
+if os.path.isfile(preq):
+    constants.setReleasePkgPreqPath(preq)
 constants.initialize()
 from SpecData import SPECS
 d = SPECS.getData()
@@ -135,6 +143,12 @@ while todo:
         elif (ds, dv) not in reported:
             reported.add((ds, dv))
             print(f"UNBUILT {ds} {dv} {pkg}-{ver}")
+# Specs whose packages every build sandbox installs (rpm among them) change
+# what every later package is built with; the caller builds those first.
+tc = set(constants.listToolChainRPMsToInstall)
+for spec, ver in sorted(reported):
+    if any(r in tc for r in d.getRPMPackages(spec, ver)):
+        print(f"TOOLCHAIN {spec}")
 print("DEPS-OK %d" % len(seen))
 "#;
 
@@ -147,11 +161,14 @@ pub struct Unbuilt {
     pub version: String,
     /// The first already-built package found requiring it, with its version.
     pub needed_by: String,
+    /// Every build sandbox installs one of its packages (rpm, for one).
+    pub toolchain: bool,
 }
 
 /// Parse the dependency driver's output.
 pub fn parse_unbuilt(stdout: &str) -> Option<Vec<Unbuilt>> {
     stdout.lines().find(|l| l.starts_with("DEPS-OK "))?;
+    let toolchain: Vec<&str> = stdout.lines().filter_map(|l| l.strip_prefix("TOOLCHAIN ")).map(str::trim).collect();
     Some(
         stdout
             .lines()
@@ -162,6 +179,7 @@ pub fn parse_unbuilt(stdout: &str) -> Option<Vec<Unbuilt>> {
                     spec: spec.into(),
                     version: version.into(),
                     needed_by: needed_by.into(),
+                    toolchain: toolchain.contains(&spec),
                 })
             })
             .collect(),
@@ -379,10 +397,13 @@ mod tests {
                 spec: "docker".into(),
                 version: "29.8.0-3.ph5".into(),
                 needed_by: "minimal-5.0-9.ph5".into(),
+                toolchain: false,
             }]
         );
         assert!(parse_unbuilt("UNBUILT docker 29.8.0-3.ph5 minimal-5.0-9.ph5\n").is_none());
         assert!(parse_unbuilt("UNBUILT a b c d\nDEPS-OK 1\n").unwrap().is_empty());
+        let tc = parse_unbuilt("UNBUILT systemd v x\nUNBUILT rpm v y\nTOOLCHAIN rpm\nDEPS-OK 2\n").unwrap();
+        assert_eq!(tc.iter().map(|u| (u.spec.as_str(), u.toolchain)).collect::<Vec<_>>(), vec![("systemd", false), ("rpm", true)]);
     }
 
     /// Against the real gate build root and 5.0: with no RPM at all, the extra
@@ -404,7 +425,7 @@ mod tests {
         let ok = Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "git --git-dir={} archive 5.0 SPECS | tar -x -C {} --exclude='*.patch' --exclude='*.tar.*' --exclude='*.tgz' --exclude='*.zip'",
+                "git --git-dir={} archive 5.0 SPECS data | tar -x -C {} --exclude='*.patch' --exclude='*.tar.*' --exclude='*.tgz' --exclude='*.zip'",
                 repo.display(),
                 t.display()
             ))
@@ -432,6 +453,9 @@ mod tests {
         let docker = some.iter().find(|u| u.spec == "docker").unwrap_or_else(|| panic!("{some:?}"));
         assert_eq!(docker.needed_by, format!("minimal-{v}-{r}{dist}"));
         assert!(!some.iter().any(|u| u.spec == "minimal"), "{some:?}");
+        // rpm-build is in builder-pkg-preq.json's sandbox toolchain list
+        let rpm = some.iter().find(|u| u.spec == "rpm").unwrap_or_else(|| panic!("{some:?}"));
+        assert!(rpm.toolchain, "{rpm:?}");
         let bad = unbuilt_runtime_deps(&i, &t.join("SPECS"), &rpms, &["zz-no-such".into()], &[], &logs)
             .unwrap_err();
         assert!(bad.contains("zz-no-such is listed for the image but no spec builds it"), "{bad}");

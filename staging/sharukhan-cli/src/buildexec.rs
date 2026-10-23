@@ -3199,12 +3199,24 @@ fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Ve
         &stage.join("sharukhan-runtime-deps"),
     )
     .map_err(|e| format!("resolving the image's runtime dependencies: {e}"))?;
+    // Toolchain specs first: each later build sandbox installs them, so a
+    // package built before them is built with the stage's previous rpm. That
+    // made systemd 257.13-6 come out with x86_64-vmware-linux (rpm 4.18's
+    // vendor) in its debug paths and build IDs instead of x86_64-unknown-linux.
+    let mut unbuilt = unbuilt;
+    unbuilt.sort_by_key(|u| !u.toolchain);
     let mut specs: Vec<String> = Vec::new();
     for u in &unbuilt {
-        c.say(&format!(
-            "  {}-{} is not built, and the already-built {} requires it: pre-building {}",
-            u.spec, u.version, u.needed_by, u.spec
-        ));
+        match u.needed_by.strip_suffix("(root)") {
+            Some(root) => c.say(&format!(
+                "  {}-{} is not built, and the media need {root} itself: pre-building {}",
+                u.spec, u.version, u.spec
+            )),
+            None => c.say(&format!(
+                "  {}-{} is not built, and the already-built {} requires it: pre-building {}",
+                u.spec, u.version, u.needed_by, u.spec
+            )),
+        }
         if !specs.contains(&u.spec) {
             specs.push(u.spec.clone());
         }
