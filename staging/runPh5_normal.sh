@@ -190,11 +190,25 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
   #   8 STIG_HARDEN specs       : define-if-unset so the flag is settable (PR #23)
   # (nginx PR #17 is intentionally NOT included: 5.0 already ships nginx
   #  1.30.4, newer than the PR's 1.30.1, so it would be a downgrade.)
-  DOWNSTREAM_PATCH=""
-  for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
-              "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
-    [ -f "$cand" ] && DOWNSTREAM_PATCH="$cand" && break
-  done
+  # A caller may name the patch with DOWNSTREAM_PATCH=<path>. Unset, the search
+  # below runs as before. The search resolves the patch relative to this
+  # script, so two checkouts of it can build with two different patches; the
+  # chosen file and its checksum are therefore always logged.
+  if [ -n "${DOWNSTREAM_PATCH:-}" ]; then
+    if [ ! -f "$DOWNSTREAM_PATCH" ]; then
+      echo "[runPh5_normal] ERROR: DOWNSTREAM_PATCH=$DOWNSTREAM_PATCH does not exist" 1>&2
+      exit 1
+    fi
+  else
+    DOWNSTREAM_PATCH=""
+    for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
+                "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
+      [ -f "$cand" ] && DOWNSTREAM_PATCH="$cand" && break
+    done
+  fi
+  if [ -n "$DOWNSTREAM_PATCH" ]; then
+    echo "[runPh5_normal] downstream patch: $DOWNSTREAM_PATCH ($(grep -c '^+++ ' "$DOWNSTREAM_PATCH") files, sha256 $(sha256sum "$DOWNSTREAM_PATCH" | cut -c1-16))"
+  fi
   if [ -n "$DOWNSTREAM_PATCH" ]; then
     # Files the patch *creates* survive the "git checkout --" restore above
     # (they are untracked), and "git apply" then refuses the whole patch with

@@ -143,11 +143,25 @@ with open('build-config.json','w') as f: json.dump(cfg, f, indent=4); f.write('\
   #   linux 6.12.87-3           : strip canister Kconfig when fips=0  (PR #14)
   # (nginx PR #17 is intentionally NOT included: 5.0 already ships nginx
   #  1.30.2, newer than the PR's 1.30.1, so it would be a downgrade.)
-  DOWNSTREAM_PATCH=""
-  for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
-              "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
-    [ -f "$cand" ] && DOWNSTREAM_PATCH="$cand" && break
-  done
+  # A caller may name the patch with DOWNSTREAM_PATCH=<path>. Unset, the search
+  # below runs as before. The search resolves the patch relative to this
+  # script, so two checkouts of it can build with two different patches; the
+  # chosen file and its checksum are therefore always logged.
+  if [ -n "${DOWNSTREAM_PATCH:-}" ]; then
+    if [ ! -f "$DOWNSTREAM_PATCH" ]; then
+      echo "[runPh5_pinned90] ERROR: DOWNSTREAM_PATCH=$DOWNSTREAM_PATCH does not exist" 1>&2
+      exit 1
+    fi
+  else
+    DOWNSTREAM_PATCH=""
+    for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
+                "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
+      [ -f "$cand" ] && DOWNSTREAM_PATCH="$cand" && break
+    done
+  fi
+  if [ -n "$DOWNSTREAM_PATCH" ]; then
+    echo "[runPh5_pinned90] downstream patch: $DOWNSTREAM_PATCH ($(grep -c '^+++ ' "$DOWNSTREAM_PATCH") files, sha256 $(sha256sum "$DOWNSTREAM_PATCH" | cut -c1-16))"
+  fi
   if [ -n "$DOWNSTREAM_PATCH" ]; then
     if git apply --check "$DOWNSTREAM_PATCH" 2>/dev/null; then
       git apply "$DOWNSTREAM_PATCH" && echo "[runPh5_pinned90] Applied downstream-fixes.patch"
