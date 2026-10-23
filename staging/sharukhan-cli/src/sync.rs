@@ -255,7 +255,10 @@ fn changelog_body(spec: &str) -> &str {
 }
 
 fn merge3(base: &str, ours: &str, theirs: &str) -> Result<String, ()> {
-    let d = std::env::temp_dir().join(format!("shk-merge3-{}-{}", std::process::id(), crate::job::stamp()));
+    // one directory per call: two merges within the same second must not share files
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let d = std::env::temp_dir().join(format!("shk-merge3-{}-{}-{seq}", std::process::id(), crate::job::stamp()));
     let _ = fs::create_dir_all(&d);
     let (o, b, t) = (d.join("o"), d.join("b"), d.join("t"));
     let r = (|| {

@@ -17,6 +17,11 @@
 //! * `abort` takes effect between stages, never inside PUBLISH.
 //! * A refused rebase or a failed check stops the run as `needs-decision` -
 //!   that is the input of the escalation (step 5), not something to retry.
+//!   `sync decide` records the answer: a resolved candidate (checked to sit
+//!   on its new parent) and, when the PR moves, the base it moves to on
+//!   GitHub; `sync body --set` a description reviewed for the new change.
+//!   Resuming keeps every PR already rebased or resolved, so candidates built
+//!   on them stay valid, and retries only the rest.
 //! * Nothing reaches GitHub before PUBLISH. Rebased heads live in the gate
 //!   repository as sync/<run>/<branch>; PREPARE points the gate's branches at
 //!   them so variant patches and builds use them, and records the old values.
@@ -72,7 +77,7 @@ CREATE TABLE IF NOT EXISTS sync_pr (
     gh_head     TEXT NOT NULL,     -- the lease: GitHub's head when ANALYZE ran
     action      TEXT NOT NULL,     -- keep | rebase
     new_head    TEXT,              -- sync/<run>/<branch> after REBASE
-    state       TEXT NOT NULL,     -- pending | rebased | refused | verified | failed | pushed (description unfit) | published
+    state       TEXT NOT NULL,     -- pending | rebased | refused | resolved (by `sync decide`) | verified | failed | pushed (description unfit) | published
     detail      TEXT,
     PRIMARY KEY (run_id, number)
 );
@@ -87,6 +92,14 @@ pub fn ensure_schema(c: &Connection) -> Result<(), String> {
         .map_err(sql)?;
     if !has {
         c.execute_batch("ALTER TABLE sync_run ADD COLUMN against TEXT").map_err(sql)?;
+    }
+    // added with `sync decide`: the base a PR moves to on GitHub
+    let has: bool = c
+        .prepare("SELECT 1 FROM pragma_table_info('sync_pr') WHERE name = 'base_to'")
+        .and_then(|mut s| s.exists([]))
+        .map_err(sql)?;
+    if !has {
+        c.execute_batch("ALTER TABLE sync_pr ADD COLUMN base_to TEXT").map_err(sql)?;
     }
     Ok(())
 }
@@ -337,13 +350,25 @@ fn depth(branch: &str, rows: &[(i64, String, String, Option<String>)]) -> usize 
 fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
     let mut rows: Vec<(i64, String, String, Option<String>)> = ctx
         .c
-        .prepare("SELECT number, branch, root, parent FROM sync_pr WHERE run_id = ?1 AND action = 'rebase'")
+        .prepare("SELECT number, branch, root, parent FROM sync_pr WHERE run_id = ?1 AND action = 'rebase' AND state NOT IN ('rebased', 'resolved')")
         .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map(|x| x.flatten().collect()))
         .map_err(sql)?;
     if rows.is_empty() {
-        return Ok(Outcome::Skipped("nothing to rebase".into()));
+        let earlier: i64 = ctx
+            .c
+            .query_row("SELECT count(*) FROM sync_pr WHERE run_id = ?1 AND state IN ('rebased', 'resolved')", [ctx.run], |r| r.get(0))
+            .map_err(sql)?;
+        return Ok(if earlier > 0 {
+            Outcome::Done(format!("{earlier} PR(s) rebased or resolved"))
+        } else {
+            Outcome::Skipped("nothing to rebase".into())
+        });
     }
-    let all = rows.clone();
+    let all: Vec<(i64, String, String, Option<String>)> = ctx
+        .c
+        .prepare("SELECT number, branch, root, parent FROM sync_pr WHERE run_id = ?1")
+        .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
     rows.sort_by_key(|r| depth(&r.1, &all));
     let date = Command::new("date").args(["-u", "+%a %b %d %Y"]).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
     let mut refused = Vec::new();
@@ -408,7 +433,7 @@ fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
 fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
     let rows: Vec<(i64, String, String)> = ctx
         .c
-        .prepare("SELECT number, root, new_head FROM sync_pr WHERE run_id = ?1 AND state = 'rebased'")
+        .prepare("SELECT number, root, new_head FROM sync_pr WHERE run_id = ?1 AND state IN ('rebased', 'resolved')")
         .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map(|x| x.flatten().collect()))
         .map_err(sql)?;
     if rows.is_empty() {
@@ -608,17 +633,21 @@ fn gate(ctx: &Ctx) -> Result<Outcome, String> {
     }
 }
 
-/// One PR's description carried to its new head: (current, carried, lint problems).
-fn carried_body(ctx: &Ctx, n: i64, root: &str, parent: Option<i64>, old_head: &str, new_head: &str) -> Result<(String, String, Vec<String>), String> {
-    let o = Command::new("gh")
-        .args(["pr", "view", &n.to_string(), "-R", &ctx.fork, "--json", "body", "--jq", ".body"])
-        .output()
-        .map_err(|e| format!("gh pr view: {e}"))?;
-    if !o.status.success() {
-        return Err(format!("gh pr view {n}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+/// The facts of PR `n` in this run: its root's bases, its parent's heads.
+fn row_facts(ctx: &Ctx, n: i64) -> Result<crate::prbody::Facts, String> {
+    let (root, old_head, new_head, parent): (String, String, String, Option<i64>) = ctx
+        .c
+        .query_row(
+            "SELECT p.root, p.gh_head, p.new_head, (SELECT q.number FROM sync_pr q WHERE q.run_id = p.run_id AND q.branch = p.parent) \
+             FROM sync_pr p WHERE p.run_id = ?1 AND p.number = ?2",
+            rusqlite::params![ctx.run, n],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<String>>(2)?.unwrap_or_default(), r.get(3)?)),
+        )
+        .map_err(sql)?;
+    if new_head.is_empty() {
+        return Err(format!("#{n} has no candidate in run {}", ctx.run));
     }
-    let current = String::from_utf8_lossy(&o.stdout).trim_end().to_string() + "\n";
-    let (old_base, _) = &ctx.bases[root];
+    let (old_base, _) = ctx.bases.get(&root).ok_or_else(|| format!("#{n}: root {root} is not a base of the run"))?;
     // a stacked PR's own commits start at its parent's head, before and after
     let own: Option<(String, String)> = match parent {
         None => None,
@@ -629,16 +658,38 @@ fn carried_body(ctx: &Ctx, n: i64, root: &str, parent: Option<i64>, old_head: &s
             })
             .ok(),
     };
-    let facts = crate::prbody::gather(
+    crate::prbody::gather(
         &ctx.repo,
         old_base,
         &format!("refs/sync/base/{root}"),
-        old_head,
-        new_head,
+        &old_head,
+        &new_head,
         parent.map(|p| p as u64),
         own.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
-    )?;
-    let carried = crate::prbody::rewrite(&current, &facts);
+    )
+}
+
+/// One PR's description carried to its new head: (current, carried, lint
+/// problems). A reviewed description (`sync body --set`) replaces the carried
+/// one; the review answers the change comparison, the rest of the lint holds.
+fn carried_body(ctx: &Ctx, n: i64) -> Result<(String, String, Vec<String>), String> {
+    let o = Command::new("gh")
+        .args(["pr", "view", &n.to_string(), "-R", &ctx.fork, "--json", "body", "--jq", ".body"])
+        .output()
+        .map_err(|e| format!("gh pr view: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("gh pr view {n}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    let current = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n").trim_end().to_string() + "\n";
+    let mut facts = row_facts(ctx, n)?;
+    let reviewed = ctx.dir.join("PUBLISH").join(format!("{n}.reviewed"));
+    let carried = match fs::read_to_string(&reviewed) {
+        Ok(text) => {
+            facts.change_differs.clear();
+            text
+        }
+        Err(_) => crate::prbody::rewrite(&current, &facts),
+    };
     let problems = crate::prbody::lint(&carried, &facts);
     Ok((current, carried, problems))
 }
@@ -674,6 +725,32 @@ fn put_body(ctx: &Ctx, n: i64, file: &Path, want: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Move a PR to the base `sync decide` gave it, and check GitHub shows it.
+fn retarget(ctx: &Ctx, n: i64) -> Result<Option<String>, String> {
+    let base: Option<String> = ctx
+        .c
+        .query_row("SELECT base_to FROM sync_pr WHERE run_id = ?1 AND number = ?2", rusqlite::params![ctx.run, n], |r| r.get(0))
+        .map_err(sql)?;
+    let Some(base) = base else { return Ok(None) };
+    let view = || -> Result<String, String> {
+        let o = Command::new("gh")
+            .args(["pr", "view", &n.to_string(), "-R", &ctx.fork, "--json", "baseRefName", "--jq", ".baseRefName"])
+            .output()
+            .map_err(|e| format!("gh: {e}"))?;
+        Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    if view()? != base {
+        let o = Command::new("gh").args(["pr", "edit", &n.to_string(), "-R", &ctx.fork, "--base", &base]).output().map_err(|e| format!("gh: {e}"))?;
+        if !o.status.success() {
+            return Err(format!("gh pr edit {n} --base {base}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+        }
+        if view()? != base {
+            return Err(format!("#{n}: GitHub does not show base {base} after the edit"));
+        }
+    }
+    Ok(Some(base))
+}
+
 fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
     // `pushed`: an earlier pass pushed the code and left an unfit description;
     // only the description is looked at again (someone may have rewritten it)
@@ -698,8 +775,8 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
     let mut table = Vec::new();
     let mut plan = Vec::new();
     let mut unfit = 0;
-    for (n, branch, lease, new, root, parent) in &rows {
-        let (current, carried, problems) = carried_body(ctx, *n, root, *parent, lease, new)?;
+    for (n, branch, lease, new, _root, _parent) in &rows {
+        let (current, carried, problems) = carried_body(ctx, *n)?;
         let file = bodies.join(format!("{n}.body"));
         fs::write(&file, &carried).map_err(|e| format!("{}: {e}", file.display()))?;
         let orig = bodies.join(format!("{n}.orig"));
@@ -771,11 +848,21 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
             fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
             return Ok(Outcome::Failed(format!("#{n}: GitHub reports {gh} after the push, not {new}")));
         }
+        let moved_to = match retarget(ctx, *n) {
+            Ok(b) => b,
+            Err(e) => {
+                fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
+                return Ok(Outcome::Failed(format!("#{n} pushed, base not moved: {e}")));
+            }
+        };
         if *put {
             if let Err(e) = put_body(ctx, *n, file, carried) {
                 fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
                 return Ok(Outcome::Failed(format!("#{n} pushed, description not updated: {e}")));
             }
+        }
+        if let Some(b) = &moved_to {
+            log.push(format!("#{n} {branch} now based on {b}"));
         }
         let st = if problems.is_empty() { "published" } else { "pushed" };
         ctx.c.execute("UPDATE sync_pr SET state = ?1 WHERE run_id = ?2 AND number = ?3", rusqlite::params![st, ctx.run, n]).map_err(sql)?;
@@ -979,9 +1066,56 @@ pub fn auto(c: &Connection, fork: &str, repo: &Path, results: &Path, quiet_s: i6
     Ok(format!("run {id}: {out}"))
 }
 
+/// Record a resolved candidate for a PR the run could not rebase. The
+/// candidate must sit on the new position of the base it will have: the
+/// root's new base, or the parent's candidate in this run.
+pub fn decide(c: &Connection, run: i64, n: i64, cand: &str, base_to: Option<&str>) -> Result<String, String> {
+    let (state, repo): (String, String) = c.query_row("SELECT state, repo FROM sync_run WHERE id = ?1", [run], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
+    if !matches!(state.as_str(), "needs-decision" | "paused" | "awaiting-approval") {
+        return Err(format!("run {run} is {state}: decisions are taken while it waits"));
+    }
+    let (branch, root, parent): (String, String, Option<String>) = c
+        .query_row("SELECT branch, root, parent FROM sync_pr WHERE run_id = ?1 AND number = ?2", rusqlite::params![run, n], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .map_err(|_| format!("PR #{n} is not part of run {run}"))?;
+    let repo = Path::new(&repo);
+    let sha = git(repo, &["rev-parse", "--verify", &format!("{cand}^{{commit}}")])?;
+    // the base the PR will have: a root, or another PR of this run
+    let new_parent: Option<String> = match base_to {
+        Some(b) if b == root || ["5.0", "common"].contains(&b) => None,
+        Some(b) => Some(b.to_string()),
+        None => parent.clone(),
+    };
+    let on = match &new_parent {
+        None => format!("refs/sync/base/{root}"),
+        Some(p) => {
+            let st: String = c
+                .query_row("SELECT state FROM sync_pr WHERE run_id = ?1 AND branch = ?2", rusqlite::params![run, p], |r| r.get(0))
+                .map_err(|_| format!("{p} is not a PR branch of run {run}"))?;
+            let r = format!("refs/heads/sync/{run}/{p}");
+            if git(repo, &["rev-parse", "--verify", "-q", &r]).is_err() {
+                return Err(format!("{p} ({st}) has no candidate in run {run} yet: decide it first"));
+            }
+            r
+        }
+    };
+    let ok = Command::new("git").arg("-C").arg(repo).args(["merge-base", "--is-ancestor", &on, &sha]).status().map_err(|e| format!("git: {e}"))?;
+    if !ok.success() {
+        return Err(format!("{cand} does not sit on {on}"));
+    }
+    git(repo, &["update-ref", &format!("refs/heads/sync/{run}/{branch}"), &sha])?;
+    c.execute(
+        "UPDATE sync_pr SET new_head = ?1, state = 'resolved', parent = ?2, base_to = ?3, detail = ?4 WHERE run_id = ?5 AND number = ?6",
+        rusqlite::params![sha, new_parent, base_to, format!("resolved by decision on {on}"), run, n],
+    )
+    .map_err(sql)?;
+    Ok(format!("#{n} {branch}: candidate {} on {on}{}", &sha[..12], base_to.map(|b| format!(", base moves to {b}")).unwrap_or_default()))
+}
+
 pub fn cli(args: &[String]) -> Option<u8> {
     let sub = args.first().map(String::as_str)?;
-    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto" | "lint" | "body") {
+    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto" | "lint" | "body" | "decide") {
         return None;
     }
     let cfg = crate::config::Config::load();
@@ -1000,6 +1134,44 @@ pub fn cli(args: &[String]) -> Option<u8> {
         let until = until_arg.as_deref();
         let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(String::as_str);
         match sub {
+            "decide" => {
+                let usage = "sync decide <run> <pr> candidate <ref> [--base <branch>]";
+                let id = num(1)?;
+                let n = num(2)?;
+                if args.get(3).map(String::as_str) != Some("candidate") {
+                    return Err(usage.into());
+                }
+                let cand = args.get(4).ok_or(usage)?;
+                decide(&c, id, n, cand, flag("--base"))
+            }
+            "body" if args.get(1).map(String::as_str) == Some("--set") => {
+                // a description reviewed for the new change; the lint still applies, except
+                // the change comparison, which the review answers
+                let id = num(2)?;
+                let n = num(3)?;
+                let file = args.get(4).ok_or("sync body --set <run> <pr> <file>")?;
+                let text = fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+                let (fork, repo, bases): (String, String, String) =
+                    c.query_row("SELECT fork, repo, bases FROM sync_run WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
+                let ctx = Ctx {
+                    c: &c,
+                    run: id,
+                    fork,
+                    repo: PathBuf::from(repo),
+                    bases: parse_bases(&bases)?,
+                    dir: results.join("sync").join(id.to_string()),
+                    publish: String::new(),
+                };
+                let facts = row_facts(&ctx, n)?;
+                let p = crate::prbody::lint(&text, &crate::prbody::Facts { change_differs: Vec::new(), ..facts });
+                if !p.is_empty() {
+                    return Err(format!("#{n}: the description fails the lint: {}", p.join("; ")));
+                }
+                let dir = ctx.dir.join("PUBLISH");
+                fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
+                fs::write(dir.join(format!("{n}.reviewed")), &text).map_err(|e| format!("{e}"))?;
+                Ok(format!("#{n}: reviewed description recorded for run {id}"))
+            }
             "body" if args.get(1).map(String::as_str) == Some("--restore") => {
                 // put back the description a sync replaced
                 let id = num(2)?;
