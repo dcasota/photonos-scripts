@@ -444,7 +444,7 @@ fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
     let mut log = Vec::new();
     for (n, root, head) in &rows {
         let work = crate::builder::shared_root().join(format!("work/sync-verify-{}-{n}", ctx.run));
-        let checks = crate::sync::verify(&ctx.repo, &format!("refs/sync/base/{root}"), head, &common, &work, &[90, 91, 92, 93], &mut |l| log.push(l.to_string()))?;
+        let checks = crate::sync::verify(&ctx.repo, &format!("refs/sync/base/{root}"), head, &common, &work, &mut |l| log.push(l.to_string()))?;
         let _ = fs::remove_dir_all(&work);
         let bad: Vec<String> = checks.iter().filter(|c| !c.ok).map(|c| format!("{} sr{} {}: {}", c.spec, c.subrelease, c.what, c.detail)).collect();
         log.push(format!("#{n}: {} check(s), {} failed", checks.len(), bad.len()));

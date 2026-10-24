@@ -636,7 +636,6 @@ pub fn verify(
     r: &str,
     common: &Path,
     work: &Path,
-    subs: &[u32],
     log: &mut dyn FnMut(&str),
 ) -> Result<Vec<Check>, String> {
     let out = Command::new("git")
@@ -667,6 +666,14 @@ pub fn verify(
         .collect();
     let checker = common.join("support/spec-checker/check_spec.py");
     let mut checks = Vec::new();
+    // the subreleases of the merged tree itself: a PR that conditions a spec
+    // on a new subrelease is checked at it
+    let sr = if changed.is_empty() { None } else { Some(crate::subrel::at_rev(repo, &tree)?) };
+    let subs: &[u32] = sr.as_ref().map(|s| s.all.as_slice()).unwrap_or(&[]);
+    let mainline = sr.as_ref().map(|s| s.check_mainline.to_string()).unwrap_or_default();
+    if let Some(s) = &sr {
+        log(&format!("subreleases {:?}, check_spec mainline {mainline}", s.all));
+    }
     let incs: Vec<String> = git_in(repo, &["diff", "--name-only", base, &tree, "--", "*changelog*.inc"])?
         .lines()
         .map(str::to_string)
@@ -712,7 +719,7 @@ pub fn verify(
             let args: Vec<OsString> = vec![
                 checker.clone().into(),
                 "--mainline".into(),
-                "93".into(),
+                mainline.clone().into(),
                 "--subrelease".into(),
                 sub.to_string().into(),
                 abs.clone().into(),
@@ -863,7 +870,7 @@ pub fn cli(args: &[String]) -> u8 {
                 let mut all_ok = true;
                 for r in refs {
                     let work = root.join("work").join(format!("sync-verify-{}", r.replace('/', "-")));
-                    match verify(&repo, base, r, &common, &work, &[90, 91, 92, 93], &mut log) {
+                    match verify(&repo, base, r, &common, &work, &mut log) {
                         Ok(checks) => {
                             let bad: Vec<&Check> = checks.iter().filter(|c| !c.ok).collect();
                             println!("{r}: {} check(s), {} failed", checks.len(), bad.len());

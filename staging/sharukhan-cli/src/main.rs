@@ -49,6 +49,7 @@ mod specdata;
 mod specparity;
 mod specresolve;
 mod subvault;
+mod subrel;
 mod sync;
 mod variants;
 mod syncrun;
@@ -1883,10 +1884,14 @@ fn cmd_spec_parity(args: &Args) -> Result<(), String> {
     };
     let base = args.base.as_deref().ok_or("spec-parity needs --base <dir>, the reference tree's root")?;
     let new = args.new.as_deref().ok_or("spec-parity needs --new <dir>, the reworked tree's root")?;
-    let subreleases = list(&args.subreleases, &["90", "91", "92", "93"])
-        .iter()
-        .map(|s| s.parse::<u32>().map_err(|_| format!("--subreleases: {s} is not a number")))
-        .collect::<Result<Vec<_>, _>>()?;
+    // without --subreleases: every subrelease the reference tree distinguishes
+    let subreleases = match &args.subreleases {
+        Some(_) => list(&args.subreleases, &[])
+            .iter()
+            .map(|s| s.parse::<u32>().map_err(|_| format!("--subreleases: {s} is not a number")))
+            .collect::<Result<Vec<_>, _>>()?,
+        None => subrel::in_dir(std::path::Path::new(base))?.all,
+    };
     let work = std::path::PathBuf::from(args.out.as_deref().ok_or("spec-parity needs --out <dir> for staging and %prep trees")?);
     std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
     let plan = specparity::Plan {
