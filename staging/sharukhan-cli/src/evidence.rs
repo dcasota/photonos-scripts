@@ -67,7 +67,8 @@ pub struct Checks {
     pub echo: bool,
 }
 
-/// The check -> PR attribution file: `check-id<TAB>PR#n` lines, `#` comment lines.
+/// The check -> PR attribution file: `check-id<TAB>PR#n [PR#m ...]` lines (a
+/// check one PR per installer variant proves names each), `#` comment lines.
 /// A malformed line, a label that is not PR#n/POI#n or a check listed twice is
 /// an error: attribution is what a failed check reports as implicated.
 pub fn load_attribution(path: &Path) -> Result<std::collections::BTreeMap<String, String>, String> {
@@ -83,10 +84,13 @@ pub fn load_attribution(path: &Path) -> Result<std::collections::BTreeMap<String
         let ok_label = |x: &str| {
             ["PR#", "POI#"].iter().any(|p| x.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())))
         };
-        if f.len() != 2 || !ok_label(f[1]) {
-            return Err(format!("{}:{}: expected 'check-id PR#n|POI#n', got '{l}'", path.display(), i + 1));
+        if f.len() < 2 || !f[1..].iter().all(|x| ok_label(x)) {
+            return Err(format!("{}:{}: expected 'check-id PR#n|POI#n ...', got '{l}'", path.display(), i + 1));
         }
-        if out.insert(f[0].to_string(), f[1].to_string()).is_some() {
+        if f[2..].iter().enumerate().any(|(k, x)| f[1..k + 2].contains(x)) {
+            return Err(format!("{}:{}: {} names a PR twice", path.display(), i + 1, f[0]));
+        }
+        if out.insert(f[0].to_string(), f[1..].join(",")).is_some() {
             return Err(format!("{}:{}: {} attributed twice", path.display(), i + 1, f[0]));
         }
     }
@@ -158,8 +162,10 @@ impl Checks {
             Status::Fail => {
                 self.fail += 1;
                 self.failed.push(id.to_string());
-                if pr != "-" && !pr.is_empty() && !self.prs.iter().any(|p| p == pr) {
-                    self.prs.push(pr.to_string());
+                for one in pr.split(',').filter(|p| *p != "-" && !p.is_empty()) {
+                    if !self.prs.iter().any(|p| p == one) {
+                        self.prs.push(one.to_string());
+                    }
                 }
                 if self.echo {
                     println!("  FAIL  {id:<34} {pr:<10} expected={expected} actual={actual}");
@@ -286,13 +292,13 @@ mod tests {
         c.echo = false;
         // the attribution is data (config/check-prs.tsv); two checks of one PR
         let attr = d.join("check-prs.tsv");
-        fs::write(&attr, "# test\nguest.no_render_group\tPR#22\nguest.no_journal_group PR#22\nguest.failed_units\tPR#9\n").unwrap();
+        fs::write(&attr, "# test\nguest.no_render_group\tPR#22 PR#85\nguest.no_journal_group PR#22\nguest.failed_units\tPR#9\n").unwrap();
         c.attribution = load_attribution(&attr).unwrap();
         c.expect("guest.no_render_group", "0", "3", "");
         c.expect("guest.failed_units", "0", "0", "");
         c.expect("guest.no_journal_group", "0", "1", "");
         assert_eq!((c.pass, c.fail), (1, 2));
-        assert_eq!(c.prs, vec!["PR#22".to_string()]);
+        assert_eq!(c.prs, vec!["PR#22".to_string(), "PR#85".to_string()], "each PR a check names, once");
         assert_eq!(c.failed.len(), 2);
         assert!(c.summary().contains("3 checks, 1 pass, 2 fail"));
         fs::remove_dir_all(&d).ok();
@@ -301,7 +307,7 @@ mod tests {
     #[test]
     fn a_malformed_attribution_is_refused() {
         let d = tmpdir("attr");
-        for (bad, why) in [("x PR#\n", "expected"), ("x 22\n", "expected"), ("x PR#1 extra\n", "expected"), ("x PR#1\nx POI#2\n", "twice")] {
+        for (bad, why) in [("x PR#\n", "expected"), ("x 22\n", "expected"), ("x PR#1 extra\n", "expected"), ("x PR#1\nx POI#2\n", "twice"), ("x PR#1 PR#1\n", "twice")] {
             let p = d.join("a.tsv");
             fs::write(&p, bad).unwrap();
             assert!(load_attribution(&p).unwrap_err().contains(why), "{bad:?}");
@@ -314,6 +320,7 @@ mod tests {
     fn the_shipped_attribution_loads() {
         let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../mission-control/config/check-prs.tsv");
         let a = load_attribution(&p).unwrap();
-        assert_eq!(a.get("guest.selinux").map(String::as_str), Some("PR#9"));
+        assert_eq!(a.get("guest.selinux").map(String::as_str), Some("PR#31"));
+        assert_eq!(a.get("guest.bios_boot").map(String::as_str), Some("PR#85,PR#86"));
     }
 }

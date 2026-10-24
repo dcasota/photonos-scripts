@@ -170,6 +170,8 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
                 (Some(prs), Some(pois)) => {
                     let mut gone: Vec<String> = attr
                         .values()
+                        .flat_map(|v| v.split(','))
+                        .map(str::to_string)
                         .filter(|l| {
                             let (list, n) = match l.split_once('#') {
                                 Some(("PR", n)) => (&prs, n),
@@ -178,7 +180,6 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
                             };
                             n.parse::<u64>().map_or(true, |n| !list.contains(&n))
                         })
-                        .cloned()
                         .collect();
                     gone.sort();
                     gone.dedup();

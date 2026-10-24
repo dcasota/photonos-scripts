@@ -2,25 +2,30 @@
 # POI#n on the installer fork). Read by sharukhan (SHARUKHAN_CHECK_PRS, default
 # $SHARUKHAN_ROOT/config/check-prs.tsv); a check without a line is attributed to no
 # PR. `sharukhan doctor` warns about a PR here that is no longer open.
+# A check one PR per installer variant proves names each (2.8 chain, then 2.9).
+# Successions, 2026-10-24: PR#9 was replaced by PR#31 (same branch); PR#90 was
+# merged into PR#86 (2.9), whose 2.8 counterpart is PR#85; POI#10 is upstream in
+# photon-os-installer master and reaches the media as spec patch 0007 via PR#19
+# (2.8) and PR#26 (2.9).
 
 guest.aide_libgcrypt	PR#21
-guest.avc_denials	PR#9
-guest.bios_boot	PR#90
+guest.avc_denials	PR#31
+guest.bios_boot	PR#85 PR#86
 guest.canister_based_on	PR#24
 guest.canister_version	PR#24
-guest.failed_units	PR#9
+guest.failed_units	PR#31
 guest.fips_canister	PR#24
 guest.fips_enabled	PR#24
 guest.no_journal_group	PR#22
 guest.no_render_group	PR#22
-guest.selinux	PR#9
-guest.selinux_policy	PR#9
+guest.selinux	PR#31
+guest.selinux_policy	PR#31
 guest.stig_pkg_count	POI#9
 guest.time_synced	POI#9
 guest.tmp_noexec	PR#22
-install.ansible_no_assert	PR#9
+install.ansible_no_assert	PR#31
 install.no_error_1011	POI#11
-install.no_i18n_error	POI#10
+install.no_i18n_error	PR#19 PR#26
 install.packages_installed	POI#11
 media.stig_packages	POI#11
 media.stig_set	POI#11
