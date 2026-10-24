@@ -2198,13 +2198,12 @@ pub fn run(
     let policy = match Policy::load(o.policy.as_deref()) {
         Ok(p) => p,
         Err(e) => {
-            c.check("pkg.policy", "-", Status::Fail, "valid", "invalid", &e);
+            c.check("pkg.policy", Status::Fail, "valid", "invalid", &e);
             return Err(e);
         }
     };
     c.check(
         "pkg.policy",
-        "-",
         Status::Info,
         "",
         &policy.sha256,
@@ -2224,7 +2223,6 @@ pub fn run(
         );
         c.check(
             "pkg.precondition",
-            "-",
             Status::Skip,
             "verify clean",
             &format!("{verify_failures} fail"),
@@ -2376,7 +2374,6 @@ fn attach_media(
     }
     c.check(
         "pkg.media_attached",
-        "-",
         Status::Pass,
         &vol,
         &vol,
@@ -2398,7 +2395,6 @@ fn detach_media(t: &Target, r: &mut dyn Remote, c: &mut Checks) {
     };
     c.check(
         "pkg.media_detached",
-        "-",
         Status::Info,
         "",
         &format!("umount exit {:?}; disconnect rc {rc:?}", u.code),
@@ -2427,7 +2423,6 @@ fn run_on(
     if mid.len() != 32 || !mid.chars().all(|ch| ch.is_ascii_hexdigit()) {
         c.check(
             "pkg.guest",
-            "-",
             Status::Fail,
             "machine-id",
             &mid,
@@ -2442,7 +2437,6 @@ fn run_on(
         .to_string();
     c.check(
         "pkg.guest",
-        "-",
         Status::Info,
         "",
         &mid,
@@ -2453,7 +2447,6 @@ fn run_on(
     if let Err(e) = attach_media(t, r, c, log) {
         c.check(
             "pkg.media_attached",
-            "-",
             Status::Fail,
             "the row's ISO mounted",
             "not attached",
@@ -2519,7 +2512,6 @@ fn run_attached(
             let why = format!("{err}; stderr: {}", clip(e.stderr.trim()));
             c.check(
                 "pkg.repo_is_media",
-                "-",
                 Status::Fail,
                 "listing",
                 "none",
@@ -2545,7 +2537,6 @@ fn run_attached(
         );
         c.check(
             "pkg.repo_is_media",
-            "-",
             Status::Fail,
             &files.len().to_string(),
             &listed.len().to_string(),
@@ -2555,7 +2546,6 @@ fn run_attached(
     }
     c.check(
         "pkg.repo_is_media",
-        "-",
         Status::Pass,
         &files.len().to_string(),
         &listed.len().to_string(),
@@ -2563,7 +2553,6 @@ fn run_attached(
     );
     c.check(
         "pkg.gpgcheck",
-        "-",
         Status::Info,
         "",
         "--nogpgcheck",
@@ -2596,7 +2585,6 @@ fn run_attached(
             );
             c.check(
                 "pkg.baseline",
-                "-",
                 Status::Fail,
                 "baseline intact",
                 "lost packages",
@@ -2625,7 +2613,6 @@ fn run_attached(
             if let Flow::Abort(why) = s.remove(&names, &added, &mut scratch) {
                 c.check(
                     "pkg.baseline",
-                    "-",
                     Status::Fail,
                     "reconciled",
                     "not reconciled",
@@ -2635,7 +2622,6 @@ fn run_attached(
             }
             c.check(
                 "pkg.baseline",
-                "-",
                 Status::Info,
                 "",
                 &format!("{} packages", base.len()),
@@ -2649,7 +2635,6 @@ fn run_attached(
         } else {
             c.check(
                 "pkg.baseline",
-                "-",
                 Status::Pass,
                 &keys.len().to_string(),
                 &now.len().to_string(),
@@ -2675,7 +2660,6 @@ fn run_attached(
                 );
                 c.check(
                     "pkg.baseline",
-                    "-",
                     Status::Fail,
                     "harvest == now",
                     "differs",
@@ -2688,7 +2672,6 @@ fn run_attached(
         std::fs::write(&base_file, text).map_err(|e| format!("{}: {e}", base_file.display()))?;
         c.check(
             "pkg.baseline",
-            "-",
             Status::Info,
             "",
             &format!("{} packages", now.len()),
@@ -2724,7 +2707,6 @@ fn run_attached(
             s.protected_active.insert(u.clone());
             c.check(
                 "pkg.ssh_unit",
-                "-",
                 Status::Info,
                 "",
                 &u,
@@ -2733,7 +2715,6 @@ fn run_attached(
         }
         Err(e) => c.check(
             "pkg.ssh_unit",
-            "-",
             Status::Info,
             "",
             "not derived",
@@ -2753,7 +2734,6 @@ fn run_attached(
             let why = format!("this boot's journal errors are unreadable (exit {:?}); preinstalled units cannot be judged", be.code);
             c.check(
                 "pkg.boot_journal",
-                "-",
                 Status::Fail,
                 "readable",
                 "unreadable",
@@ -2764,7 +2744,6 @@ fn run_attached(
     };
     c.check(
         "pkg.boot_journal",
-        "-",
         Status::Info,
         "",
         &s.boot_errors.len().to_string(),
@@ -2775,7 +2754,6 @@ fn run_attached(
     match s.control_journal() {
         Ok(m) => c.check(
             "pkg.control.journal",
-            "-",
             Status::Pass,
             "found",
             "found",
@@ -2784,7 +2762,6 @@ fn run_attached(
         Err(e) => {
             c.check(
                 "pkg.control.journal",
-                "-",
                 Status::Fail,
                 "found",
                 "not found",
@@ -2798,7 +2775,6 @@ fn run_attached(
     match s.control_unit() {
         Ok(m) => c.check(
             "pkg.control.unit_failure",
-            "-",
             Status::Pass,
             "failed",
             "failed",
@@ -2807,7 +2783,6 @@ fn run_attached(
         Err(e) => {
             c.check(
                 "pkg.control.unit_failure",
-                "-",
                 Status::Fail,
                 "failed",
                 "not judged failed",
@@ -2821,7 +2796,6 @@ fn run_attached(
     match s.control_cli() {
         Ok(m) => c.check(
             "pkg.control.cli",
-            "-",
             Status::Pass,
             "sandboxed; good passes, bad fails",
             "as expected",
@@ -2830,7 +2804,6 @@ fn run_attached(
         Err(e) => {
             c.check(
                 "pkg.control.cli",
-                "-",
                 Status::Fail,
                 "sandboxed; good passes, bad fails",
                 "not",
@@ -2957,7 +2930,6 @@ fn run_attached(
         };
         c.check(
             &format!("pkg.life.{}", pkg.name),
-            "-",
             status,
             PASS,
             &rec.verdict,
@@ -2979,7 +2951,6 @@ fn run_attached(
         Ok(end) if end.keys().collect::<Vec<_>>() == s.baseline.keys().collect::<Vec<_>>() => c
             .check(
                 "pkg.baseline_restored",
-                "-",
                 Status::Pass,
                 &s.baseline.len().to_string(),
                 &end.len().to_string(),
@@ -2987,7 +2958,6 @@ fn run_attached(
             ),
         Ok(end) => c.check(
             "pkg.baseline_restored",
-            "-",
             Status::Fail,
             &s.baseline.len().to_string(),
             &end.len().to_string(),
@@ -2995,7 +2965,6 @@ fn run_attached(
         ),
         Err(e) => c.check(
             "pkg.baseline_restored",
-            "-",
             Status::Fail,
             "readable",
             "unreadable",
@@ -3004,7 +2973,6 @@ fn run_attached(
     }
     c.check(
         "pkg.summary",
-        "-",
         Status::Info,
         "",
         &format!(

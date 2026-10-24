@@ -161,6 +161,37 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
             }
         },
     });
+    // the check -> PR attribution against what is still open
+    v.push(match crate::evidence::load_attribution(&cfg.check_prs) {
+        Err(e) => item("check attribution", Level::Fail, e),
+        Ok(attr) => {
+            let open = |repo: &str| -> Option<Vec<u64>> { crate::sync::open_prs(repo).ok().map(|p| p.into_iter().map(|x| x.number).collect()) };
+            match (open(&cfg.fork), open(&cfg.fork_installer)) {
+                (Some(prs), Some(pois)) => {
+                    let mut gone: Vec<String> = attr
+                        .values()
+                        .filter(|l| {
+                            let (list, n) = match l.split_once('#') {
+                                Some(("PR", n)) => (&prs, n),
+                                Some(("POI", n)) => (&pois, n),
+                                _ => return true,
+                            };
+                            n.parse::<u64>().map_or(true, |n| !list.contains(&n))
+                        })
+                        .cloned()
+                        .collect();
+                    gone.sort();
+                    gone.dedup();
+                    if gone.is_empty() {
+                        item("check attribution", Level::Ok, format!("{} checks attributed, every PR open", attr.len()))
+                    } else {
+                        item("check attribution", Level::Warn, format!("not open any more: {} ({})", gone.join(" "), cfg.check_prs.display()))
+                    }
+                }
+                _ => item("check attribution", Level::Warn, "could not list the open PRs"),
+            }
+        }
+    });
     v.push(match out("timeout", &["20", "gh", "api", "rate_limit", "--jq", ".rate.remaining"]) {
         Some(s) => item("gh", Level::Ok, format!("authenticated, {s} API calls left this hour")),
         None => item("gh", Level::Fail, "gh cannot reach the API or is not logged in"),

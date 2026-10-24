@@ -50,6 +50,8 @@ pub struct Config {
     pub matrix_tsv: PathBuf,
     /// The installer variants and the `common` branches (crate::variants).
     pub variants_file: PathBuf,
+    /// Which PR each oracle check proves (evidence::load_attribution).
+    pub check_prs: PathBuf,
 
     // ---- photon build tree -----------------------------------------------
     pub photon_tree: PathBuf,
@@ -254,6 +256,7 @@ impl Config {
                 &format!("{here}/config/permutations.tsv"),
             ),
             variants_file: var_or(get, "SHARUKHAN_VARIANTS", &format!("{here}/config/variants.conf")),
+            check_prs: var_or(get, "SHARUKHAN_CHECK_PRS", &format!("{here}/config/check-prs.tsv")),
 
             photon_tree: var_or(get, "PHOTON_TREE", "/root/5.0"),
             poi_tree: var_or(get, "POI_TREE", "/root/photon-os-installer"),

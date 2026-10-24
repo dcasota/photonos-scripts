@@ -214,7 +214,6 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
     let list = media_rpms(iso);
     c.check(
         "media.rpm_count",
-        "-",
         Status::Info,
         "",
         &list.len().to_string(),
@@ -229,7 +228,6 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         .count();
     c.expect(
         "media.negative_control",
-        "-",
         "0",
         &ctl.to_string(),
         "control must find nothing",
@@ -239,7 +237,6 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         (Ok(set), Ok(offered)) => {
             c.check(
                 "media.stig_set",
-                "POI#11",
                 Status::Info,
                 "",
                 &set.join(" "),
@@ -252,7 +249,6 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
                 .collect();
             c.expect(
                 "media.stig_packages",
-                "POI#11",
                 "",
                 &missing.join(" "),
                 &format!("every package the installer may request for STIG is on the {iso_type} media"),
@@ -260,7 +256,6 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         }
         (Err(e), _) | (_, Err(e)) => c.expect(
             "media.stig_packages",
-            "POI#11",
             "",
             &format!("UNDETERMINED: {e}"),
             "the STIG set or the media's metadata could not be read",
@@ -275,7 +270,6 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         Ok(l) => {
             c.check(
                 "media.boot_layout",
-                "-",
                 Status::Info,
                 "",
                 &format!(
@@ -286,11 +280,10 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
                 ),
                 "El Torito catalogue of the medium",
             );
-            c.expect("media.boot_images", "-", "", "", "every boot image the catalogue names is on the medium");
+            c.expect("media.boot_images", "", "", "every boot image the catalogue names is on the medium");
         }
         Err(e) => c.expect(
             "media.boot_images",
-            "-",
             "",
             &e,
             "every boot image the catalogue names is on the medium",
@@ -307,7 +300,6 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         .unwrap_or_else(|| "ABSENT".to_string());
     c.check(
         "media.poi_rpm",
-        "-",
         Status::Info,
         "",
         &poi,
@@ -580,7 +572,6 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     if !serial_path.exists() {
         c.check(
             "install.serial_log",
-            "-",
             Status::Fail,
             "present",
             "missing",
@@ -597,7 +588,6 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     let e1011 = serial::count(&text, "Error(1011)");
     c.expect(
         "install.no_error_1011",
-        "POI#11",
         "0",
         &e1011.to_string(),
         "No matching packages",
@@ -606,7 +596,6 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     let efail = serial::count(&text, "Failed to install some packages");
     c.expect(
         "install.packages_installed",
-        "POI#11",
         "0",
         &efail.to_string(),
         "",
@@ -616,7 +605,6 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     let i18n = serial::count(&text, "i18n_vars not set");
     c.expect(
         "install.no_i18n_error",
-        "POI#10",
         "0",
         &i18n.to_string(),
         "dracut 20i18n needs /etc/locale.conf at initrd build time",
@@ -628,7 +616,6 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     let parts = serial::count(&text, "root=PARTUUID=");
     c.check(
         "install.boot_ram0",
-        "-",
         Status::Info,
         "",
         &ram.to_string(),
@@ -647,7 +634,6 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     };
     c.expect(
         "install.booted_from_disk",
-        "-",
         "yes",
         booted,
         "root=PARTUUID= in serial, or the guest answered as a booted machine",
@@ -656,7 +642,6 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     let ansfail = serial::count(&text, "AssertionError");
     c.expect(
         "install.ansible_no_assert",
-        "PR#9",
         "0",
         &ansfail.to_string(),
         "installer.py asserts on playbook returncode",
@@ -673,20 +658,18 @@ pub fn boot_menu(fact: Option<&str>, c: &mut Checks) {
     let fact = fact.unwrap_or("");
     let (kind, detail) = fact.split_once('|').unwrap_or((fact, ""));
     match kind {
-        "left" => c.check("install.boot_menu", "-", Status::Pass, "left", "left", detail),
-        "stuck" => c.check("install.boot_menu", "-", Status::Fail, "left", "stuck", detail),
+        "left" => c.check("install.boot_menu", Status::Pass, "left", "left", detail),
+        "stuck" => c.check("install.boot_menu", Status::Fail, "left", "stuck", detail),
         "autoboot" => c.check(
             "install.boot_menu",
-            "-",
             Status::Info,
             "",
             "autoboot",
             "the medium's menu boots its default entry on a timer",
         ),
-        "operator" => c.check("install.boot_menu", "-", Status::Info, "", "operator", "interactive row"),
+        "operator" => c.check("install.boot_menu", Status::Info, "", "operator", "interactive row"),
         _ => c.check(
             "install.boot_menu",
-            "-",
             Status::Skip,
             "",
             "unrecorded",
@@ -773,7 +756,6 @@ pub fn guest(
         .value_or("unknown");
     c.expect(
         "guest.firmware",
-        "-",
         firmware,
         &fw,
         "the guest runs on the firmware the row asks for",
@@ -788,7 +770,6 @@ pub fn guest(
             .value_or("unknown");
         c.check(
             "guest.bios_boot",
-            "PR#90",
             if bios_boot && core == "present" { Status::Pass } else { Status::Fail },
             "bios-boot-partition=true i386-pc=present",
             &format!("bios-boot-partition={bios_boot} i386-pc={core}"),
@@ -806,20 +787,18 @@ pub fn guest(
             let ok = uname == k || uname.strip_prefix(k).map(|r| r.starts_with('-')).unwrap_or(false);
             c.check(
                 "guest.kernel_release",
-                "-",
                 if ok { Status::Pass } else { Status::Fail },
                 k,
                 &uname,
                 "the kernel the media were built with is the one running",
             );
         }
-        None => c.check("guest.kernel_release", "-", Status::Info, "", &uname, "running kernel"),
+        None => c.check("guest.kernel_release", Status::Info, "", &uname, "running kernel"),
     }
 
     let v = g.run("findmnt -no FSTYPE /").value_or("unknown");
     c.expect(
         "guest.root_fstype",
-        "-",
         fs,
         &v,
         "the filesystem axis actually took effect",
@@ -829,7 +808,6 @@ pub fn guest(
     let policy = g.run("rpm -q selinux-policy").value_or("absent");
     c.check(
         "guest.selinux_policy",
-        "PR#9",
         Status::Info,
         "",
         &policy,
@@ -850,21 +828,19 @@ pub fn guest(
     match (&expected, stig) {
         (Expected::Mode(m), "yes") => c.expect(
             "guest.selinux",
-            "PR#9",
             m,
             &running,
             "the mode selinux-policy ships at this subrelease - permissive on >= 92 BY DESIGN",
         ),
         (Expected::Mode(m), _) => c.check(
             "guest.selinux",
-            "PR#9",
             Status::Info,
             m,
             &running,
             "not a STIG row; recorded, not asserted",
         ),
         (Expected::Unknown(why), _) => {
-            c.check("guest.selinux", "PR#9", Status::Info, "", &running, why)
+            c.check("guest.selinux", Status::Info, "", &running, why)
         }
     }
 
@@ -874,7 +850,6 @@ pub fn guest(
         .value_or("?");
     c.expect(
         "guest.no_render_group",
-        "PR#22",
         "0",
         &v,
         "dangling accel rule in 50-udev-default.rules",
@@ -884,7 +859,6 @@ pub fn guest(
         .value_or("?");
     c.expect(
         "guest.no_journal_group",
-        "PR#22",
         "0",
         &v,
         "initrd sysusers snippet emptied by systemd patch 0004",
@@ -899,7 +873,6 @@ pub fn guest(
             .value_or("0");
         c.check(
             "guest.tmp_noexec",
-            "PR#22",
             Status::Info,
             "",
             &v,
@@ -912,7 +885,6 @@ pub fn guest(
             .value_or("?");
         c.expect(
             "guest.stig_pkg_count",
-            "POI#9",
             "5",
             &v,
             "libselinux-utils, ntp, libgcrypt dropped as redundant",
@@ -926,7 +898,6 @@ pub fn guest(
         .value_or("?");
     c.expect(
         "guest.stig_not_on_target",
-        "-",
         "absent",
         &v,
         "stig-hardening is not in KS_STIG_PACKAGES",
@@ -938,7 +909,6 @@ pub fn guest(
         .value_or("0");
     c.check(
         "guest.aide_libgcrypt",
-        "PR#21",
         Status::Info,
         "",
         &v,
@@ -951,7 +921,6 @@ pub fn guest(
         .value_or("?");
     c.check(
         "guest.time_synced",
-        "POI#9",
         Status::Info,
         "",
         &v,
@@ -962,7 +931,6 @@ pub fn guest(
     let fips_on = g.run("cat /proc/sys/crypto/fips_enabled").value_or("0");
     c.check(
         "guest.fips_enabled",
-        "PR#24",
         Status::Info,
         "",
         &fips_on,
@@ -972,7 +940,7 @@ pub fn guest(
     let v = g
         .run("dmesg 2>/dev/null | grep -c \"canister verification passed\"")
         .value_or("0");
-    c.check("guest.fips_canister", "PR#24", Status::Info, "", &v, "");
+    c.check("guest.fips_canister", Status::Info, "", &v, "");
     canister_identity(g, canister, fips_on, c);
 
     // One row in the matrix has a link that can NEVER reach `configured`, and
@@ -999,14 +967,13 @@ pub fn guest(
         )
     };
     let v = g.run(cmd).value_or("?");
-    c.expect("guest.failed_units", "PR#9", "0", &v, why);
+    c.expect("guest.failed_units", "0", &v, why);
 
     let v = g
         .run("journalctl -b --no-pager 2>/dev/null | grep -ci \"avc: *denied\"")
         .value_or("?");
     c.check(
         "guest.avc_denials",
-        "PR#9",
         Status::Info,
         "",
         &v,
@@ -1029,7 +996,6 @@ pub fn guest(
 pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
     c.check(
         "net.axis",
-        "-",
         Status::Info,
         "",
         &net.to_string(),
@@ -1046,7 +1012,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         .value_or("none");
     c.check(
         "net.config_files",
-        "-",
         Status::Info,
         "",
         &files,
@@ -1057,7 +1022,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         .value_or("?");
     c.expect(
         "net.shipped_default_cleared",
-        "-",
         "absent",
         &v,
         "the OS-shipped 99-dhcp-en.network must be gone: its survival means \
@@ -1073,7 +1037,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         .value_or("absent");
     c.check(
         "net.accept_ra",
-        "-",
         Status::Info,
         "",
         &v,
@@ -1090,7 +1053,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
     if want_v4 {
         c.check(
             "net.v4_addr",
-            "-",
             if v4.trim().is_empty() {
                 Status::Fail
             } else {
@@ -1105,7 +1067,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("none");
         c.check(
             "net.v4_default_route",
-            "-",
             if gw == "none" {
                 Status::Fail
             } else {
@@ -1123,7 +1084,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("?");
         c.expect(
             "net.dns_resolves",
-            "-",
             "ok",
             &v,
             "DNS= is inert without systemd-resolved, which Photon enables by preset",
@@ -1134,7 +1094,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         // interface with NO IPv4 at all can expose that.
         c.expect(
             "net.v4_absent_on_eth0",
-            "-",
             "",
             v4.trim(),
             "the family axis says IPv6 only, so eth0 must carry no IPv4 address",
@@ -1144,7 +1103,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("none");
         c.check(
             "net.management_nic",
-            "-",
             if mgmt == "none" {
                 Status::Fail
             } else {
@@ -1163,7 +1121,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("");
         c.check(
             "net.v6_addr",
-            "-",
             if v6.trim().is_empty() {
                 Status::Fail
             } else {
@@ -1180,7 +1137,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("?");
         c.expect(
             "net.v6_dad_complete",
-            "-",
             "0",
             &v,
             "an address stuck at 'tentative' is listed but unusable",
@@ -1198,7 +1154,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("?");
         c.expect(
             "net.v6_addr_live",
-            "-",
             "ok",
             &v,
             "the address answers in the kernel, not just in a config file; \
@@ -1220,7 +1175,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         .value_or("0");
     c.expect(
         "net.vlan_link",
-        "-",
         "1",
         &v,
         "the tagged interface exists in the kernel with the id the matrix asked for",
@@ -1228,7 +1182,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
     let v = g.run("lsmod 2>/dev/null | grep -c '^8021q'").value_or("0");
     c.expect(
         "net.vlan_module",
-        "-",
         "1",
         &v,
         "CONFIG_VLAN_8021Q=m in linux-esx; creating the netdev must auto-load it",
@@ -1240,7 +1193,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         .value_or("0");
     c.expect(
         "net.vlan_netdev",
-        "-",
         "1",
         &v,
         "write_netdev_file emits [NetDev] Kind=vlan plus [VLAN] Id=<n>",
@@ -1253,7 +1205,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         .value_or("absent");
     c.expect(
         "net.vlan_parent_ref",
-        "-",
         // No trailing space: `value_or` trims, so an expected value carrying
         // the separator the `tr` left behind would never compare equal.
         &format!("VLAN={vif}"),
@@ -1275,7 +1226,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         // Photon or the installer would make this succeed here.
         c.expect(
             "net.vlan_addr_absent",
-            "-",
             "",
             addr.trim(),
             "expected: the legacy schema forces DHCP on the tag and Workstation \
@@ -1286,7 +1236,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("?");
         c.expect(
             "net.wait_online",
-            "-",
             "failed",
             &v,
             "asserted positively so the expected failure is recorded, not hidden: \
@@ -1297,7 +1246,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
     } else {
         c.check(
             "net.vlan_addr",
-            "-",
             if addr.trim().is_empty() {
                 Status::Fail
             } else {
@@ -1313,7 +1261,6 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
             .value_or("?");
         c.expect(
             "net.wait_online",
-            "-",
             "active",
             &v,
             "every managed link must reach 'configured' when the tag is static",
@@ -1396,7 +1343,6 @@ pub fn canister_identity(g: &Guest, want: &CanisterExpect, fips_on: bool, c: &mu
     match &parsed {
         Some((canister, _)) => c.check(
             "guest.canister_version",
-            "PR#24",
             Status::Info,
             "",
             canister,
@@ -1404,7 +1350,6 @@ pub fn canister_identity(g: &Guest, want: &CanisterExpect, fips_on: bool, c: &mu
         ),
         None => c.check(
             "guest.canister_version",
-            "PR#24",
             Status::Info,
             "",
             "absent",
@@ -1420,7 +1365,6 @@ pub fn canister_identity(g: &Guest, want: &CanisterExpect, fips_on: bool, c: &mu
     let (status, expected, detail) = based_on_check(want, based_on, fips_on);
     c.check(
         "guest.canister_based_on",
-        "PR#24",
         status,
         &expected,
         based_on,
@@ -1498,7 +1442,6 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
     if let Err(e) = std::fs::create_dir_all(dest) {
         c.check(
             "logs.harvest_dir",
-            "-",
             Status::Fail,
             "created",
             &format!("{e}"),
@@ -1576,7 +1519,6 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
         .count();
     c.expect(
         "logs.dmesg_no_bug",
-        "-",
         "0",
         &bug.to_string(),
         "kernel BUG/WARNING/Oops in dmesg",
@@ -1586,7 +1528,6 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
         .unwrap_or(0);
     c.check(
         "logs.journal_err_lines",
-        "-",
         Status::Info,
         "",
         &errs.to_string(),

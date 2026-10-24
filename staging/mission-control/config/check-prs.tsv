@@ -1,0 +1,27 @@
+# Which PR a check of the oracle proves: check id, then the PR (PR#n on the fork,
+# POI#n on the installer fork). Read by sharukhan (SHARUKHAN_CHECK_PRS, default
+# $SHARUKHAN_ROOT/config/check-prs.tsv); a check without a line is attributed to no
+# PR. `sharukhan doctor` warns about a PR here that is no longer open.
+
+guest.aide_libgcrypt	PR#21
+guest.avc_denials	PR#9
+guest.bios_boot	PR#90
+guest.canister_based_on	PR#24
+guest.canister_version	PR#24
+guest.failed_units	PR#9
+guest.fips_canister	PR#24
+guest.fips_enabled	PR#24
+guest.no_journal_group	PR#22
+guest.no_render_group	PR#22
+guest.selinux	PR#9
+guest.selinux_policy	PR#9
+guest.stig_pkg_count	POI#9
+guest.time_synced	POI#9
+guest.tmp_noexec	PR#22
+install.ansible_no_assert	PR#9
+install.no_error_1011	POI#11
+install.no_i18n_error	POI#10
+install.packages_installed	POI#11
+media.stig_packages	POI#11
+media.stig_set	POI#11
+meta.canister_origin	PR#24

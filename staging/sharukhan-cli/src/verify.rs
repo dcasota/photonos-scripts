@@ -39,6 +39,7 @@ pub fn run(
     let serial = cfg.serial_log(&p.id);
 
     let mut c = Checks::init(&cfg.results_dir, &p.id, stamp)?;
+    c.attribution = crate::evidence::load_attribution(&cfg.check_prs)?;
     // Reports are versioned too: harvested logs live beside the checks file
     // that names them, and logs-latest is a pointer, never storage.
     let harvest = cfg.results_dir.join(&p.id).join(format!("logs-{stamp}"));
@@ -53,7 +54,6 @@ pub fn run(
     ));
     c.check(
         "meta.doc_verdict",
-        "-",
         Status::Info,
         "",
         &p.doc,
@@ -61,7 +61,6 @@ pub fn run(
     );
     c.check(
         "meta.expected",
-        "-",
         Status::Info,
         "",
         &p.expect,
@@ -99,7 +98,6 @@ pub fn run(
     if let Some(k) = &cfg.kernel {
         c.check(
             "meta.kernel",
-            "-",
             Status::Info,
             "",
             &format!("{} ({})", k.name, k.nevr),
@@ -140,7 +138,6 @@ pub fn run(
     };
     c.check(
         "meta.canister_origin",
-        "PR#24",
         Status::Info,
         "",
         &origin,
@@ -190,7 +187,6 @@ pub fn run(
     } else {
         c.check(
             "media.iso",
-            "-",
             Status::Skip,
             "",
             "",
@@ -232,7 +228,6 @@ pub fn run(
     if ip.is_empty() {
         c.check(
             "guest.ip",
-            "-",
             Status::Fail,
             "discovered",
             "none",
@@ -242,7 +237,7 @@ pub fn run(
         return Ok(Verified { checks: c, harvest });
     }
 
-    c.check("guest.ip", "-", Status::Info, "", &ip, "");
+    c.check("guest.ip", Status::Info, "", &ip, "");
     let g = Guest::new(&cfg.ssh_user, &ip, &cfg.ssh_key(), 10);
     let started = std::time::Instant::now();
     let mut attempts = 1;
@@ -279,7 +274,6 @@ pub fn run(
             if !iso.is_file() {
                 c.check(
                     "pkg.media_attached",
-                    "-",
                     Status::Fail,
                     "the row's ISO",
                     "absent",
@@ -312,7 +306,6 @@ pub fn run(
                         if c.fail == before {
                             c.check(
                                 "pkg.lifecycle",
-                                "-",
                                 Status::Fail,
                                 "completed",
                                 "aborted",
@@ -332,7 +325,6 @@ pub fn run(
         let _ = fs::write(harvest.join("ssh-error.txt"), &probe.stderr);
         c.check(
             "guest.ssh",
-            "-",
             Status::Fail,
             "reachable",
             "unreachable",

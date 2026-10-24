@@ -59,9 +59,38 @@ pub struct Checks {
     pub info: usize,
     pub failed: Vec<String>,
     pub prs: Vec<String>,
+    /// check id -> the PR it proves (config/check-prs.tsv). A check without an
+    /// entry is attributed to no PR ("-").
+    pub attribution: std::collections::BTreeMap<String, String>,
     /// Whether each record is also printed as it is written. A run driving many
     /// rows wants the lines; a caller collecting a summary does not.
     pub echo: bool,
+}
+
+/// The check -> PR attribution file: `check-id<TAB>PR#n` lines, `#` comment lines.
+/// A malformed line, a label that is not PR#n/POI#n or a check listed twice is
+/// an error: attribution is what a failed check reports as implicated.
+pub fn load_attribution(path: &Path) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e} (SHARUKHAN_CHECK_PRS)", path.display()))?;
+    let mut out = std::collections::BTreeMap::new();
+    for (i, l) in text.lines().enumerate() {
+        // full-line comments only: the labels themselves carry '#'
+        let l = l.trim();
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = l.split_whitespace().collect();
+        let ok_label = |x: &str| {
+            ["PR#", "POI#"].iter().any(|p| x.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())))
+        };
+        if f.len() != 2 || !ok_label(f[1]) {
+            return Err(format!("{}:{}: expected 'check-id PR#n|POI#n', got '{l}'", path.display(), i + 1));
+        }
+        if out.insert(f[0].to_string(), f[1].to_string()).is_some() {
+            return Err(format!("{}:{}: {} attributed twice", path.display(), i + 1, f[0]));
+        }
+    }
+    Ok(out)
 }
 
 impl Checks {
@@ -85,6 +114,7 @@ impl Checks {
             info: 0,
             failed: Vec::new(),
             prs: Vec::new(),
+            attribution: std::collections::BTreeMap::new(),
             echo: true,
         })
     }
@@ -95,12 +125,13 @@ impl Checks {
     pub fn check(
         &mut self,
         id: &str,
-        pr: &str,
         status: Status,
         expected: &str,
         actual: &str,
         detail: &str,
     ) {
+        let pr = self.attribution.get(id).map(String::as_str).unwrap_or("-").to_string();
+        let pr = pr.as_str();
         let rec = Record {
             perm: &self.perm,
             check: id,
@@ -150,13 +181,13 @@ impl Checks {
     }
 
     /// Pass when measured equals expected, fail otherwise.
-    pub fn expect(&mut self, id: &str, pr: &str, expected: &str, actual: &str, detail: &str) {
+    pub fn expect(&mut self, id: &str, expected: &str, actual: &str, detail: &str) {
         let st = if expected == actual {
             Status::Pass
         } else {
             Status::Fail
         };
-        self.check(id, pr, st, expected, actual, detail);
+        self.check(id, st, expected, actual, detail);
     }
 
     pub fn total(&self) -> usize {
@@ -198,7 +229,6 @@ mod tests {
         c.echo = false;
         c.check(
             "meta.doc_verdict",
-            "-",
             Status::Info,
             "",
             "works",
@@ -218,10 +248,10 @@ mod tests {
         let d = tmpdir("latest");
         let mut a = Checks::init(&d, "k02", "20260901T000000Z").unwrap();
         a.echo = false;
-        a.check("x", "-", Status::Pass, "1", "1", "");
+        a.check("x", Status::Pass, "1", "1", "");
         let mut b = Checks::init(&d, "k02", "20260901T010000Z").unwrap();
         b.echo = false;
-        b.check("y", "-", Status::Pass, "1", "1", "");
+        b.check("y", Status::Pass, "1", "1", "");
         // The earlier file still exists: a re-run must never destroy the
         // evidence of the run before it.
         assert!(d.join("k02/checks-20260901T000000Z.jsonl").exists());
@@ -237,7 +267,6 @@ mod tests {
         c.echo = false;
         c.check(
             "guest.ssh",
-            "-",
             Status::Fail,
             "reachable",
             "ssh_dispatch_run_fatal: invalid \"argument\"\n[preauth]",
@@ -255,13 +284,36 @@ mod tests {
         let d = tmpdir("prs");
         let mut c = Checks::init(&d, "k11", "20260901T000000Z").unwrap();
         c.echo = false;
-        c.expect("guest.no_render_group", "PR#22", "0", "3", "");
-        c.expect("guest.failed_units", "PR#9", "0", "0", "");
-        c.expect("guest.no_journal_group", "PR#22", "0", "1", "");
+        // the attribution is data (config/check-prs.tsv); two checks of one PR
+        let attr = d.join("check-prs.tsv");
+        fs::write(&attr, "# test\nguest.no_render_group\tPR#22\nguest.no_journal_group PR#22\nguest.failed_units\tPR#9\n").unwrap();
+        c.attribution = load_attribution(&attr).unwrap();
+        c.expect("guest.no_render_group", "0", "3", "");
+        c.expect("guest.failed_units", "0", "0", "");
+        c.expect("guest.no_journal_group", "0", "1", "");
         assert_eq!((c.pass, c.fail), (1, 2));
         assert_eq!(c.prs, vec!["PR#22".to_string()]);
         assert_eq!(c.failed.len(), 2);
         assert!(c.summary().contains("3 checks, 1 pass, 2 fail"));
         fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_malformed_attribution_is_refused() {
+        let d = tmpdir("attr");
+        for (bad, why) in [("x PR#\n", "expected"), ("x 22\n", "expected"), ("x PR#1 extra\n", "expected"), ("x PR#1\nx POI#2\n", "twice")] {
+            let p = d.join("a.tsv");
+            fs::write(&p, bad).unwrap();
+            assert!(load_attribution(&p).unwrap_err().contains(why), "{bad:?}");
+        }
+        fs::remove_dir_all(&d).ok();
+    }
+
+    /// The shipped attribution file must load.
+    #[test]
+    fn the_shipped_attribution_loads() {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../mission-control/config/check-prs.tsv");
+        let a = load_attribution(&p).unwrap();
+        assert_eq!(a.get("guest.selinux").map(String::as_str), Some("PR#9"));
     }
 }
