@@ -183,6 +183,9 @@ impl Usage {
 #[derive(Debug, Default)]
 pub struct Stream {
     pub usage: Usage,
+    /// The stream emits one event per content block, each carrying the whole
+    /// message's usage: a message is counted once, by its id, with its last usage.
+    per_message: std::collections::BTreeMap<String, Usage>,
     pub result: Option<Value>,
     pub retries: Vec<String>,
 }
@@ -195,7 +198,18 @@ impl Stream {
         match v.get("type").and_then(Value::as_str) {
             Some("assistant") => {
                 if let Some(u) = v.pointer("/message/usage") {
-                    self.usage.add(u);
+                    let id = v.pointer("/message/id").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("anon-{}", self.per_message.len()));
+                    let mut one = Usage::default();
+                    one.add(u);
+                    self.per_message.insert(id, one);
+                    let mut sum = Usage::default();
+                    for m in self.per_message.values() {
+                        sum.input += m.input;
+                        sum.output += m.output;
+                        sum.cache_read += m.cache_read;
+                        sum.cache_write += m.cache_write;
+                    }
+                    self.usage = sum;
                 }
             }
             Some("system") if v.get("subtype").and_then(Value::as_str) == Some("api_retry") => {
@@ -524,8 +538,10 @@ mod tests {
     fn the_stream_is_summed_as_it_comes_and_the_result_settles_it() {
         let mut s = Stream::default();
         s.take(r#"{"type":"system","subtype":"init"}"#);
-        s.take(r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200}}}"#);
-        s.take(r#"{"type":"assistant","message":{"usage":{"input_tokens":3,"output_tokens":7,"cache_read_input_tokens":1200,"cache_creation_input_tokens":0}}}"#);
+        s.take(r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200}}}"#);
+        // the same message again (another content block): counted once
+        s.take(r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200}}}"#);
+        s.take(r#"{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":3,"output_tokens":7,"cache_read_input_tokens":1200,"cache_creation_input_tokens":0}}}"#);
         assert_eq!(s.usage.total(), 2425);
         s.take(r#"{"type":"system","subtype":"api_retry","error":"rate_limit"}"#);
         assert_eq!(s.retries.len(), 1);
