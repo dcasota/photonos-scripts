@@ -74,6 +74,9 @@ pub const KINDS: &[&str] = &[
     "sync-failed",
     "sync-done",
     "sync-description-edited",
+    "escalation-proposed",
+    "escalation-failed",
+    "escalation-parked",
 ];
 
 /// What is watched: branch heads, and (reference, fork) pairs.
