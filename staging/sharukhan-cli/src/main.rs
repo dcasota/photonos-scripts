@@ -169,7 +169,7 @@ OPTIONS:
     --img <t>           iso | minimal-iso | basic-iso | rt-iso (build)
     --out <dir>         where the finished ISO is delivered (build)
     --iso-type <t>      minimal | full (build-iso)
-    --poi <v>           2.8 | latest (build-iso)
+    --poi <v>           a variant of config/variants.conf (build-iso); default: its first
     --canister <c>      prebuilt | build | acvp | kat | equivalent (build-iso)
     --kernel <release>  build-iso, variant-patches: a kernel wrapper profile
                         (profiles/kernel/<release>.json, e.g. 7.3-rc4). The build
@@ -669,18 +669,20 @@ fn main() -> ExitCode {
                 phases::cmd_verify(&cfg, id, args.ip.as_deref(), lifecycle.as_ref(), args.iso.as_deref())
             }),
         "teardown" => need_id(&args).and_then(|id| phases::cmd_teardown(&cfg, id, args.purge)),
-        "build-iso" => phases::cmd_build_iso(
-            &cfg,
-            args.iso_type.as_deref().unwrap_or("minimal"),
-            args.poi.as_deref().unwrap_or("2.8"),
-            args.canister.as_deref().unwrap_or("prebuilt"),
-            args.kernel.as_deref(),
-            args.force,
-            args.allow_build,
-            args.compose_only,
-            args.wait_idle,
-        ),
-        "build" => cmd_build(&args),
+        "build-iso" => args.poi.clone().map(Ok).unwrap_or_else(|| default_poi(&cfg)).and_then(|poi| {
+            phases::cmd_build_iso(
+                &cfg,
+                args.iso_type.as_deref().unwrap_or("minimal"),
+                &poi,
+                args.canister.as_deref().unwrap_or("prebuilt"),
+                args.kernel.as_deref(),
+                args.force,
+                args.allow_build,
+                args.compose_only,
+                args.wait_idle,
+            )
+        }),
+        "build" => cmd_build(&args, &cfg),
         "remaster" => cmd_remaster(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
         "pkg-lifecycle" => need_id(&args).and_then(|id| {
@@ -690,7 +692,7 @@ fn main() -> ExitCode {
         "pkg-report" => cmd_pkg_report(args.runs.as_deref(), args.out.as_deref()),
         "pkg-rejudge" => cmd_pkg_rejudge(args.new.as_deref(), args.pkg_policy.as_deref(), args.out.as_deref()),
         "iso-boot" => cmd_iso_boot(args.iso.as_deref(), args.json),
-        "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
+        "composer" => args.poi.clone().map(Ok).unwrap_or_else(|| default_poi(&cfg)).and_then(|p| cmd_composer(&cfg, &p)),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "branch-check" => cmd_branch_check(&args),
         "spec-parity" => cmd_spec_parity(&args),
@@ -930,6 +932,11 @@ fn cmd_iso_boot(iso: Option<&str>, json: bool) -> Result<(), String> {
 
 /// `sharukhan composer --poi <v>`: the image `build-iso` would compose that
 /// variant's media with, built if needed and proven either way.
+/// `--poi` when it is not given: the default variant of the variants file.
+fn default_poi(cfg: &config::Config) -> Result<String, String> {
+    Ok(variants::load(&cfg.variants_file)?.default_variant().name.clone())
+}
+
 fn cmd_composer(cfg: &config::Config, poi: &str) -> Result<(), String> {
     let patch = cfg.variant_patches.join(format!("poi-{poi}.patch"));
     if !patch.is_file() {
@@ -1130,15 +1137,15 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     // pristine tree, which is why this is not simply another loop iteration
     // above.
     {
+        let dflt = default_poi(cfg).unwrap_or_default();
         let vp = variants.iter().find(|p| {
-            p.file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with("poi-2.8"))
+            !dflt.is_empty() && p.file_name().is_some_and(|n| n.to_string_lossy() == format!("poi-{dflt}.patch"))
         });
         match vp {
             None => check(
                 "canister-equivalent applies",
                 false,
-                "no poi-2.8 variant patch to layer it on".into(),
+                format!("no variant patch of the default variant ({}) to layer it on", if dflt.is_empty() { "unreadable variants file" } else { dflt.as_str() }),
             ),
             Some(vp) => {
                 let (ok, detail) = build::embedded_applies_over(cfg, vp);
@@ -1164,12 +1171,22 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     }
 
     println!("inputs");
-    let vp = cfg.variant_patches.join("poi-2.8.patch").exists();
-    check(
-        "variant patches",
-        vp,
-        cfg.variant_patches.display().to_string(),
-    );
+    match variants::load(&cfg.variants_file) {
+        Ok(vs) => {
+            let missing: Vec<String> = vs
+                .variants
+                .iter()
+                .map(|v| format!("poi-{}.patch", v.name))
+                .filter(|f| !cfg.variant_patches.join(f).exists())
+                .collect();
+            check(
+                "variant patches",
+                missing.is_empty(),
+                if missing.is_empty() { cfg.variant_patches.display().to_string() } else { format!("missing in {}: {}", cfg.variant_patches.display(), missing.join(" ")) },
+            );
+        }
+        Err(e) => check("variant patches", false, e),
+    }
     let isos: Vec<String> = std::fs::read_dir(&cfg.iso_cache)
         .map(|d| {
             d.flatten()
@@ -1498,21 +1515,22 @@ fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
 /// The five scripts are one build with different accretions; see buildmode.rs
 /// for the table of which fixup landed in which script and why that is a bug
 /// rather than a decision. Everything they varied is a flag here.
-fn cmd_build(args: &Args) -> Result<(), String> {
-    let release = args.release.clone().unwrap_or_else(|| "5.0".into());
+fn cmd_build(args: &Args, cfg: &config::Config) -> Result<(), String> {
+    let release = args.release.clone().unwrap_or_else(|| cfg.release.clone());
     let img = args.img.clone().unwrap_or_else(|| "minimal-iso".into());
     let canister = args.canister.clone().unwrap_or_else(|| "prebuilt".into());
-    let out = args
-        .out
-        .clone()
-        .unwrap_or_else(|| "/mnt/c/Users/dcaso/Downloads/Ph-Builds".into());
-    let base = std::env::var("MC_BUILD_ROOT").unwrap_or_else(|_| "/root".into());
-    let common = std::env::var("MC_BUILD_COMMON").unwrap_or_else(|_| "common".into());
+    // where the ISO goes: --out, else the configured ISO store; no guess
+    let out = match (&args.out, &cfg.iso_store) {
+        (Some(o), _) => o.clone(),
+        (None, Some(s)) => s.to_string_lossy().to_string(),
+        (None, None) => return Err("sharukhan build needs --out <dir> or MC_ISO_STORE".into()),
+    };
+    let base = cfg.build_root.to_string_lossy().to_string();
+    let common = cfg.build_common.clone();
     let nevr = std::env::var("MC_CANISTER_NEVR").ok();
 
-    let patches = std::env::var("MC_VARIANT_PATCH_DIR")
-        .unwrap_or_else(|_| "/root/photon-mc/variant-patches".into());
-    let poi = args.poi.clone().unwrap_or_else(|| "2.8".into());
+    let patches = cfg.variant_patches.to_string_lossy().to_string();
+    let poi = args.poi.clone().map(Ok).unwrap_or_else(|| default_poi(cfg))?;
     // The subrelease pin was two entire scripts differing in one integer.
     let subrelease = match args.subrelease.as_deref() {
         None | Some("mainline") => None,
@@ -1528,6 +1546,7 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     let mut spec = buildmode::spec_for(
         &base, &common, &release, &out, &img, &canister, nevr, &poi, &patches, subrelease, None,
     )?;
+    spec.remote = Some(cfg.photon_remote.clone());
 
     // Rebuild the image from a stage whose phase-B kernels are already proven,
     // rather than purging and rebuilding them. The purge phase verifies that
@@ -1700,24 +1719,24 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
     // tree: the variant patch sets Release, so a decision taken from the
     // pristine spec is a decision about a different kernel. Fall back to the
     // tree only when no variant patch exists yet, and say so.
-    // Both variants are read, not just 2.8. They set the same linux Release
-    // today, so either answers - but this command's whole job is to say which
-    // canister a kernel can have, and silently answering for one variant when
-    // they disagree would be the wrong kind of confident.
-    let patch = cfg.variant_patches.join("poi-2.8.patch");
-    let latest = cfg.variant_patches.join("poi-latest.patch");
-    if patch.is_file() && latest.is_file() {
-        if let (Ok(a), Ok(b)) = (
-            build::kernel_nevr(cfg, &patch),
-            build::kernel_nevr(cfg, &latest),
-        ) {
-            if a != b {
-                println!(
-                    "warning: the installer variants build DIFFERENT kernels \
-                     (2.8 -> {a}, latest -> {b}); this answers for 2.8"
-                );
-            }
-        }
+    // Every variant is read, not just the default. They set the same linux
+    // Release today, so any answers - but this command's whole job is to say
+    // which canister a kernel can have, and silently answering for one
+    // variant when they disagree would be the wrong kind of confident.
+    let vs = variants::load(&cfg.variants_file)?;
+    let dflt = vs.default_variant().name.clone();
+    let patch = cfg.variant_patches.join(format!("poi-{dflt}.patch"));
+    let kernels: Vec<(String, String)> = vs
+        .variants
+        .iter()
+        .filter_map(|v| {
+            let p = cfg.variant_patches.join(format!("poi-{}.patch", v.name));
+            p.is_file().then(|| build::kernel_nevr(cfg, &p).ok().map(|k| (v.name.clone(), k))).flatten()
+        })
+        .collect();
+    if kernels.iter().any(|(_, k)| Some(k) != kernels.first().map(|x| &x.1)) {
+        let list: Vec<String> = kernels.iter().map(|(v, k)| format!("{v} -> {k}")).collect();
+        println!("warning: the installer variants build DIFFERENT kernels ({}); this answers for {dflt}", list.join(", "));
     }
     // The equivalent kernel, because that is what this command is about: the
     // embedded canister patch bumps Release on top of the variant patch, so

@@ -79,6 +79,17 @@ pub struct Config {
     pub upstream: String,
     /// The gate's git repository: PR branches, sync candidates, bases.
     pub gate_repo: PathBuf,
+    /// The installer repositories and their branch, watched beside the fork.
+    pub fork_installer: String,
+    pub upstream_installer: String,
+    pub installer_branch: String,
+    /// Where delivered ISOs are stored (MC_ISO_STORE); none: they stay in
+    /// the cache, and `sharukhan build` needs --out.
+    pub iso_store: Option<PathBuf>,
+    /// The matrix rows a sync's fast loop installs (MC_FASTLOOP_ROWS): a
+    /// policy choice (a STIG row on the prebuilt canister, a FIPS row on the
+    /// equivalent kernel), checked against the matrix before use.
+    pub fastloop_rows: Vec<String>,
     /// Set by `--kernel <release>` on the test commands: the kernel profile
     /// whose media the rows are run against (see kbuild::apply).
     pub kernel: Option<KernelAxis>,
@@ -246,6 +257,11 @@ impl Config {
             fork: s_or("MC_FORK", "dcasota/photon"),
             upstream: s_or("MC_UPSTREAM", "vmware/photon"),
             gate_repo: var_or("MC_GATE_REPO", "/root/photon-mc/gate/photon.git"),
+            fork_installer: s_or("MC_FORK_INSTALLER", "dcasota/photon-os-installer"),
+            upstream_installer: s_or("MC_UPSTREAM_INSTALLER", "vmware/photon-os-installer"),
+            installer_branch: s_or("MC_INSTALLER_BRANCH", "master"),
+            iso_store: env::var_os("MC_ISO_STORE").filter(|v| !v.is_empty()).map(PathBuf::from),
+            fastloop_rows: s_or("MC_FASTLOOP_ROWS", "k03 c03").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
             kernel: None,
 
             guest_vcpus: n_or("GUEST_VCPUS", 2),

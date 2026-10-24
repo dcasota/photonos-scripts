@@ -83,23 +83,16 @@ pub struct Watch {
     pub pr_repos: Vec<String>,
 }
 
-pub fn default_watch() -> Watch {
+/// The fork and its upstream on the release and common lines, and the
+/// installer repositories, all from the configuration.
+pub fn default_watch(cfg: &crate::config::Config) -> Watch {
     let h = |r: &str, b: &str| (r.to_string(), b.to_string());
+    let (up, fork, rel, com) = (cfg.upstream.as_str(), cfg.fork.as_str(), cfg.release.as_str(), cfg.build_common.as_str());
+    let (iup, ifork, ib) = (cfg.upstream_installer.as_str(), cfg.fork_installer.as_str(), cfg.installer_branch.as_str());
     Watch {
-        heads: vec![
-            h("vmware/photon", "5.0"),
-            h("vmware/photon", "common"),
-            h("dcasota/photon", "5.0"),
-            h("dcasota/photon", "common"),
-            h("vmware/photon-os-installer", "master"),
-            h("dcasota/photon-os-installer", "master"),
-        ],
-        pairs: vec![
-            (h("vmware/photon", "5.0"), h("dcasota/photon", "5.0")),
-            (h("vmware/photon", "common"), h("dcasota/photon", "common")),
-            (h("vmware/photon-os-installer", "master"), h("dcasota/photon-os-installer", "master")),
-        ],
-        pr_repos: vec!["dcasota/photon".into(), "dcasota/photon-os-installer".into()],
+        heads: vec![h(up, rel), h(up, com), h(fork, rel), h(fork, com), h(iup, ib), h(ifork, ib)],
+        pairs: vec![(h(up, rel), h(fork, rel)), (h(up, com), h(fork, com)), (h(iup, ib), h(ifork, ib))],
+        pr_repos: vec![fork.to_string(), ifork.to_string()],
     }
 }
 
@@ -460,7 +453,7 @@ pub fn cli(cmd: &str, args: &[String]) -> u8 {
                     None => 900,
                 };
                 let channels = parse_channels(std::env::var("MC_NOTIFY").ok().as_deref())?;
-                let w = default_watch();
+                let w = default_watch(&cfg);
                 loop {
                     let ids = cycle(&conn, &w)?;
                     let sent = notify(&conn, &channels)?;

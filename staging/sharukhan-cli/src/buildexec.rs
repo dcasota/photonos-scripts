@@ -77,15 +77,8 @@ fn ok(dir: &Path, prog: &str, args: &[&str]) -> bool {
 /// build against local state when it fails, because a build that is otherwise
 /// ready should not be stopped by a flaky uplink.
 pub fn sync(c: &mut Ctx) -> Result<(), String> {
-    let online = ok(
-        Path::new("/"),
-        "ping",
-        &["-c", "2", "-W", "2", "www.google.ch"],
-    );
-    if !online {
-        c.skip("sync", "no network; building against the trees as they are");
-        return Ok(());
-    }
+    // Offline shows per tree: a failed fetch builds against local state
+    // (below), and a tree that is missing cannot be built without its clone.
     for t in [Tree::Common, Tree::Release] {
         let dir = c.spec.tree(t);
         let branch = match t {
@@ -102,7 +95,10 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
                 c.say(&format!("  would clone {} -> {}", branch, dir.display()));
                 continue;
             }
-            c.say(&format!("  cloning {branch} -> {}", dir.display()));
+            let remote = c.spec.remote.clone().ok_or_else(|| {
+                format!("{} is missing and no remote is configured (MC_PHOTON_REMOTE) to clone it from", dir.display())
+            })?;
+            c.say(&format!("  cloning {branch} from {remote} -> {}", dir.display()));
             let parent = dir.parent().ok_or("tree has no parent directory")?;
             run(
                 parent,
@@ -112,7 +108,7 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
                     "--quiet",
                     "-b",
                     &branch,
-                    "https://github.com/dcasota/photon.git",
+                    &remote,
                     &dir.to_string_lossy(),
                 ],
             )?;
@@ -3990,6 +3986,7 @@ mod tests {
             prebuild: vec![],
             packages: vec![],
             poi_image: None,
+            remote: None,
         }
     }
 

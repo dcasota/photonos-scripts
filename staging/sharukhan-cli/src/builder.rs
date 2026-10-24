@@ -46,6 +46,12 @@ pub const BASE_IMAGE: &str = "photon:5.0";
 pub const BASE_IMAGE_ID: &str =
     "sha256:549ea0b6a67da5fd9a4ddc4ddf5d7d479b30b75af9ae3d9c5936b470fb6be323";
 
+/// The Photon release of the pinned base image (its tag), which the
+/// package lock resolves against.
+fn base_release() -> &'static str {
+    BASE_IMAGE.rsplit(':').next().unwrap_or(BASE_IMAGE)
+}
+
 /// Commands build.py, the Makefile, the package builder and poi.py call.
 const TOOLS: &[&str] = &[
     "bash", "jq", "g++", "make", "git", "rpm", "rpmbuild", "createrepo_c", "docker", "tdnf", "tar",
@@ -612,7 +618,7 @@ fn tdnf(root: &Path, args: &[&str]) -> std::process::Output {
     Command::new("tdnf")
         .arg("--installroot")
         .arg(root)
-        .args(["--releasever", "5.0"])
+        .args(["--releasever", base_release()])
         .args(REPOS)
         .args(args)
         .output()

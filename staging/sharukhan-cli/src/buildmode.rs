@@ -320,6 +320,9 @@ pub struct BuildSpec {
     /// The image that composes the media (`poiimage.rs`). None: preflight
     /// builds it from the tree's own installer spec, after the injections.
     pub poi_image: Option<String>,
+    /// Where a missing tree is cloned from (MC_PHOTON_REMOTE). None: a
+    /// missing tree is an error, never a guess.
+    pub remote: Option<String>,
 }
 
 impl BuildSpec {
@@ -357,6 +360,7 @@ impl BuildSpec {
             prebuild: Vec::new(),
             packages: Vec::new(),
             poi_image: None,
+            remote: None,
         })
     }
 

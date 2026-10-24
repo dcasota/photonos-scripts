@@ -15,6 +15,9 @@
 //! fix/an-alternative   # the reason is required
 //! ```
 //!
+//! The first `[variant ...]` section is the default variant: what `--poi`
+//! means when it is not given, and what the fast loop builds.
+//!
 //! A missing or malformed file is an error, never an empty list: a variant
 //! patch built from nothing would prove nothing. `check` compares the file
 //! with the fork's open PRs, so a branch that merged or closed is reported
@@ -149,6 +152,11 @@ pub fn load(path: &Path) -> Result<Variants, String> {
 }
 
 impl Variants {
+    /// The default variant: the first section of the file.
+    pub fn default_variant(&self) -> &Variant {
+        &self.variants[0]
+    }
+
     /// Every branch of every variant, in first-seen order, without repeats.
     pub fn all_variant_branches(&self) -> Vec<&str> {
         let mut out: Vec<&str> = Vec::new();

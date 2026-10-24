@@ -717,6 +717,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
                 kb,
             )?;
             spec.poi_image = Some(composer.tag.clone());
+            spec.remote = Some(cfg.photon_remote.clone());
             spec.compose_only = req.compose_only;
             crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
             continue;

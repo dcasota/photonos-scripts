@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS sync_run (
     id          INTEGER PRIMARY KEY,
     started_at  TEXT NOT NULL,
     state       TEXT NOT NULL,     -- running | paused | needs-decision | awaiting-approval | superseded | aborted | failed | done
-    fork        TEXT NOT NULL,     -- dcasota/photon
+    fork        TEXT NOT NULL,     -- owner/name of the fork on GitHub
     repo        TEXT NOT NULL,     -- the gate repository
     bases       TEXT NOT NULL,     -- root=old..new, comma separated
     publish     TEXT NOT NULL,     -- auto | approve | preview
@@ -606,14 +606,36 @@ fn kernel_touched(ctx: &Ctx) -> Result<bool, String> {
     Ok(false)
 }
 
-fn fastloop(ctx: &Ctx) -> Result<Outcome, String> {
-    let mut rows = vec![("prebuilt", "k03")];
-    if kernel_touched(ctx)? {
-        rows.push(("equivalent", "c03"));
+/// The fast-loop rows from MC_FASTLOOP_ROWS, read from the matrix: each must
+/// be a minimal ISO of the default variant; its canister is the matrix's.
+/// An equivalent-kernel row runs only when the sync touched a kernel spec.
+pub fn fastloop_rows(cfg: &crate::config::Config, kernel: bool) -> Result<Vec<(String, String, String)>, String> {
+    let matrix = crate::matrix::load(&cfg.matrix_tsv)?;
+    let dflt = crate::variants::load(&cfg.variants_file)?.default_variant().name.clone();
+    let mut out = Vec::new();
+    for id in &cfg.fastloop_rows {
+        let p = matrix.iter().find(|p| &p.id == id).ok_or_else(|| format!("MC_FASTLOOP_ROWS: {id} is not a row of {}", cfg.matrix_tsv.display()))?;
+        if p.iso_type != "minimal" || p.poi != dflt {
+            return Err(format!("MC_FASTLOOP_ROWS: {id} is {}/{}, not a minimal ISO of the default variant {dflt}", p.iso_type, p.poi));
+        }
+        if p.canister == "equivalent" && !kernel {
+            continue;
+        }
+        out.push((id.clone(), p.poi.clone(), p.canister.clone()));
     }
-    for (canister, row) in &rows {
-        if !child(ctx, "FASTLOOP", &["build-iso", "--iso-type", "minimal", "--poi", "2.8", "--canister", canister, "--allow-build", "--force"])? {
-            return Ok(Outcome::NeedsDecision(format!("minimal/2.8/{canister} did not build, see FASTLOOP.log")));
+    if out.is_empty() {
+        return Err("MC_FASTLOOP_ROWS names no row to run".into());
+    }
+    Ok(out)
+}
+
+fn fastloop(ctx: &Ctx) -> Result<Outcome, String> {
+    let cfg = crate::config::Config::load();
+    let rows = fastloop_rows(&cfg, kernel_touched(ctx)?)?;
+    for (row, poi, canister) in &rows {
+        let (row, poi, canister) = (row.as_str(), poi.as_str(), canister.as_str());
+        if !child(ctx, "FASTLOOP", &["build-iso", "--iso-type", "minimal", "--poi", poi, "--canister", canister, "--allow-build", "--force"])? {
+            return Ok(Outcome::NeedsDecision(format!("minimal/{poi}/{canister} did not build, see FASTLOOP.log")));
         }
         let _ = child(ctx, "FASTLOOP", &["teardown", "--id", row]);
         for ph in ["create-vm", "install", "verify"] {
@@ -1033,7 +1055,7 @@ fn age_s(at: &str) -> Option<i64> {
 }
 
 /// `sync auto`: start a run when the fork's base moved and stayed quiet.
-pub fn auto(c: &Connection, fork: &str, repo: &Path, results: &Path, quiet_s: i64) -> Result<String, String> {
+pub fn auto(c: &Connection, fork: &str, repo: &Path, roots: &[&str], results: &Path, quiet_s: i64) -> Result<String, String> {
     if let Ok((id, state)) = c.query_row(
         "SELECT id, state FROM sync_run WHERE state IN ('running', 'paused', 'needs-decision', 'awaiting-approval') ORDER BY id DESC LIMIT 1",
         [],
@@ -1041,10 +1063,13 @@ pub fn auto(c: &Connection, fork: &str, repo: &Path, results: &Path, quiet_s: i6
     ) {
         return Ok(format!("run {id} is {state}; nothing started"));
     }
-    let subjects = [format!("{fork}:5.0"), format!("{fork}:common")];
+    let subjects: Vec<String> = roots.iter().map(|r| format!("{fork}:{r}")).collect();
     let moves: Vec<(i64, String)> = c
-        .prepare("SELECT id, at FROM event WHERE kind = 'upstream-moved' AND subject IN (?1, ?2) AND state IN ('new','notified') ORDER BY id")
-        .and_then(|mut s| s.query_map(rusqlite::params![subjects[0], subjects[1]], |r| Ok((r.get(0)?, r.get(1)?))).map(|x| x.flatten().collect()))
+        .prepare(&format!(
+            "SELECT id, at FROM event WHERE kind = 'upstream-moved' AND subject IN ({}) AND state IN ('new','notified') ORDER BY id",
+            vec!["?"; subjects.len()].join(", ")
+        ))
+        .and_then(|mut s| s.query_map(rusqlite::params_from_iter(subjects.iter()), |r| Ok((r.get(0)?, r.get(1)?))).map(|x| x.flatten().collect()))
         .map_err(sql)?;
     let Some((_, last)) = moves.last() else { return Ok("the fork's bases did not move".into()) };
     if let Some(a) = age_s(last) {
@@ -1056,7 +1081,7 @@ pub fn auto(c: &Connection, fork: &str, repo: &Path, results: &Path, quiet_s: i6
         return Err("sync auto builds and installs: run it in the host mount namespace".into());
     }
     let publish = std::env::var("MC_PUBLISH_DCASOTA").unwrap_or_else(|_| "auto".into());
-    let id = start(c, fork, repo, &["5.0", "common"], &publish, None)?;
+    let id = start(c, fork, repo, roots, &publish, None)?;
     for (e, _) in &moves {
         c.execute("UPDATE event SET state = 'handled', handled_at = ?1 WHERE id = ?2", rusqlite::params![now(), e]).map_err(sql)?;
     }
@@ -1070,7 +1095,9 @@ pub fn auto(c: &Connection, fork: &str, repo: &Path, results: &Path, quiet_s: i6
 /// candidate must sit on the new position of the base it will have: the
 /// root's new base, or the parent's candidate in this run.
 pub fn decide(c: &Connection, run: i64, n: i64, cand: &str, base_to: Option<&str>) -> Result<String, String> {
-    let (state, repo): (String, String) = c.query_row("SELECT state, repo FROM sync_run WHERE id = ?1", [run], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
+    let (state, repo, bases): (String, String, String) =
+        c.query_row("SELECT state, repo, bases FROM sync_run WHERE id = ?1", [run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
+    let roots = parse_bases(&bases)?;
     if !matches!(state.as_str(), "needs-decision" | "paused" | "awaiting-approval") {
         return Err(format!("run {run} is {state}: decisions are taken while it waits"));
     }
@@ -1083,7 +1110,7 @@ pub fn decide(c: &Connection, run: i64, n: i64, cand: &str, base_to: Option<&str
     let sha = git(repo, &["rev-parse", "--verify", &format!("{cand}^{{commit}}")])?;
     // the base the PR will have: a root, or another PR of this run
     let new_parent: Option<String> = match base_to {
-        Some(b) if b == root || ["5.0", "common"].contains(&b) => None,
+        Some(b) if b == root || roots.contains_key(b) => None,
         Some(b) => Some(b.to_string()),
         None => parent.clone(),
     };
@@ -1188,9 +1215,9 @@ pub fn cli(args: &[String]) -> Option<u8> {
             "body" => {
                 // a description carried to a candidate head, without publishing
                 let usage = "sync body --pr <n> --old-base <rev> --new-base <rev> --new-head <rev> [--parent <n> --own-old <rev> --own-new <rev>] [--out <file>]\n       sync body --restore <run> <n>";
-                let repo = Path::new(flag("--repo").unwrap_or("/root/photon-mc/gate/photon.git"));
+                let repo = flag("--repo").map(Path::new).unwrap_or(cfg.gate_repo.as_path());
                 let n: u64 = flag("--pr").and_then(|v| v.parse().ok()).ok_or(usage)?;
-                let pr = crate::sync::open_prs("dcasota/photon")?.into_iter().find(|p| p.number == n).ok_or("no such open PR")?;
+                let pr = crate::sync::open_prs(&cfg.fork)?.into_iter().find(|p| p.number == n).ok_or("no such open PR")?;
                 let parent = flag("--parent").and_then(|v| v.parse().ok());
                 let facts = crate::prbody::gather(
                     repo,
@@ -1201,7 +1228,7 @@ pub fn cli(args: &[String]) -> Option<u8> {
                     parent,
                     flag("--own-old").zip(flag("--own-new")),
                 )?;
-                let o = Command::new("gh").args(["pr", "view", &n.to_string(), "-R", "dcasota/photon", "--json", "body", "--jq", ".body"]).output().map_err(|e| format!("gh: {e}"))?;
+                let o = Command::new("gh").args(["pr", "view", &n.to_string(), "-R", &cfg.fork, "--json", "body", "--jq", ".body"]).output().map_err(|e| format!("gh: {e}"))?;
                 let body = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
                 let carried = crate::prbody::rewrite(&body, &facts);
                 if let Some(out) = flag("--out") {
@@ -1219,11 +1246,11 @@ pub fn cli(args: &[String]) -> Option<u8> {
             }
             "lint" => {
                 // the descriptions on GitHub against the heads they describe now
-                let fork = "dcasota/photon";
-                let repo = Path::new("/root/photon-mc/gate/photon.git");
+                let fork = cfg.fork.as_str();
+                let repo = cfg.gate_repo.as_path();
                 let only: Vec<u64> = args[1..].iter().filter_map(|a| a.trim_start_matches('#').parse().ok()).collect();
                 let prs = crate::sync::open_prs(fork)?;
-                let roots = ["5.0", "common"];
+                let roots = [cfg.release.as_str(), cfg.build_common.as_str()];
                 let mut out = String::new();
                 let mut bad = 0;
                 for pr in prs.iter().filter(|p| only.is_empty() || only.contains(&p.number)) {
@@ -1262,11 +1289,11 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 Ok(format!("synced base of {root} recorded as {sha}"))
             }
             "start" => {
-                let fork = args.iter().position(|a| a == "--fork").and_then(|i| args.get(i + 1)).map(String::as_str).unwrap_or("dcasota/photon");
-                let repo = PathBuf::from(args.iter().position(|a| a == "--repo").and_then(|i| args.get(i + 1)).map(String::as_str).unwrap_or("/root/photon-mc/gate/photon.git"));
+                let fork = flag("--fork").unwrap_or(cfg.fork.as_str());
+                let repo = flag("--repo").map(PathBuf::from).unwrap_or_else(|| cfg.gate_repo.clone());
                 let publish = std::env::var("MC_PUBLISH_DCASOTA").unwrap_or_else(|_| "auto".into());
                 let against = args.iter().position(|a| a == "--against").and_then(|i| args.get(i + 1)).map(String::as_str);
-                let id = start(&c, fork, &repo, &["5.0", "common"], &publish, against)?;
+                let id = start(&c, fork, &repo, &[cfg.release.as_str(), cfg.build_common.as_str()], &publish, against)?;
                 println!("sync run {id} started");
                 let out = drive(&c, id, &results, until)?;
                 announce(&c, id, &out)?;
@@ -1285,7 +1312,7 @@ pub fn cli(args: &[String]) -> Option<u8> {
                     .and_then(|i| args.get(i + 1))
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(7200);
-                let r = auto(&c, "dcasota/photon", Path::new("/root/photon-mc/gate/photon.git"), &results, quiet)?;
+                let r = auto(&c, &cfg.fork, &cfg.gate_repo, &[cfg.release.as_str(), cfg.build_common.as_str()], &results, quiet)?;
                 let channels = crate::watch::parse_channels(std::env::var("MC_NOTIFY").ok().as_deref())?;
                 crate::watch::notify(&c, &channels)?;
                 Ok(r)
@@ -1356,6 +1383,27 @@ mod tests {
     }
 
     #[test]
+    fn fastloop_rows_come_from_the_matrix_and_are_checked() {
+        let d = std::env::temp_dir().join(format!("shk-fastloop-{}", std::process::id()));
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join("m.tsv"), "k03 minimal 2.8 yes ext4 ks stigpkgs fails pass prebuilt\nc03 minimal 2.8 no ext4 ks fips untested pass equivalent\nf01 full 2.8 no ext4 ks none works pass prebuilt\nl01 minimal latest no ext4 ks none works pass prebuilt\n").unwrap();
+        fs::write(d.join("v.conf"), "[variant 2.8]\nfix/poi-a\n[variant latest]\nfix/poi-b\n[common]\n").unwrap();
+        let mut cfg = crate::config::Config::load();
+        cfg.matrix_tsv = d.join("m.tsv");
+        cfg.variants_file = d.join("v.conf");
+        cfg.fastloop_rows = vec!["k03".into(), "c03".into()];
+        let ids = |k: bool| fastloop_rows(&cfg, k).unwrap().into_iter().map(|r| format!("{}:{}", r.0, r.2)).collect::<Vec<_>>();
+        assert_eq!(ids(true), vec!["k03:prebuilt", "c03:equivalent"]);
+        assert_eq!(ids(false), vec!["k03:prebuilt"], "the equivalent kernel row runs only when a kernel spec changed");
+        for (rows, why) in [(vec!["zz9"], "not a row"), (vec!["f01"], "not a minimal ISO"), (vec!["l01"], "not a minimal ISO of the default")] {
+            cfg.fastloop_rows = rows.into_iter().map(String::from).collect();
+            let e = fastloop_rows(&cfg, true).unwrap_err();
+            assert!(e.contains(why), "{e}");
+        }
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn bases_parse_and_refuse_garbage() {
         let b = parse_bases("5.0=a..refs/x,common=b..c").unwrap();
         assert_eq!(b["5.0"], ("a".to_string(), "refs/x".to_string()));
@@ -1416,11 +1464,11 @@ mod tests {
     fn auto_waits_for_a_fork_move_and_for_quiet() {
         let c = db();
         let r = Path::new("/nonexistent");
-        assert_eq!(auto(&c, "dcasota/photon", r, r, 7200).unwrap(), "the fork's bases did not move");
+        assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200).unwrap(), "the fork's bases did not move");
         crate::watch::record(&c, "upstream-moved", "vmware/photon:5.0", None, None, "1 commit(s)").unwrap();
-        assert_eq!(auto(&c, "dcasota/photon", r, r, 7200).unwrap(), "the fork's bases did not move", "vmware moving is not a trigger");
+        assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200).unwrap(), "the fork's bases did not move", "vmware moving is not a trigger");
         crate::watch::record(&c, "upstream-moved", "dcasota/photon:5.0", None, None, "3 commit(s)").unwrap();
-        assert!(auto(&c, "dcasota/photon", r, r, 7200).unwrap().contains("waiting for 7200s of quiet"));
+        assert!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200).unwrap().contains("waiting for 7200s of quiet"));
     }
 
     #[test]
