@@ -212,7 +212,7 @@ by hand. Until the planned `sharukhan db render` (Task 013) lands, regenerate it
 with
 
 ```
-python3 tools/gen-memory-md.py /root/photon-mc/memory.db MEMORY.md
+sharukhan db render /root/photon-mc/memory.db MEMORY.md
 ```
 
 ### `report` — results of the last run of each permutation

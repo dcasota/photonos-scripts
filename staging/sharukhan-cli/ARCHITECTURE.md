@@ -95,7 +95,7 @@ The `ui` value cannot be automated: the STIG menu exists only in the curses conf
 
 Results are not files that happen to be greppable; they are rows. The database is the system of record and `MEMORY.md` is a generated view over it that always refers to it rather than duplicating it — so the two cannot disagree.
 
-Tables: `run`, `permutation`, `check_result`, `artifact`, `finding`, `job`, `next_step`. A `check_result` carries the PR it proves, which is what turns a failure into `PR#22 regressed` rather than `something broke`. `run`, `permutation` and `check_result` are derived from the evidence files under `results/` by `sharukhan ingest`, which is idempotent; `finding` and `next_step` are written by hand; `artifact` is declared but not yet written. `MEMORY.md` is rendered from the database by `tools/gen-memory-md.py`, a stand-in until the planned `sharukhan db render` subcommand lands; the PRD assigns that to Task 013, together with AC-16's versioned reports.
+Tables: `run`, `permutation`, `check_result`, `artifact`, `finding`, `job`, `next_step`. A `check_result` carries the PR it proves, which is what turns a failure into `PR#22 regressed` rather than `something broke`. `run`, `permutation` and `check_result` are derived from the evidence files under `results/` by `sharukhan ingest`, which is idempotent; `finding` and `next_step` are written by hand; `artifact` is declared but not yet written. `MEMORY.md` is rendered from the database by `sharukhan db render` (which replaced the stand-in tools/gen-memory-md.py with identical output); the PRD assigned it to Task 013, together with AC-16's versioned reports.
 
 ## Security posture
 
