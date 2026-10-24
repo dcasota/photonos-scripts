@@ -230,7 +230,9 @@ pub fn lint(body: &str, f: &Facts) -> Vec<String> {
         ));
     }
     for (old, new) in &f.releases {
-        if old != new && replace_token(body, old, "\u{0}", release_char).contains('\u{0}') {
+        // a Release the new base has is the base's to name (upstream took the number)
+        let base_has = f.base_releases.values().any(|b| b == old);
+        if old != new && !base_has && replace_token(body, old, "\u{0}", release_char).contains('\u{0}') {
             p.push(format!("Release {old} is named, but the PR now introduces {new}"));
         }
     }
@@ -467,6 +469,8 @@ mod tests {
     fn the_lint_names_every_problem() {
         let mut f = facts();
         f.parent = Some(29);
+        // here upstream did not take the PR's old number
+        f.base_releases.clear();
         let body = good(true).replace("6.12.113-3", "6.12.113-2 in gate 70").replace("SPECS/92/linux/linux.spec", "SPECS/linux/linux.spec")
             + "https://claude.ai/code/session_x\n";
         let p = lint(&body, &f);
@@ -478,6 +482,16 @@ mod tests {
         assert!(all.contains("`SPECS/linux/linux.spec` is gone"), "{all}");
         assert!(all.contains("Release 6.12.113-2 is named"), "{all}");
         assert_eq!(p.len(), 6, "{all}");
+    }
+
+    #[test]
+    fn a_release_upstream_took_may_be_named() {
+        let mut f = Facts::default();
+        f.releases.insert("253.19-17.2.3".into(), "253.19-17.2.4".into());
+        let body = format!("## Problem\nx\n\n## Change\nRelease 253.19-17.2.3 -> 253.19-17.2.4.\n\n## Testing\nt\n\n{FOOTER}\n");
+        assert!(lint(&body, &f).iter().any(|l| l.contains("Release 253.19-17.2.3 is named")));
+        f.base_releases.insert("253.19-17.2.2".into(), "253.19-17.2.3".into());
+        assert!(lint(&body, &f).is_empty(), "{:?}", lint(&body, &f));
     }
 
     #[test]
