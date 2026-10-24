@@ -674,6 +674,7 @@ pub fn verify(
     let sr = if changed.is_empty() { None } else { Some(crate::subrel::at_rev(repo, &tree)?) };
     let subs: &[u32] = sr.as_ref().map(|s| s.all.as_slice()).unwrap_or(&[]);
     let mainline = sr.as_ref().map(|s| s.check_mainline.to_string()).unwrap_or_default();
+    let dist = sr.as_ref().map(|s| format!("dist {}", s.dist)).unwrap_or_default();
     if let Some(s) = &sr {
         log(&format!("subreleases {:?}, check_spec mainline {mainline}", s.all));
     }
@@ -702,7 +703,7 @@ pub fn verify(
                     "--define".into(),
                     format!("photon_subrelease {sub}").into(),
                     "--define".into(),
-                    "dist .ph5".into(),
+                    dist.clone().into(),
                     "--define".into(),
                     format!("_sourcedir {}", dir.display()).into(),
                     abs.clone().into(),

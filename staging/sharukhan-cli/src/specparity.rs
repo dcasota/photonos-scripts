@@ -225,12 +225,12 @@ pub fn stage(spec_dir: &Path, into: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn rpmspec(staged: &Path, spec: &Path, sr: u32, arch: &str, mode: &str, extra: &[&str]) -> (bool, String, String) {
+fn rpmspec(staged: &Path, spec: &Path, sr: u32, arch: &str, mode: &str, dist: &str, extra: &[&str]) -> (bool, String, String) {
     let mut a: Vec<String> = vec![
         "--target".into(), arch.into(),
         "--define".into(), format!("_sourcedir {}", staged.display()),
         "--define".into(), format!("photon_subrelease {sr}"),
-        "--define".into(), "dist .ph5".into(),
+        "--define".into(), format!("dist {dist}"),
     ];
     if mode != "default" {
         a.push("--define".into());
@@ -270,16 +270,16 @@ fn content_of(spec_dir: &Path, name: &str, archives: &BTreeMap<String, String>, 
     }
 }
 
-pub fn facts(spec: &Path, staged: &Path, sr: u32, arch: &str, mode: &str, suffixes: &[String]) -> Facts {
+pub fn facts(spec: &Path, staged: &Path, sr: u32, arch: &str, mode: &str, dist: &str, suffixes: &[String]) -> Facts {
     let mut f = Facts::default();
-    let (ok, parsed, err) = rpmspec(staged, spec, sr, arch, mode, &["-P"]);
+    let (ok, parsed, err) = rpmspec(staged, spec, sr, arch, mode, dist, &["-P"]);
     if !ok {
         let why = err.lines().filter(|l| l.to_lowercase().contains("error")).last().unwrap_or(err.trim()).to_string();
         f.refused = Some(why);
         return f;
     }
     let qf = "@%{name}-%{epoch}:%{version}-%{release}.%{arch}\n[R %{REQUIRENEVRS}\n][P %{PROVIDENEVRS}\n][C %{CONFLICTNEVRS}\n][O %{OBSOLETENEVRS}\n]";
-    let (_, out, _) = rpmspec(staged, spec, sr, arch, mode, &["-q", "--qf", qf]);
+    let (_, out, _) = rpmspec(staged, spec, sr, arch, mode, dist, &["-q", "--qf", qf]);
     let mut cur: Option<String> = None;
     for l in out.lines() {
         if let Some(n) = l.strip_prefix('@') {
@@ -289,10 +289,10 @@ pub fn facts(spec: &Path, staged: &Path, sr: u32, arch: &str, mode: &str, suffix
             f.packages.get_mut(c).map(|s| s.insert(l.to_string()));
         }
     }
-    let (_, br, _) = rpmspec(staged, spec, sr, arch, mode, &["-q", "--buildrequires"]);
+    let (_, br, _) = rpmspec(staged, spec, sr, arch, mode, dist, &["-q", "--buildrequires"]);
     f.buildrequires = br.lines().map(String::from).collect();
     f.buildrequires.sort();
-    let (_, cl, _) = rpmspec(staged, spec, sr, arch, mode, &["-q", "--srpm", "--changelog"]);
+    let (_, cl, _) = rpmspec(staged, spec, sr, arch, mode, dist, &["-q", "--srpm", "--changelog"]);
     f.changelog = cl;
     let spec_dir = spec.parent().unwrap_or(Path::new("."));
     let arch_map = fs::read_to_string(spec_dir.join("config.yaml")).map(|t| archives(&t)).unwrap_or_default();
@@ -412,14 +412,14 @@ fn short(s: &str) -> String {
 }
 
 /// rpmbuild -bp at fuzz 0; the manifest is "<sha256|->target> <relative path>" for every file under BUILD.
-pub fn prep_manifest(spec: &Path, staged: &Path, top: &Path, sr: u32, arch: &str, mode: &str) -> Result<Vec<String>, String> {
+pub fn prep_manifest(spec: &Path, staged: &Path, top: &Path, sr: u32, arch: &str, mode: &str, dist: &str) -> Result<Vec<String>, String> {
     fs::create_dir_all(top).map_err(|e| format!("{}: {e}", top.display()))?;
     let mut a: Vec<String> = vec![
         "-bp".into(), "--nodeps".into(), "--target".into(), arch.into(),
         "--define".into(), format!("_topdir {}", top.display()),
         "--define".into(), format!("_sourcedir {}", staged.display()),
         "--define".into(), format!("photon_subrelease {sr}"),
-        "--define".into(), "dist .ph5".into(),
+        "--define".into(), format!("dist {dist}"),
         "--define".into(), "_default_patch_fuzz 0".into(),
     ];
     if mode != "default" {
@@ -457,6 +457,13 @@ pub fn prep_manifest(spec: &Path, staged: &Path, top: &Path, sr: u32, arch: &str
 
 /// Run the plan; prints one line per cell and returns the number of cells with hard differences.
 pub fn run(plan: &Plan, prep: bool, neutralize: &[String]) -> Result<usize, String> {
+    // both trees build with their own dist tag; a comparison across two tags
+    // would compare names no build produces on one side
+    let dist = crate::specresolve::dist_of(&plan.base_root)?;
+    let new_dist = crate::specresolve::dist_of(&plan.new_root)?;
+    if dist != new_dist {
+        return Err(format!("the trees have different dist tags ({dist} and {new_dist})"));
+    }
     let mut bad = 0;
     let mut warned = 0;
     let mut staged_dirs: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
@@ -478,8 +485,8 @@ pub fn run(plan: &Plan, prep: bool, neutralize: &[String]) -> Result<usize, Stri
             let sb = stage_for(&b_spec, "new")?;
             for arch in &plan.arches {
                 for mode in &plan.modes {
-                    let mut fa = facts(&a_spec, &sa, sr, arch, mode, &plan.suffixes);
-                    let mut fb = facts(&b_spec, &sb, sr, arch, mode, &plan.suffixes);
+                    let mut fa = facts(&a_spec, &sa, sr, arch, mode, &dist, &plan.suffixes);
+                    let mut fb = facts(&b_spec, &sb, sr, arch, mode, &dist, &plan.suffixes);
                     if plan.normalize_release {
                         normalize_release(&mut fa);
                         normalize_release(&mut fb);
@@ -510,8 +517,8 @@ pub fn run(plan: &Plan, prep: bool, neutralize: &[String]) -> Result<usize, Stri
                         stage(b_spec.parent().unwrap_or(Path::new(".")), &pb)?;
                         neutralize_includes(&pa, neutralize)?;
                         neutralize_includes(&pb, neutralize)?;
-                        let ma = prep_manifest(&a_spec, &pa, &plan.work.join("top-base"), sr, arch, mode);
-                        let mb = prep_manifest(&b_spec, &pb, &plan.work.join("top-new"), sr, arch, mode);
+                        let ma = prep_manifest(&a_spec, &pa, &plan.work.join("top-base"), sr, arch, mode, &dist);
+                        let mb = prep_manifest(&b_spec, &pb, &plan.work.join("top-new"), sr, arch, mode, &dist);
                         match (ma, mb) {
                             (Ok(x), Ok(y)) if x == y => println!("            %prep: identical trees ({} files)", x.len()),
                             (Ok(x), Ok(y)) => {

@@ -66,7 +66,7 @@ pub fn expected_installer(variant_patch: &Path, photon_tree: &Path) -> Result<St
     if rel.is_empty() && !ver.is_empty() {
         rel = pristine_field(photon_tree, "Release:").ok_or_else(|| {
             format!(
-                "{} bumps the installer Version: but keeps its Release:, and origin/5.0 could \
+                "{} bumps the installer Version: but keeps its Release:, and origin/<photon-branch> could \
                  not be read from {} to supply it - refusing to guess",
                 variant_patch.display(),
                 photon_tree.display()
@@ -76,7 +76,7 @@ pub fn expected_installer(variant_patch: &Path, photon_tree: &Path) -> Result<St
     if ver.is_empty() {
         ver = pristine_version(photon_tree).ok_or_else(|| {
             format!(
-                "{} does not set Version: for the installer, and origin/5.0 could not be read \
+                "{} does not set Version: for the installer, and origin/<photon-branch> could not be read \
                  from {} to supply it - refusing to guess",
                 variant_patch.display(),
                 photon_tree.display()
@@ -112,12 +112,14 @@ fn pristine_version(photon_tree: &Path) -> Option<String> {
 
 /// A preamble field of the pristine installer spec, reduced as [`field`] does.
 fn pristine_field(photon_tree: &Path, key: &str) -> Option<String> {
+    // the branch the tree tracks, from its build-config.json
+    let branch = crate::specresolve::branch_of(photon_tree).ok()?;
     let out = Command::new("git")
         .args([
             "-C",
             photon_tree.to_str()?,
             "show",
-            "origin/5.0:SPECS/photon-os-installer/photon-os-installer.spec",
+            &format!("origin/{branch}:SPECS/photon-os-installer/photon-os-installer.spec"),
         ])
         .output()
         .ok()?;
@@ -285,6 +287,8 @@ mod tests {
             format!("Name: photon-os-installer\nVersion:       {ver}\nRelease:       {rel}%{{?dist}}\n"),
         )
         .unwrap();
+        // the branch the tree tracks, as a release tree's build-config.json names it
+        std::fs::write(t.join("build-config.json"), "{\"photon-branch\": \"5.0\", \"photon-build-param\": {\"photon-dist-tag\": \".ph5\"}}\n").unwrap();
         let g = |a: &[&str]| {
             assert!(Command::new("git").arg("-C").arg(&t).args(a).status().unwrap().success());
         };

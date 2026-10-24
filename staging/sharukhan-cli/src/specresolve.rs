@@ -281,6 +281,24 @@ pub fn test_release_config(tree: &Path, sub: u32) {
     }
 }
 
+/// The dist tag of a release tree, required: an rpm query or a NEVR built
+/// with a guessed tag names a package no build produces.
+pub fn dist_of(tree: &Path) -> Result<String, String> {
+    tree_dist_tag(tree).ok_or_else(|| format!("{}/build-config.json has no photon-dist-tag", tree.display()))
+}
+
+/// The git branch a release tree tracks (`photon-branch`, e.g. "5.0").
+pub fn branch_of(tree: &Path) -> Result<String, String> {
+    let p = tree.join("build-config.json");
+    let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", p.display()))?;
+    v["photon-branch"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("{} has no photon-branch", p.display()))
+}
+
 /// `photon-dist-tag` of a tree's build-config.json (".ph5").
 pub fn tree_dist_tag(tree: &Path) -> Option<String> {
     let text = std::fs::read_to_string(tree.join("build-config.json")).ok()?;

@@ -93,9 +93,8 @@ fn spec_define(spec: &str, name: &str) -> Option<String> {
 /// `Version:` / `Release:` as the built NEVR fragment, e.g. `6.12.103-12.ph5`.
 ///
 /// Release carries rpm conditionals (`%{?acvp_build:.acvp}`), so everything
-/// from the first `%` is dropped and `.ph5` appended - the dist tag every
-/// Photon 5.0 build gets.
-fn spec_nevr(spec: &str) -> Option<String> {
+/// from the first `%` is dropped and the tree's dist tag appended.
+fn spec_nevr(spec: &str, dist: &str) -> Option<String> {
     let field = |k: &str| {
         spec.lines()
             .find(|l| l.starts_with(k))
@@ -104,7 +103,7 @@ fn spec_nevr(spec: &str) -> Option<String> {
     let v = field("Version:")?;
     let r = field("Release:")?;
     let r = r.split('%').next().unwrap_or(&r).trim().to_string();
-    Some(format!("{v}-{r}.ph5"))
+    Some(format!("{v}-{r}{dist}"))
 }
 
 /// The URL of the updates repo's package index, taken from Photon's own
@@ -256,7 +255,7 @@ fn nevr_at(tree: &Path, git_ref: &str) -> Option<String> {
     let kdir = crate::specresolve::kernel_dir_at(tree, git_ref, sub).ok()?;
     let read = crate::specresolve::git_reader(tree, git_ref, &kdir, None);
     let text = crate::specresolve::resolve(&read, "linux.spec", sub)?;
-    spec_nevr(&text)
+    spec_nevr(&text, &crate::specresolve::dist_of(tree).ok()?)
 }
 
 /// Read the kernel version from the tree, the fork and the reference.
@@ -328,7 +327,7 @@ pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<Stat
 
     let kernel = match kernel {
         Some(k) => k.to_string(),
-        None => spec_nevr(&linux).ok_or("linux.spec has no Version:/Release:")?,
+        None => spec_nevr(&linux, &crate::specresolve::dist_of(&cfg.photon_tree)?).ok_or("linux.spec has no Version:/Release:")?,
     };
 
     // Ask the REPO, not the spec. The spec's %define says what this spec wants
@@ -559,7 +558,7 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
 
     #[test]
     fn nevr_drops_the_rpm_conditionals_from_release() {
-        assert_eq!(spec_nevr(LINUX_SPEC).unwrap(), "6.12.103-12.ph5");
+        assert_eq!(spec_nevr(LINUX_SPEC, ".ph5").unwrap(), "6.12.103-12.ph5");
     }
 
     /// The pin must be readable through the overridable guard as well as bare,
@@ -581,7 +580,7 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
     /// version comparison would report a gap on every healthy build.
     #[test]
     fn a_lagging_pin_is_the_equivalent_state_not_an_error() {
-        let kernel = spec_nevr(LINUX_SPEC).unwrap();
+        let kernel = spec_nevr(LINUX_SPEC, ".ph5").unwrap();
         let pin = spec_define(LINUX_SPEC, "fips_canister_version").unwrap();
         assert_ne!(kernel, pin, "the fixture must model the real, lagging case");
     }

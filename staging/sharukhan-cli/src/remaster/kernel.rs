@@ -60,15 +60,18 @@ pub fn photon_subrelease(tree: &Path) -> Result<u32, String> {
     ))
 }
 
+/// The kernel spec directory of the tree at its subrelease
+/// (`specresolve::kernel_dir`): SPECS/linux or SPECS/<n>/linux.
+pub fn kernel_specs(tree: &Path) -> Result<PathBuf, String> {
+    let sr = photon_subrelease(tree)?;
+    Ok(tree.join(crate::specresolve::kernel_dir(tree, Some(sr))?))
+}
+
 /// The spec's `Version:` as this subrelease sees it.
 pub fn spec_version(c: &Ctx, flavour: &str) -> Result<String, String> {
-    let spec = c
-        .spec
-        .photon_tree
-        .join("SPECS/linux")
-        .join(format!("{flavour}.spec"));
+    let dir = kernel_specs(&c.spec.photon_tree)?;
+    let spec = dir.join(format!("{flavour}.spec"));
     let sr = photon_subrelease(&c.spec.photon_tree)?;
-    let dir = c.spec.photon_tree.join("SPECS/linux");
     let read = crate::specresolve::dir_reader(&dir);
     let text = crate::specresolve::resolve(&read, &format!("{flavour}.spec"), Some(sr))
         .ok_or_else(|| format!("cannot read {}", spec.display()))?;
@@ -107,7 +110,7 @@ pub fn stage(c: &mut Ctx) -> Result<(), String> {
         return Ok(());
     }
 
-    let specdir = c.spec.photon_tree.join("SPECS/linux");
+    let specdir = kernel_specs(&c.spec.photon_tree)?;
     let mut files = 0usize;
     copy_flat(&specdir, &top.join("SOURCES"), &mut files)?;
     for f in &c.spec.flavours {
@@ -175,6 +178,7 @@ fn rpmbuild_argv<'a>(
     spec_in_root: &'a str,
     sr: &'a str,
     jobs: &'a str,
+    dist: &'a str,
 ) -> Vec<&'a str> {
     let mut v = vec![
         "/usr/bin/rpmbuild",
@@ -187,7 +191,7 @@ fn rpmbuild_argv<'a>(
         "--define",
         "_buildrootdir /work/BUILDROOT",
         "--define",
-        "dist .ph5",
+        dist,
         "--define",
         sr,
         "--define",
@@ -235,7 +239,7 @@ fn set_applicability_check(c: &mut Ctx, tolerant: bool) -> Result<(), String> {
         fs::write(&dst, TOLERANT_APPLICABILITY).map_err(|e| format!("{}: {e}", dst.display()))?;
         c.say("  applicability check made non-fatal for the config-generation pass only");
     } else {
-        let src = c.spec.photon_tree.join("SPECS/linux").join(name);
+        let src = kernel_specs(&c.spec.photon_tree)?.join(name);
         fs::copy(&src, &dst).map_err(|e| format!("{}: {e}", src.display()))?;
         c.say("  upstream applicability check restored: the build pass uses the real gate");
     }
@@ -332,7 +336,8 @@ pub fn prep(c: &mut Ctx, flavour: &str) -> Result<PathBuf, String> {
     let jobs = format!("_smp_mflags -j{}", c.spec.jobs);
     let spec = format!("/work/rpmbuild/SPECS/{flavour}.spec");
     let log = c.spec.workdir.join(format!("prep-{flavour}.log"));
-    let argv = rpmbuild_argv("-bp", &[], &spec, &sr, &jobs);
+    let dist = format!("dist {}", crate::specresolve::dist_of(&c.spec.photon_tree)?);
+    let argv = rpmbuild_argv("-bp", &[], &spec, &sr, &jobs, &dist);
     c.say(&format!(
         "  rpmbuild -bp {flavour} (emulated; several minutes)"
     ));
@@ -360,7 +365,8 @@ pub fn kernel_config_path(
     flavour: &str,
     subrelease: u32,
 ) -> Result<PathBuf, String> {
-    let base = tree.join("SPECS/linux");
+    // the kernel directory at the subrelease asked about
+    let base = tree.join(crate::specresolve::kernel_dir(tree, Some(subrelease))?);
     // The single-source branch keeps the 6.1 kernel's configs in a 6.1/
     // subdirectory with a -6.1 suffix and leaves the 6.12 configs at the plain
     // names, selected by photon_subrelease. Resolve, never guess: a missing
@@ -597,11 +603,7 @@ fn first_difference(a: &str, b: &str) -> String {
 /// Idempotent: a Release that already carries `.azure` is left alone, or a
 /// resumed run would bump it again every time.
 pub fn release_bump(c: &mut Ctx, flavour: &str) -> Result<String, String> {
-    let spec = c
-        .spec
-        .photon_tree
-        .join("SPECS/linux")
-        .join(format!("{flavour}.spec"));
+    let spec = kernel_specs(&c.spec.photon_tree)?.join(format!("{flavour}.spec"));
     let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
     let version = spec_version(c, flavour)?;
 
@@ -614,12 +616,12 @@ pub fn release_bump(c: &mut Ctx, flavour: &str) -> Result<String, String> {
     };
     let value = line["Release:".len()..].trim();
     if value.contains(".azure") {
-        let rel = azure_release(value)?;
+        let rel = azure_release(value, &crate::specresolve::dist_of(&c.spec.photon_tree)?)?;
         c.say(&format!("  {flavour}: Release already {rel} (idempotent)"));
         return Ok(format!("{version}-{rel}"));
     }
     let bumped = bump_release(value)?;
-    let new_rel = azure_release(&bumped)?;
+    let new_rel = azure_release(&bumped, &crate::specresolve::dist_of(&c.spec.photon_tree)?)?;
     if c.spec.dry {
         c.say(&format!(
             "  would bump {flavour} Release {value} -> {bumped}"
@@ -676,7 +678,7 @@ pub fn bump_release(value: &str) -> Result<String, String> {
 
 /// The Release as it will appear in the RPM name: macros expanded to what this
 /// build actually sets (no acvp, no kat, dist .ph5).
-pub fn azure_release(value: &str) -> Result<String, String> {
+pub fn azure_release(value: &str, dist: &str) -> Result<String, String> {
     let base: String = value
         .chars()
         .take_while(|ch| ch.is_ascii_digit() || *ch == '.' || ch.is_ascii_alphabetic())
@@ -685,7 +687,7 @@ pub fn azure_release(value: &str) -> Result<String, String> {
     if base.is_empty() {
         return Err(format!("cannot read a Release out of '{value}'"));
     }
-    Ok(format!("{base}.ph5"))
+    Ok(format!("{base}{dist}"))
 }
 
 fn changelog_date() -> String {
@@ -701,11 +703,7 @@ fn changelog_date() -> String {
 /// that only needs to know the name of the kernel it is handling must not be
 /// able to change it as a side effect of asking.
 pub fn current_vr(c: &Ctx, flavour: &str) -> Result<String, String> {
-    let spec = c
-        .spec
-        .photon_tree
-        .join("SPECS/linux")
-        .join(format!("{flavour}.spec"));
+    let spec = kernel_specs(&c.spec.photon_tree)?.join(format!("{flavour}.spec"));
     let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
     let version = spec_version(c, flavour)?;
     let line = text
@@ -713,7 +711,7 @@ pub fn current_vr(c: &Ctx, flavour: &str) -> Result<String, String> {
         .find(|l| l.starts_with("Release:"))
         .ok_or_else(|| format!("no Release: line in {}", spec.display()))?;
     let value = line["Release:".len()..].trim();
-    Ok(format!("{version}-{}", azure_release(value)?))
+    Ok(format!("{version}-{}", azure_release(value, &crate::specresolve::dist_of(&c.spec.photon_tree)?)?))
 }
 
 /// The packages the build produced, from the output directory.
@@ -793,7 +791,8 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
         c.skip(&format!("compile[{flavour}]"), "already finished");
     } else {
         let log = c.spec.workdir.join(format!("build-{flavour}.log"));
-        let argv = rpmbuild_argv("-bc", &["--short-circuit"], &spec, &sr, &jobs);
+        let dist = format!("dist {}", crate::specresolve::dist_of(&c.spec.photon_tree)?);
+        let argv = rpmbuild_argv("-bc", &["--short-circuit"], &spec, &sr, &jobs, &dist);
         c.say(&format!(
             "  rpmbuild -bc {flavour}: the long phase, hours under emulation"
         ));
@@ -811,6 +810,7 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
     // The payload matches the media: Photon's build-config.json compresses
     // with w19.zstdio and the input ISO's RPMs are zstd.
     let log = c.spec.workdir.join(format!("package-{flavour}.log"));
+    let dist = format!("dist {}", crate::specresolve::dist_of(&c.spec.photon_tree)?);
     let argv = rpmbuild_argv(
         "-bb",
         &[
@@ -823,6 +823,7 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
         &spec,
         &sr,
         &jobs,
+        &dist,
     );
     c.say(&format!(
         "  rpmbuild -bb --noprep {flavour}: %install and packaging"
@@ -1193,7 +1194,7 @@ mod tests {
         .unwrap();
         fs::write(
             tmp.join("photon/build-config.json"),
-            "{\"photon-build-param\": {\"photon-subrelease\": \"92\"}}",
+            "{\"photon-build-param\": {\"photon-subrelease\": \"92\", \"photon-dist-tag\": \".ph5\"}}",
         )
         .unwrap();
 
@@ -1229,9 +1230,11 @@ mod tests {
         let specs = tmp.join("photon/SPECS/linux");
         fs::create_dir_all(&specs).unwrap();
         fs::write(specs.join("config_aarch64"), "CONFIG_A=y\n").unwrap();
+        // the kernel directory is the one that has linux.spec
+        fs::write(specs.join("linux.spec"), "Name: linux\n").unwrap();
         fs::write(
             tmp.join("photon/build-config.json"),
-            "{\"photon-build-param\": {\"photon-subrelease\": \"92\"}}",
+            "{\"photon-build-param\": {\"photon-subrelease\": \"92\", \"photon-dist-tag\": \".ph5\"}}",
         )
         .unwrap();
 
@@ -1290,6 +1293,7 @@ mod tests {
         )
         .unwrap();
         fs::write(specs.join("config_aarch64"), "CONFIG_HYPERV=y\n").unwrap();
+        crate::specresolve::test_release_config(&tmp.join("photon"), 92);
         fs::create_dir_all(tmp.join("sources")).unwrap();
 
         let mut sp = crate::remaster::tests_support::spec();
@@ -1403,7 +1407,7 @@ mod tests {
     #[test]
     fn the_azure_release_expands_to_what_the_rpm_will_be_called() {
         let b = bump_release("3%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}").unwrap();
-        assert_eq!(azure_release(&b).unwrap(), "4.azure.ph5");
+        assert_eq!(azure_release(&b, ".ph5").unwrap(), "4.azure.ph5");
         // and rpmvercmp orders it where the design says it must: above the
         // stock release, below a future official one.
         assert!("4.azure.ph5" > "3.ph5");
@@ -1419,7 +1423,7 @@ mod tests {
             already.contains(".azure"),
             "the idempotence test is the substring"
         );
-        assert_eq!(azure_release(already).unwrap(), "4.azure.ph5");
+        assert_eq!(azure_release(already, ".ph5").unwrap(), "4.azure.ph5");
         // Bumping an already-bumped value would give 5.azure.azure, which is
         // exactly what the guard prevents.
         assert_eq!(bump_release(already).unwrap(), "5.azure.azure%{?dist}");
@@ -1452,6 +1456,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("shk-cfgpath-{}", std::process::id()));
         let base = d.join("SPECS/linux");
         fs::create_dir_all(base.join("6.1")).unwrap();
+        fs::write(base.join("linux.spec"), "Name: linux\n").unwrap();
         for f in [
             "config_aarch64",
             "config-esx_aarch64",
@@ -1496,6 +1501,8 @@ mod tests {
         fs::create_dir_all(base.join("6.1")).unwrap();
         fs::write(base.join("config_aarch64"), "x").unwrap();
         fs::write(base.join("6.1/config_aarch64-6.1"), "x").unwrap();
+        fs::write(base.join("linux.spec"), "Name: linux\n").unwrap();
+        crate::specresolve::test_release_config(&d, 92);
 
         let a = kernel_config_path(&d, super::super::Arch::Aarch64, "linux", 90).unwrap();
         assert!(a.ends_with("6.1/config_aarch64-6.1"), "{}", a.display());
@@ -1509,6 +1516,7 @@ mod tests {
     fn a_missing_config_file_is_a_typed_error() {
         let d = std::env::temp_dir().join(format!("shk-cfgmiss-{}", std::process::id()));
         fs::create_dir_all(d.join("SPECS/linux")).unwrap();
+        fs::write(d.join("SPECS/linux/linux.spec"), "Name: linux\n").unwrap();
         let e = kernel_config_path(&d, super::super::Arch::Aarch64, "linux", 92).unwrap_err();
         assert!(e.contains("config_aarch64"), "{e}");
         assert!(e.contains("aarch64") && e.contains("linux"), "{e}");

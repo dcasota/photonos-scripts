@@ -363,8 +363,11 @@ pub fn ensure(
     let spec = the_spec(spec_dir)?;
     let spec_s = spec.to_string_lossy().to_string();
     let sdir = format!("_sourcedir {}", spec_dir.display());
+    // the release tree the spec lives in: SPECS/photon-os-installer under it
+    let tree = spec_dir.parent().and_then(Path::parent).ok_or_else(|| format!("{} is not under a release tree", spec_dir.display()))?;
+    let dist = format!("dist {}", crate::specresolve::dist_of(tree)?);
     let q = |fmt: &str| {
-        run(Path::new("/"), "rpmspec", &["-q", "--srpm", "-D", &sdir, "-D", "dist .ph5", "--qf", fmt, &spec_s])
+        run(Path::new("/"), "rpmspec", &["-q", "--srpm", "-D", &sdir, "-D", &dist, "--qf", fmt, &spec_s])
             .map(|s| s.trim().to_string())
     };
     let name = q("%{NAME}")?;
@@ -404,7 +407,7 @@ pub fn ensure(
             "-D",
             &format!("_builddir {}", build.display()),
             "-D",
-            "dist .ph5",
+            &dist,
             &spec_s,
         ],
     )

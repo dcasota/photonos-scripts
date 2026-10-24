@@ -19,6 +19,8 @@ use std::process::Command;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Subreleases {
     pub all: Vec<u32>,
+    /// The tree's dist tag (`photon-dist-tag`), for the rpm queries.
+    pub dist: String,
     /// What `check_spec.py --mainline` gets: the highest subrelease.
     pub check_mainline: u32,
 }
@@ -48,6 +50,13 @@ pub fn derive(build_config: &str, spec_text: &str, dirs: &[String]) -> Result<Su
     let cfg: serde_json::Value = serde_json::from_str(build_config).map_err(|e| format!("build-config.json: {e}"))?;
     let param = |k: &str| -> Option<u32> { cfg.get("photon-build-param")?.get(k)?.as_str()?.trim().parse().ok() };
     let sub = param("photon-subrelease").ok_or("build-config.json has no numeric photon-subrelease")?;
+    let dist = cfg
+        .get("photon-build-param")
+        .and_then(|p| p.get("photon-dist-tag"))
+        .and_then(|d| d.as_str())
+        .map(|d| d.trim().to_string())
+        .filter(|d| d.starts_with('.') && d.len() > 1)
+        .ok_or("build-config.json has no photon-dist-tag")?;
     let mut all: BTreeSet<u32> = BTreeSet::from([sub]);
     if let Some(m) = param("photon-mainline") {
         all.insert(m);
@@ -59,7 +68,7 @@ pub fn derive(build_config: &str, spec_text: &str, dirs: &[String]) -> Result<Su
     }
     let all: Vec<u32> = all.into_iter().collect();
     let check_mainline = *all.last().ok_or("no subrelease")?;
-    Ok(Subreleases { all, check_mainline })
+    Ok(Subreleases { all, check_mainline, dist })
 }
 
 fn run(dir: &Path, prog: &str, args: &[&str]) -> Result<String, String> {
@@ -114,7 +123,7 @@ pub fn in_dir(root: &Path) -> Result<Subreleases, String> {
 mod tests {
     use super::*;
 
-    const BC: &str = r#"{"photon-build-param": {"photon-subrelease": "92", "photon-mainline": "92"}}"#;
+    const BC: &str = r#"{"photon-build-param": {"photon-subrelease": "92", "photon-mainline": "92", "photon-dist-tag": ".ph5"}}"#;
 
     #[test]
     fn the_set_is_config_dirs_and_spec_conditions() {
