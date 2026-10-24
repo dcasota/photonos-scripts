@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS escalation (
     model         TEXT NOT NULL,
     started_at    TEXT NOT NULL,
     finished_at   TEXT,
-    tokens        INTEGER NOT NULL DEFAULT 0,  -- input + output + cache read + cache write
+    tokens        INTEGER NOT NULL DEFAULT 0,  -- input + output + cache read + cache write (raw)
+    weighted      INTEGER NOT NULL DEFAULT 0,  -- the same weighted by price: what the budgets count
     input_tokens  INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cache_read    INTEGER NOT NULL DEFAULT 0,
@@ -47,7 +48,15 @@ CREATE INDEX IF NOT EXISTS idx_escalation_run ON escalation(run_id, pr);
 ";
 
 pub fn ensure_schema(c: &Connection) -> Result<(), String> {
-    c.execute_batch(SCHEMA).map_err(|e| format!("escalation schema: {e}"))
+    c.execute_batch(SCHEMA).map_err(|e| format!("escalation schema: {e}"))?;
+    let has: bool = c
+        .prepare("SELECT 1 FROM pragma_table_info('escalation') WHERE name = 'weighted'")
+        .and_then(|mut s| s.exists([]))
+        .map_err(|e| format!("{e}"))?;
+    if !has {
+        c.execute_batch("ALTER TABLE escalation ADD COLUMN weighted INTEGER NOT NULL DEFAULT 0").map_err(|e| format!("{e}"))?;
+    }
+    Ok(())
 }
 
 /// The limits, from the environment, defaulting to the values agreed on
@@ -61,6 +70,25 @@ pub struct Budget {
     pub max_turns: u32,
     pub model: String,
     pub fallback: String,
+    pub weights: Weights,
+}
+
+/// Token weights by price relative to uncached input (user decision
+/// 2026-10-25): a cache read costs a tenth, a cache write a quarter more for
+/// the five-minute cache and double for the one-hour cache. Every turn
+/// re-reads the conversation from cache, so counting those reads in full would
+/// spend a budget on what costs least.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Weights {
+    pub cache_read: f64,
+    pub cache_write_5m: f64,
+    pub cache_write_1h: f64,
+}
+
+impl Default for Weights {
+    fn default() -> Weights {
+        Weights { cache_read: 0.1, cache_write_5m: 1.25, cache_write_1h: 2.0 }
+    }
 }
 
 impl Budget {
@@ -75,6 +103,15 @@ impl Budget {
             max_turns: n("MC_ESC_MAX_TURNS", 25) as u32,
             model: s("MC_ESC_MODEL", "opus"),
             fallback: s("MC_ESC_FALLBACK_MODEL", "sonnet"),
+            weights: {
+                let f = |k: &str, d: f64| std::env::var(k).ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|v| *v >= 0.0).unwrap_or(d);
+                let w = Weights::default();
+                Weights {
+                    cache_read: f("MC_ESC_WEIGHT_CACHE_READ", w.cache_read),
+                    cache_write_5m: f("MC_ESC_WEIGHT_CACHE_WRITE_5M", w.cache_write_5m),
+                    cache_write_1h: f("MC_ESC_WEIGHT_CACHE_WRITE_1H", w.cache_write_1h),
+                }
+            },
         }
     }
 }
@@ -145,13 +182,13 @@ pub fn admission(c: &Connection, b: &Budget, run: i64, pr: i64, today: &str) -> 
     if failed >= b.attempts {
         return Some(format!("{failed} attempt(s) for PR #{pr} in run {run} did not produce a verified proposal: parked for a person"));
     }
-    let run_used = used(c, "SELECT sum(tokens) FROM escalation WHERE run_id = ?1", [run]);
+    let run_used = used(c, "SELECT sum(weighted) FROM escalation WHERE run_id = ?1", [run]);
     if run_used + b.per_escalation > b.per_run {
-        return Some(format!("run {run} has used {run_used} of {} escalation tokens", b.per_run));
+        return Some(format!("run {run} has used {run_used} of {} weighted escalation tokens", b.per_run));
     }
-    let day_used = used(c, "SELECT sum(tokens) FROM escalation WHERE substr(started_at,1,10) = ?1", [today]);
+    let day_used = used(c, "SELECT sum(weighted) FROM escalation WHERE substr(started_at,1,10) = ?1", [today]);
     if day_used + b.per_escalation > b.per_day {
-        return Some(format!("{today}: {day_used} of {} escalation tokens used; the queue waits for tomorrow", b.per_day));
+        return Some(format!("{today}: {day_used} of {} weighted escalation tokens used; the queue waits for tomorrow", b.per_day));
     }
     None
 }
@@ -163,11 +200,24 @@ pub struct Usage {
     pub output: i64,
     pub cache_read: i64,
     pub cache_write: i64,
+    /// the part of cache_write that went to the one-hour cache
+    pub cache_write_1h: i64,
 }
 
 impl Usage {
+    /// Raw: every token once.
     pub fn total(&self) -> i64 {
         self.input + self.output + self.cache_read + self.cache_write
+    }
+    /// By price: what the budgets count.
+    pub fn weighted(&self, w: &Weights) -> i64 {
+        let five_min = (self.cache_write - self.cache_write_1h).max(0) as f64;
+        (self.input as f64
+            + self.output as f64
+            + self.cache_read as f64 * w.cache_read
+            + five_min * w.cache_write_5m
+            + self.cache_write_1h as f64 * w.cache_write_1h)
+            .round() as i64
     }
     fn add(&mut self, u: &Value) {
         let g = |k: &str| u.get(k).and_then(Value::as_i64).unwrap_or(0);
@@ -175,6 +225,14 @@ impl Usage {
         self.output += g("output_tokens");
         self.cache_read += g("cache_read_input_tokens");
         self.cache_write += g("cache_creation_input_tokens");
+        self.cache_write_1h += u.pointer("/cache_creation/ephemeral_1h_input_tokens").and_then(Value::as_i64).unwrap_or(0);
+    }
+    fn plus(&mut self, o: &Usage) {
+        self.input += o.input;
+        self.output += o.output;
+        self.cache_read += o.cache_read;
+        self.cache_write += o.cache_write;
+        self.cache_write_1h += o.cache_write_1h;
     }
 }
 
@@ -204,10 +262,7 @@ impl Stream {
                     self.per_message.insert(id, one);
                     let mut sum = Usage::default();
                     for m in self.per_message.values() {
-                        sum.input += m.input;
-                        sum.output += m.output;
-                        sum.cache_read += m.cache_read;
-                        sum.cache_write += m.cache_write;
+                        sum.plus(m);
                     }
                     self.usage = sum;
                 }
@@ -217,7 +272,7 @@ impl Stream {
             }
             Some("result") => {
                 if let Some(m) = v.get("modelUsage").and_then(Value::as_object) {
-                    let mut u = Usage::default();
+                    let mut u = Usage { cache_write_1h: self.usage.cache_write_1h, ..Usage::default() };
                     for mu in m.values() {
                         let g = |k: &str| mu.get(k).and_then(Value::as_i64).unwrap_or(0);
                         u.input += g("inputTokens");
@@ -377,7 +432,7 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
         let Ok(line) = line else { break };
         let _ = writeln!(out_file, "{}", crate::mcp::redact(&line).trim_end());
         st.take(&line);
-        if st.usage.total() > b.per_escalation && st.result.is_none() {
+        if st.usage.weighted(&b.weights) > b.per_escalation && st.result.is_none() {
             over = true;
             let _ = child.kill();
             break;
@@ -400,7 +455,7 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
     let proposal = Command::new("git").arg("-C").arg(&subject.repo).args(["rev-parse", "--verify", "-q", &subject.proposal_ref()]).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
     let rate_limited = st.retries.iter().any(|x| x.contains("rate_limit")) && !status.success();
     let (outcome, detail) = if over {
-        ("budget", format!("stopped at {} tokens, over the {} of one escalation", u.total(), b.per_escalation))
+        ("budget", format!("stopped at {} weighted tokens ({} raw), over the {} of one escalation", u.weighted(&b.weights), u.total(), b.per_escalation))
     } else if rate_limited {
         ("parked", "rate-limited by the API; it resumes when the queue is admitted again".to_string())
     } else if let Some(head) = &proposal {
@@ -420,8 +475,8 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
         ("no-proposal", format!("no proposal. Model: {said}: {summary}"))
     };
     c.execute(
-        "UPDATE escalation SET finished_at = ?1, tokens = ?2, input_tokens = ?3, output_tokens = ?4, cache_read = ?5, cache_write = ?6, cost_usd = ?7, turns = ?8, outcome = ?9, detail = ?10 WHERE id = ?11",
-        rusqlite::params![crate::job::now(), u.total(), u.input, u.output, u.cache_read, u.cache_write, cost, turns, outcome, crate::mcp::redact(&detail), id],
+        "UPDATE escalation SET finished_at = ?1, tokens = ?2, input_tokens = ?3, output_tokens = ?4, cache_read = ?5, cache_write = ?6, cost_usd = ?7, turns = ?8, outcome = ?9, detail = ?10, weighted = ?12 WHERE id = ?11",
+        rusqlite::params![crate::job::now(), u.total(), u.input, u.output, u.cache_read, u.cache_write, cost, turns, outcome, crate::mcp::redact(&detail), id, u.weighted(&b.weights)],
     )
     .map_err(|e| format!("{e}"))?;
     let kind = match outcome {
@@ -430,7 +485,7 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
         _ => "escalation-failed",
     };
     crate::watch::record(&c, kind, &format!("sync run {run} #{pr}"), None, None, &crate::mcp::redact(&detail))?;
-    Ok(format!("{outcome}: {detail} ({} tokens, {} turn(s), transcript {})", u.total(), turns.unwrap_or(0), transcript.display()))
+    Ok(format!("{outcome}: {detail} ({} weighted tokens, {} raw, {} turn(s), transcript {})", u.weighted(&b.weights), u.total(), turns.unwrap_or(0), transcript.display()))
 }
 
 pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
@@ -442,8 +497,12 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
             println!("API key: set, shaped like an Anthropic key, accepted by the API");
             let b = Budget::from_env();
             println!(
-                "budgets: {} tokens per escalation, {} per run, {} per day; {} attempts; {} turns; model {} (fallback {})",
+                "budgets: {} weighted tokens per escalation, {} per run, {} per day; {} attempts; {} turns; model {} (fallback {})",
                 b.per_escalation, b.per_run, b.per_day, b.attempts, b.max_turns, b.model, b.fallback
+            );
+            println!(
+                "weights: input and output 1, cache read {}, cache write {} (5 min) / {} (1 h)",
+                b.weights.cache_read, b.weights.cache_write_5m, b.weights.cache_write_1h
             );
             Ok(())
         }
@@ -451,12 +510,12 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
             let c = crate::job::open_rw(&cfg.memory_db)?;
             ensure_schema(&c)?;
             let mut s = c
-                .prepare("SELECT id, run_id, pr, attempt, model, started_at, tokens, coalesce(turns,0), coalesce(cost_usd,0), outcome, coalesce(detail,'') FROM escalation ORDER BY id DESC LIMIT 30")
+                .prepare("SELECT id, run_id, pr, attempt, model, started_at, weighted, coalesce(turns,0), coalesce(cost_usd,0), outcome, coalesce(detail,'') FROM escalation ORDER BY id DESC LIMIT 30")
                 .map_err(|e| format!("{e}"))?;
             let rows = s
                 .query_map([], |r| {
                     Ok(format!(
-                        "{} run {} #{} try {} {} {} {} tokens {} turns ${:.4} {}: {}",
+                        "{} run {} #{} try {} {} {} {} weighted tokens {} turns ${:.4} {}: {}",
                         r.get::<_, i64>(0)?,
                         r.get::<_, i64>(1)?,
                         r.get::<_, i64>(2)?,
@@ -508,7 +567,7 @@ mod tests {
     }
 
     fn budget() -> Budget {
-        Budget { per_escalation: 150_000, per_run: 500_000, per_day: 1_000_000, attempts: 2, max_turns: 25, model: "opus".into(), fallback: "sonnet".into() }
+        Budget { per_escalation: 150_000, per_run: 500_000, per_day: 1_000_000, attempts: 2, max_turns: 25, model: "opus".into(), fallback: "sonnet".into(), weights: Weights::default() }
     }
 
     #[test]
@@ -518,7 +577,7 @@ mod tests {
         assert!(admission(&c, &b, 5, 23, "2026-10-24").is_none());
         let ins = |run: i64, pr: i64, tokens: i64, outcome: &str, day: &str| {
             c.execute(
-                "INSERT INTO escalation (run_id, pr, attempt, model, started_at, tokens, outcome) VALUES (?1, ?2, 1, 'opus', ?3, ?4, ?5)",
+                "INSERT INTO escalation (run_id, pr, attempt, model, started_at, weighted, outcome) VALUES (?1, ?2, 1, 'opus', ?3, ?4, ?5)",
                 rusqlite::params![run, pr, format!("{day}T10:00:00Z"), tokens, outcome],
             )
             .unwrap();
@@ -546,9 +605,22 @@ mod tests {
         s.take(r#"{"type":"system","subtype":"api_retry","error":"rate_limit"}"#);
         assert_eq!(s.retries.len(), 1);
         s.take(r#"{"type":"result","num_turns":2,"modelUsage":{"m":{"inputTokens":13,"outputTokens":12,"cacheReadInputTokens":2200,"cacheCreationInputTokens":200}}}"#);
-        assert_eq!(s.usage, Usage { input: 13, output: 12, cache_read: 2200, cache_write: 200 });
+        assert_eq!(s.usage, Usage { input: 13, output: 12, cache_read: 2200, cache_write: 200, cache_write_1h: 0 });
         assert!(s.result.is_some());
         s.take("not json");
+    }
+
+    #[test]
+    fn budgets_count_tokens_by_price() {
+        let w = Weights::default();
+        let u = Usage { input: 100, output: 200, cache_read: 10_000, cache_write: 1_000, cache_write_1h: 400 };
+        // 100 + 200 + 10000*0.1 + 600*1.25 + 400*2
+        assert_eq!(u.weighted(&w), 2850);
+        assert_eq!(u.total(), 11_300);
+        // the first evaluation's real usage (5 messages): 52608 raw, 28654 by price
+        let eval = Usage { input: 12, output: 80, cache_read: 32_246, cache_write: 20_270, cache_write_1h: 0 };
+        assert_eq!(eval.total(), 52_608);
+        assert_eq!(eval.weighted(&w), 28_654);
     }
 
     #[test]
