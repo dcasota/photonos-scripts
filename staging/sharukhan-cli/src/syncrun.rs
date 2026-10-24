@@ -348,6 +348,7 @@ fn depth(branch: &str, rows: &[(i64, String, String, Option<String>)]) -> usize 
 }
 
 fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
+    let who = crate::author::resolve(Some(&ctx.repo))?;
     let mut rows: Vec<(i64, String, String, Option<String>)> = ctx
         .c
         .prepare("SELECT number, branch, root, parent FROM sync_pr WHERE run_id = ?1 AND action = 'rebase' AND state NOT IN ('rebased', 'resolved')")
@@ -400,7 +401,7 @@ fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
             }
         };
         let work = ctx.repo.join(format!(".sharukhan-sync-{}-{n}", ctx.run));
-        match crate::sync::rebase(&ctx.repo, &src, &own_base, old_root, &new_base, &date, &work, parent.is_some()) {
+        match crate::sync::rebase(&ctx.repo, &src, &own_base, old_root, &new_base, &date, &work, parent.is_some(), &who) {
             Ok(r) => {
                 let target = format!("sync/{}/{branch}", ctx.run);
                 git(&ctx.repo, &["update-ref", &format!("refs/heads/{target}"), &r.head])?;
@@ -431,6 +432,7 @@ fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
 }
 
 fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
+    let who = crate::author::resolve(Some(&ctx.repo))?.line();
     let rows: Vec<(i64, String, String)> = ctx
         .c
         .prepare("SELECT number, root, new_head FROM sync_pr WHERE run_id = ?1 AND state IN ('rebased', 'resolved', 'failed')")
@@ -444,7 +446,7 @@ fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
     let mut log = Vec::new();
     for (n, root, head) in &rows {
         let work = crate::builder::shared_root().join(format!("work/sync-verify-{}-{n}", ctx.run));
-        let checks = crate::sync::verify(&ctx.repo, &format!("refs/sync/base/{root}"), head, &common, &work, &mut |l| log.push(l.to_string()))?;
+        let checks = crate::sync::verify(&ctx.repo, &format!("refs/sync/base/{root}"), head, &common, &work, &who, &mut |l| log.push(l.to_string()))?;
         let _ = fs::remove_dir_all(&work);
         let bad: Vec<String> = checks.iter().filter(|c| !c.ok).map(|c| format!("{} sr{} {}: {}", c.spec, c.subrelease, c.what, c.detail)).collect();
         log.push(format!("#{n}: {} check(s), {} failed", checks.len(), bad.len()));

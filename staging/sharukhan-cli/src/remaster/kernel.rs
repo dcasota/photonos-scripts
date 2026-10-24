@@ -627,8 +627,11 @@ pub fn release_bump(c: &mut Ctx, flavour: &str) -> Result<String, String> {
         return Ok(format!("{version}-{new_rel}"));
     }
 
-    let author = std::env::var("MC_CHANGELOG_AUTHOR")
-        .unwrap_or_else(|_| "Daniel Casota <dcasota@gmail.com>".to_string());
+    // its own setting first, then the harness's author (crate::author); never a name written here
+    let author = match std::env::var("MC_CHANGELOG_AUTHOR").ok().filter(|v| !v.trim().is_empty()) {
+        Some(v) => crate::author::parse(&v).map_err(|e| format!("MC_CHANGELOG_AUTHOR: {e}"))?.line(),
+        None => crate::author::resolve(Some(&c.spec.photon_tree))?.line(),
+    };
     let entry = format!(
         "* {} {author} {version}-{new_rel}\n- {}: build Hyper-V guest support in \
          (CONFIG_HYPERV, HYPERV_STORAGE, HYPERV_NET, HYPERV_UTILS, HYPERV_BALLOON, \

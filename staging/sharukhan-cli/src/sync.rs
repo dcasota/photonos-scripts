@@ -22,7 +22,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const AUTHOR: &str = "Daniel Casota <dcasota@gmail.com>";
 
 fn git_in(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = Command::new("git")
@@ -279,12 +278,13 @@ fn merge3(base: &str, ours: &str, theirs: &str) -> Result<String, ()> {
 /// The new content of a spec the PR changed: merged with Release and changelog
 /// masked, Release = base + 1, the PR's top entry redated and renumbered on
 /// top of the base's changelog.
-pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, date: &str, stacked: bool) -> Result<(String, String), String> {
+/// `author` is `Name <email>` (crate::author): whose entries are the PR's own.
+pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, date: &str, stacked: bool, author: &str) -> Result<(String, String), String> {
     let merged = merge3(&mask(prev), &mask(cur), &mask(pr)).map_err(|_| "conflict beyond Release and %changelog".to_string())?;
     let base_rel = release_value(base).ok_or("no Release in the base")?;
     // A stacked PR amends its parent's entry: same Release, its line replaces
     // the parent's, so the stack still adds exactly one entry.
-    let parent_entry = stacked && changelog_body(base).lines().next().is_some_and(|l| l.starts_with("* ") && l.contains(AUTHOR));
+    let parent_entry = stacked && changelog_body(base).lines().next().is_some_and(|l| l.starts_with("* ") && l.contains(author));
     let next = if parent_entry {
         base_rel.clone()
     } else {
@@ -295,7 +295,7 @@ pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, d
         .find_map(|l| l.strip_prefix("Version:").map(|v| v.trim().to_string()))
         .ok_or("no Version")?;
     let entry: Vec<&str> = changelog_body(pr_head).lines().take(2).collect();
-    if entry.len() < 2 || !entry[0].starts_with("* ") || !entry[0].contains(AUTHOR) {
+    if entry.len() < 2 || !entry[0].starts_with("* ") || !entry[0].contains(author) {
         return Err(format!("the top changelog entry of the PR is not its own: {}", entry.first().unwrap_or(&"")));
     }
     let rest: String = if parent_entry {
@@ -308,7 +308,7 @@ pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, d
     } else {
         changelog_body(base).to_string()
     };
-    let out = format!("{}* {date} {AUTHOR} {version}-{next}\n{}\n{}", merged.replace(REL_MASK, &next), entry[1], rest);
+    let out = format!("{}* {date} {author} {version}-{next}\n{}\n{}", merged.replace(REL_MASK, &next), entry[1], rest);
     Ok((out, format!("{version}-{next}")))
 }
 
@@ -391,11 +391,12 @@ pub fn rebase(
     date: &str,
     work: &Path,
     stacked: bool,
+    author: &crate::author::Author,
 ) -> Result<RebaseResult, String> {
     let renames = base_renames(repo, old_base, new_base)?;
     let _ = git_in(repo, &["worktree", "remove", "--force", &work.to_string_lossy()]);
     git_in(repo, &["worktree", "add", "--detach", &work.to_string_lossy(), new_base])?;
-    let r = replay(repo, work, src, own_base, new_base, date, &renames, stacked);
+    let r = replay(repo, work, src, own_base, new_base, date, &renames, stacked, author);
     let _ = git_in(repo, &["worktree", "remove", "--force", &work.to_string_lossy()]);
     r
 }
@@ -409,6 +410,7 @@ fn replay(
     date: &str,
     renames: &BTreeMap<String, String>,
     stacked: bool,
+    author: &crate::author::Author,
 ) -> Result<RebaseResult, String> {
     let commits: Vec<String> = git_in(repo, &["rev-list", "--reverse", &format!("{own_base}..{src}")])?
         .lines()
@@ -461,7 +463,7 @@ fn replay(
                     let out = if target.ends_with(".spec") {
                         let base_spec = show(repo, new_base, &target).ok_or_else(|| format!("{target}: not in the base"))?;
                         let pr_head = show(repo, src, path).unwrap_or_else(|| pr.clone());
-                        let (text, vr) = rebase_spec(&prev, &cur, &pr, &pr_head, &base_spec, date, stacked)
+                        let (text, vr) = rebase_spec(&prev, &cur, &pr, &pr_head, &base_spec, date, stacked, &author.line())
                             .map_err(|e| format!("{target}: {e}"))?;
                         res.releases.insert(target.clone(), vr);
                         text
@@ -490,8 +492,8 @@ fn replay(
             .env("GIT_AUTHOR_NAME", who("%an")?)
             .env("GIT_AUTHOR_EMAIL", who("%ae")?)
             .env("GIT_AUTHOR_DATE", who("%aD")?)
-            .env("GIT_COMMITTER_NAME", "Daniel Casota")
-            .env("GIT_COMMITTER_EMAIL", "dcasota@gmail.com")
+            .env("GIT_COMMITTER_NAME", &author.name)
+            .env("GIT_COMMITTER_EMAIL", &author.email)
             .stdin(std::process::Stdio::piped())
             .spawn()
             .and_then(|mut ch| {
@@ -636,6 +638,7 @@ pub fn verify(
     r: &str,
     common: &Path,
     work: &Path,
+    author: &str,
     log: &mut dyn FnMut(&str),
 ) -> Result<Vec<Check>, String> {
     let out = Command::new("git")
@@ -683,7 +686,7 @@ pub fn verify(
         let mine = fs::read_to_string(work.join(g)).map_err(|e| format!("{g}: {e}"))?;
         let reference = crate::branchguard::package_changelogs(repo, base, g);
         let before = crate::branchguard::file_at(repo, base, g);
-        let problems = crate::branchguard::single_entry_problems(&reference, &before, &mine, AUTHOR, 10);
+        let problems = crate::branchguard::single_entry_problems(&reference, &before, &mine, author, 10);
         checks.push(Check { spec: g.clone(), subrelease: 0, what: "changelog".into(), ok: problems.is_empty(), detail: problems.join(" | ") });
     }
     for f in &changed {
@@ -742,9 +745,9 @@ pub fn verify(
         let reference = crate::branchguard::package_changelogs(repo, base, f);
         let before = crate::branchguard::file_at(repo, base, f);
         let problems = if text.contains("%changelog") {
-            crate::branchguard::single_entry_problems(&reference, &before, &text, AUTHOR, 10)
+            crate::branchguard::single_entry_problems(&reference, &before, &text, author, 10)
         } else {
-            crate::branchguard::dropped_entries(&before, &crate::branchguard::package_changelogs(repo, &tree, f), AUTHOR)
+            crate::branchguard::dropped_entries(&before, &crate::branchguard::package_changelogs(repo, &tree, f), author)
         };
         checks.push(Check {
             spec: f.clone(),
@@ -834,7 +837,8 @@ pub fn cli(args: &[String]) -> u8 {
                 let work = repo.join(format!(".sharukhan-sync-{}", branch.replace('/', "-")));
                 let date = opt(rest, "--date").map(str::to_string).unwrap_or_else(today);
                 let stacked = rest.iter().any(|a| a == "--stacked");
-                let r = rebase(&repo, need("--src")?, need("--own-base")?, need("--old-base")?, need("--new-base")?, &date, &work, stacked);
+                let who = crate::author::resolve(Some(&repo))?;
+                let r = rebase(&repo, need("--src")?, need("--own-base")?, need("--old-base")?, need("--new-base")?, &date, &work, stacked, &who);
                 match r {
                     Ok(res) => {
                         git_in(&repo, &["update-ref", &format!("refs/heads/{branch}"), &res.head])?;
@@ -867,10 +871,11 @@ pub fn cli(args: &[String]) -> u8 {
                     .map(|(_, a)| a)
                     .collect();
                 let root = crate::builder::shared_root();
+                let who = crate::author::resolve(Some(&repo))?.line();
                 let mut all_ok = true;
                 for r in refs {
                     let work = root.join("work").join(format!("sync-verify-{}", r.replace('/', "-")));
-                    match verify(&repo, base, r, &common, &work, &mut log) {
+                    match verify(&repo, base, r, &common, &work, &who, &mut log) {
                         Ok(checks) => {
                             let bad: Vec<&Check> = checks.iter().filter(|c| !c.ok).collect();
                             println!("{r}: {} check(s), {} failed", checks.len(), bad.len());
@@ -948,17 +953,17 @@ mod tests {
         );
         // upstream moved to 1.1-1 meanwhile
         let base = head("1", "1.1", "", "* Thu Oct 22 2026 X Y <x@y> 1.1-1\n- Update to 1.1\n* Mon Oct 19 2026 X Y <x@y> 1.0-3\n- Old\n");
-        let (out, vr) = rebase_spec(&prev, &base, &pr, &pr, &base, "Fri Oct 23 2026", false).unwrap();
+        let (out, vr) = rebase_spec(&prev, &base, &pr, &pr, &base, "Fri Oct 23 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap();
         assert_eq!(vr, "1.1-2");
         assert!(out.contains("Version: 1.1\nRelease: 2%{?dist}\nPatch9: fix.patch\n"), "{out}");
         assert!(out.contains("%changelog\n* Fri Oct 23 2026 Daniel Casota <dcasota@gmail.com> 1.1-2\n- Fix the thing\n* Thu Oct 22 2026 X Y <x@y> 1.1-1\n"), "{out}");
         assert_eq!(out.matches("Daniel Casota").count(), 1);
         // a PR whose top entry is not its own is refused
         let foreign = head("4", "1.0", "Patch9: fix.patch", "* Tue Oct 20 2026 X Y <x@y> 1.0-4\n- Not mine\n");
-        assert!(rebase_spec(&prev, &base, &foreign, &foreign, &base, "Fri Oct 23 2026", false).unwrap_err().contains("not its own"));
+        assert!(rebase_spec(&prev, &base, &foreign, &foreign, &base, "Fri Oct 23 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap_err().contains("not its own"));
         // a real conflict is refused, not resolved
         let other = head("1", "1.1", "Patch9: other.patch", "");
-        assert!(rebase_spec(&prev, &other, &pr, &pr, &base, "Fri Oct 23 2026", false).unwrap_err().contains("conflict"));
+        assert!(rebase_spec(&prev, &other, &pr, &pr, &base, "Fri Oct 23 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap_err().contains("conflict"));
     }
 
     #[test]
@@ -970,12 +975,12 @@ mod tests {
         // the child before the rebase: on the old parent, its line replaced the parent's
         let prev = spec("2", "Patch1: a.patch", "* Mon Oct 19 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Do A\n");
         let pr = spec("2", "Patch1: a.patch\nPatch2: b.patch", "* Tue Oct 20 2026 Daniel Casota <dcasota@gmail.com> 1.0-2\n- Do A and B\n");
-        let (out, vr) = rebase_spec(&prev, &parent, &pr, &pr, &parent, "Fri Oct 23 2026", true).unwrap();
+        let (out, vr) = rebase_spec(&prev, &parent, &pr, &pr, &parent, "Fri Oct 23 2026", true, "Daniel Casota <dcasota@gmail.com>").unwrap();
         assert_eq!(vr, "2.0-2", "the stack keeps the parent's Release");
         assert_eq!(out.matches("Daniel Casota").count(), 1, "{out}");
         assert!(out.contains("2.0-2\n- Do A and B\n* Thu Oct 22 2026 X Y <x@y> 2.0-1"), "{out}");
         // a root PR on a base whose top entry happens to be ours still adds one
-        let (_, vr2) = rebase_spec(&prev, &parent, &pr, &pr, &parent, "Fri Oct 23 2026", false).unwrap();
+        let (_, vr2) = rebase_spec(&prev, &parent, &pr, &pr, &parent, "Fri Oct 23 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap();
         assert_eq!(vr2, "2.0-3");
     }
 

@@ -4,6 +4,7 @@
 //! cannot be established it says so rather than guessing, because a harness
 //! that reports a confident wrong answer is worse than one that reports none.
 
+mod author;
 mod b64;
 mod branchguard;
 mod build;
@@ -1947,6 +1948,7 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
         .as_deref()
         .ok_or("branch-check needs --branch <ref>, the PR branch under test")?;
     let dir = std::path::Path::new(dir);
+    let who = author::resolve(Some(dir))?.line();
 
     println!(
         "branch-check: target={target} branch={branch} repo={}",
@@ -1996,7 +1998,7 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
             // carry every entry it had, there
             if f.ends_with(".spec") && !mine.is_empty() {
                 let before = branchguard::file_at(dir, &base, &f);
-                let dropped = branchguard::dropped_entries(&before, &branchguard::package_changelogs(dir, branch, &f), "Daniel Casota <dcasota@gmail.com>");
+                let dropped = branchguard::dropped_entries(&before, &branchguard::package_changelogs(dir, branch, &f), &who);
                 if dropped.is_empty() && before.contains("%changelog") {
                     println!("  [ok   ] {f}: every entry of the base's changelog is kept in the included changelogs");
                 }
@@ -2013,7 +2015,7 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
             &reference,
             &before,
             &mine,
-            "Daniel Casota <dcasota@gmail.com>",
+            &who,
             10,
         );
         if problems.is_empty() {
