@@ -318,8 +318,9 @@ fn kernel_pins(c: &mut Ctx, kernel: &str, script: &str) -> Result<(), String> {
 /// runs it once per spec, and once over both as build.py does.
 fn kernel_spec_check(c: &Ctx, tree: &Path, which: &[&str]) -> Result<(bool, Vec<PathBuf>, String), String> {
     let common = c.spec.tree(Tree::Common);
-    let sub = crate::specresolve::tree_subrelease(tree).unwrap_or(92);
-    let specs = tree.join("SPECS/linux");
+    let sub = crate::specresolve::tree_subrelease(tree)
+        .ok_or_else(|| format!("{}/build-config.json has no photon-subrelease", tree.display()))?;
+    let specs = tree.join(crate::specresolve::kernel_dir(tree, Some(sub))?);
     let mut args: Vec<std::ffi::OsString> = vec![
         common.join("support/spec-checker/check_spec.py").into(),
         "--subrelease".into(),
@@ -419,7 +420,7 @@ fn prune_listed(
     per_spec: &[(&str, Vec<PathBuf>)],
     listed: &[PathBuf],
 ) -> Result<(usize, usize), String> {
-    let specs = tree.join("SPECS/linux");
+    let specs = tree.join(crate::specresolve::kernel_dir(tree, crate::specresolve::tree_subrelease(tree))?);
     let (mut lines_removed, mut files_removed) = (0usize, 0usize);
     let mut texts: Vec<(PathBuf, String)> = Vec::new();
     for (f, own) in per_spec {
@@ -534,11 +535,7 @@ fn kernel_config(c: &mut Ctx, arch: &str, flavour: &str) -> Result<(), String> {
 
 /// Bump the flavour's Release so the Hyper-V kernel has its own NEVR.
 fn release_bump(c: &mut Ctx, flavour: &str) -> Result<(), String> {
-    let spec = c
-        .spec
-        .tree(Tree::Release)
-        .join("SPECS/linux")
-        .join(format!("{flavour}.spec"));
+    let spec = kernel_specs(c)?.join(format!("{flavour}.spec"));
     if !spec.is_file() {
         return Err(format!("{} does not exist", spec.display()));
     }
@@ -1411,6 +1408,8 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
         c.say("  would build/prove the composer image, check createrepo_c and disk headroom");
         return Ok(());
     }
+    let k = kernel_specs(c)?;
+    c.say(&format!("  kernel specs: {}", k.display()));
     let tag = match &c.spec.poi_image {
         Some(t) => t.clone(),
         None => {
@@ -1663,10 +1662,7 @@ fn slot_store_root(c: &Ctx) -> PathBuf {
 
 fn slot_families(c: &Ctx) -> std::collections::BTreeSet<String> {
     let release = c.spec.tree(Tree::Release);
-    crate::kernelslot::kernel_families(
-        &release.join("SPECS/linux"),
-        build_subrelease(c, &release),
-    )
+    crate::kernelslot::kernel_families(&kernel_specs_checked(c), build_subrelease(c, &release))
 }
 
 /// The rule that decides which stage RPMs are the kernels this equivalent
@@ -1717,7 +1713,7 @@ fn slot_inputs(c: &Ctx, stage: &Path) -> Option<crate::kernelslot::Inputs> {
     let macros =
         pkg_build_macros(c.spec.canister, c.spec.canister_nevr.as_deref()).ok()?;
     crate::kernelslot::inputs(
-        &release.join("SPECS/linux"),
+        &kernel_specs_checked(c),
         build_subrelease(c, &release),
         &patches,
         c.spec.canister_nevr.as_deref(),
@@ -1872,7 +1868,11 @@ fn slot_after(c: &mut Ctx) {
 fn purge_mismatched_canister(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
     let spec_pin =
-        resolved_spec(c, &release_tree, Path::new("SPECS/linux/linux.spec")).and_then(|t| {
+        kernel_specs(c)
+            .ok()
+            .and_then(|k| k.strip_prefix(&release_tree).ok().map(|r| r.join("linux.spec")))
+            .and_then(|rel| resolved_spec(c, &release_tree, &rel))
+            .and_then(|t| {
             t.lines()
                 .map(str::trim)
                 .find(|l| l.starts_with("%define fips_canister_version"))
@@ -2046,7 +2046,27 @@ fn buildtime(p: &Path) -> Option<u64> {
 /// So read each flavour's Release from its own spec rather than assuming the
 /// canister's applies to both.
 fn kernel_flavour_nevrs(c: &mut Ctx) -> Vec<(String, String)> {
-    crate::build::kernel_flavour_nevrs(&c.spec.tree(Tree::Release).join("SPECS/linux"))
+    let release = c.spec.tree(Tree::Release);
+    crate::build::kernel_flavour_nevrs(&kernel_specs_checked(c), build_subrelease(c, &release))
+}
+
+/// The kernel spec directory of the release tree at this build's subrelease
+/// (`specresolve::kernel_dir`). Preflight requires it, so a build never runs
+/// on a tree where it cannot be told.
+fn kernel_specs(c: &Ctx) -> Result<PathBuf, String> {
+    let release = c.spec.tree(Tree::Release);
+    Ok(release.join(crate::specresolve::kernel_dir(&release, build_subrelease(c, &release))?))
+}
+
+/// The same, for the steps that run after preflight proved it readable. Should
+/// the tree change under the build, the failure is printed, and the path then
+/// names no directory, so the kernel steps find nothing rather than another
+/// kernel's specs.
+fn kernel_specs_checked(c: &Ctx) -> PathBuf {
+    kernel_specs(c).unwrap_or_else(|e| {
+        eprintln!("sharukhan: ERROR {e}");
+        c.spec.tree(Tree::Release).join("SPECS/.no-kernel-directory")
+    })
 }
 
 use crate::build::stale_flavour_rpm;
@@ -2776,8 +2796,18 @@ fn patched_specs(c: &mut Ctx) -> Vec<String> {
             }
         }
     }
-    for pkg in ["photon-os-installer", "stig-hardening", "linux"] {
+    for pkg in ["photon-os-installer", "stig-hardening"] {
         add(&format!("SPECS/{pkg}/{pkg}.spec"));
+    }
+    // the kernel floor is the build's kernel directory, both flavours
+    match kernel_specs(c) {
+        Ok(k) => {
+            let rel = k.strip_prefix(&release_tree).map(|r| r.to_string_lossy().to_string()).unwrap_or_default();
+            for f in ["linux", "linux-esx"] {
+                add(&format!("{rel}/{f}.spec"));
+            }
+        }
+        Err(e) => c.say(&format!("  [warn] {e}: the kernel specs are not in the purge floor")),
     }
     out
 }
@@ -3909,6 +3939,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("shk-relbump-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("5.0/SPECS/linux");
+        crate::specresolve::test_release_config(&tmp.join("5.0"), 92);
         fs::create_dir_all(&specs).unwrap();
         // 4 is what the embedded canister-equivalent patch leaves behind.
         fs::write(
@@ -3941,6 +3972,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("shk-relidem-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("5.0/SPECS/linux");
+        crate::specresolve::test_release_config(&tmp.join("5.0"), 92);
         fs::create_dir_all(&specs).unwrap();
         fs::write(
             specs.join("linux.spec"),
@@ -4003,6 +4035,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("shk-can-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("5.0/SPECS/linux");
+        crate::specresolve::test_release_config(&tmp.join("5.0"), 92);
         let rpms = tmp.join("5.0/stage/RPMS/x86_64");
         fs::create_dir_all(&specs).unwrap();
         fs::create_dir_all(&rpms).unwrap();
@@ -4312,6 +4345,7 @@ mod tests {
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
+        crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
         fs::create_dir_all(&rpms).unwrap();
         fs::create_dir_all(&specs).unwrap();
         fs::write(
@@ -4569,6 +4603,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("shk-incspec-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("release/5.0/SPECS/linux");
+        crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
         fs::create_dir_all(specs.join("6.1/CVE")).unwrap();
         for f in [
             "linux.spec",
@@ -4628,8 +4663,23 @@ mod tests {
     /// patch, so the day that patch stops touching linux-esx this test says so.
     #[test]
     fn patched_specs_finds_linux_esx_in_the_real_embedded_patch() {
+        // a tree laid out as the embedded patch expects, not this host's
+        let tmp = std::env::temp_dir().join(format!("shk-embspec-{}", std::process::id()));
+        let kdir_of_patch = Embedded::CanisterEquivalent
+            .patch()
+            .lines()
+            .find_map(|l| l.strip_prefix("+++ b/"))
+            .and_then(|p| p.rsplit_once('/'))
+            .map(|(d, _)| d.to_string())
+            .unwrap();
+        let k = tmp.join("5.0").join(&kdir_of_patch);
+        fs::create_dir_all(&k).unwrap();
+        for f in ["linux.spec", "linux-esx.spec", "linux-6.12.inc", "linux-esx-6.12.inc"] {
+            fs::write(k.join(f), "Name: x\n").unwrap();
+        }
+        crate::specresolve::test_release_config(&tmp.join("5.0"), 92);
         let mut sp = BuildSpec::from_args(
-            "/root",
+            &tmp.to_string_lossy(),
             "common",
             "5.0",
             "/out",
@@ -4648,11 +4698,19 @@ mod tests {
             };
             patched_specs(&mut c)
         };
+        // the kernel directory the embedded patch targets, read from it
+        let kdir = Embedded::CanisterEquivalent
+            .patch()
+            .lines()
+            .find_map(|l| l.strip_prefix("+++ b/"))
+            .and_then(|p| p.rsplit_once('/'))
+            .map(|(d, _)| d.to_string())
+            .unwrap();
         assert!(
-            got.iter().any(|p| p == "SPECS/linux/linux-esx.spec"),
+            got.iter().any(|p| *p == format!("{kdir}/linux-esx.spec")),
             "the embedded patch bumps linux-esx and the purge must know: {got:?}"
         );
-        assert!(got.iter().any(|p| p == "SPECS/linux/linux.spec"), "{got:?}");
+        assert!(got.iter().any(|p| *p == format!("{kdir}/linux.spec")), "{got:?}");
         // the historical three survive as a floor
         for p in [
             "SPECS/photon-os-installer/photon-os-installer.spec",
@@ -4720,6 +4778,7 @@ mod tests {
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
+        crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
         fs::create_dir_all(&rpms).unwrap();
         fs::create_dir_all(&specs).unwrap();
         fs::write(
@@ -5159,6 +5218,7 @@ mod pkgopts_tests {
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
+        crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
         fs::create_dir_all(&rpms).unwrap();
         fs::create_dir_all(&specs).unwrap();
         fs::write(
@@ -5224,6 +5284,7 @@ mod pkgopts_tests {
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
+        crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
         fs::create_dir_all(&rpms).unwrap();
         fs::create_dir_all(&specs).unwrap();
         fs::write(
@@ -5465,6 +5526,7 @@ mod pkgopts_tests {
         let tmp = std::env::temp_dir().join(format!("shk-slot-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("root/5.0/SPECS/linux");
+        crate::specresolve::test_release_config(&tmp.join("root/5.0"), 92);
         let rpms = tmp.join("root/5.0/stage/RPMS/x86_64");
         fs::create_dir_all(&specs).unwrap();
         fs::create_dir_all(&rpms).unwrap();

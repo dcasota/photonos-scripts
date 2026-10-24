@@ -215,11 +215,10 @@ pub struct Specs {
 }
 
 impl Specs {
-    pub fn under(tree: &Path) -> Specs {
-        Specs {
-            linux: tree.join("SPECS/linux/linux.spec"),
-            linux_esx: tree.join("SPECS/linux/linux-esx.spec"),
-        }
+    /// The kernel specs of `tree` at its subrelease (`specresolve::kernel_dir`).
+    pub fn under(tree: &Path) -> Result<Specs, String> {
+        let k = tree.join(crate::specresolve::kernel_dir(tree, crate::specresolve::tree_subrelease(tree))?);
+        Ok(Specs { linux: k.join("linux.spec"), linux_esx: k.join("linux-esx.spec") })
     }
 }
 
@@ -251,12 +250,12 @@ fn nevr_at(tree: &Path, git_ref: &str) -> Option<String> {
     // Resolved at the ref, includes and all: the single-source kernel spec
     // keeps Release in an included file, which `git show` of linux.spec alone
     // never reaches.
-    let read = crate::specresolve::git_reader(tree, git_ref, "SPECS/linux", None);
-    let text = crate::specresolve::resolve(
-        &read,
-        "linux.spec",
-        crate::specresolve::tree_subrelease(tree),
-    )?;
+    // the ref's own kernel directory: a fork and its upstream may lay the
+    // kernel out differently while one of them is being synced
+    let sub = crate::specresolve::tree_subrelease(tree);
+    let kdir = crate::specresolve::kernel_dir_at(tree, git_ref, sub).ok()?;
+    let read = crate::specresolve::git_reader(tree, git_ref, &kdir, None);
+    let text = crate::specresolve::resolve(&read, "linux.spec", sub)?;
     spec_nevr(&text)
 }
 
@@ -304,7 +303,7 @@ pub fn detect(cfg: &Config, arch: &str) -> Result<State, String> {
 /// being built. Whoever knows the real NEVR must pass it, or the decision is
 /// made about the wrong kernel.
 pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<State, String> {
-    let specs = Specs::under(&cfg.photon_tree);
+    let specs = Specs::under(&cfg.photon_tree)?;
     let spec_dir = specs
         .linux
         .parent()
@@ -451,7 +450,8 @@ pub struct Applied {
 /// So: force through failures and report every one. Never auto-fuzz - rpm will
 /// not, so a patch that only applies with fuzz is not actually applied.
 pub fn rebase_check(cfg: &Config, tree: &Path) -> Result<Vec<Applied>, String> {
-    let dir = cfg.photon_tree.join("SPECS/linux/canister_builder/patches");
+    let k = crate::specresolve::kernel_dir(&cfg.photon_tree, crate::specresolve::tree_subrelease(&cfg.photon_tree))?;
+    let dir = cfg.photon_tree.join(k).join("canister_builder/patches");
     rebase_check_in(&dir, tree)
 }
 

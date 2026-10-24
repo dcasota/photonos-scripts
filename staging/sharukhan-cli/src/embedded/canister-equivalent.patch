@@ -1,8 +1,8 @@
---- a/SPECS/linux/linux-6.12-changelog.inc
-+++ b/SPECS/linux/linux-6.12-changelog.inc
+--- a/SPECS/92/linux/linux-6.12-changelog.inc
++++ b/SPECS/92/linux/linux-6.12-changelog.inc
 @@ -1,4 +1,22 @@
  %changelog
-+* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-3
++* Sat Oct 24 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-7
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
@@ -20,11 +20,11 @@
 +  version cannot be tested by the conditional either: _isConditionTrue() runs
 +  eval() on the expanded text after lstrip("0"), which is a NameError for a
 +  version string. Hence a 0/1 flag plus a separate value macro.
- * Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-2
+ * Fri Oct 23 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-6
  - Share canister_config.inc; build the canister against the current kernel
- * Mon Oct 19 2026 Gerrit Photon <svc.photon-ci@broadcom.com> 6.12.113-1
---- a/SPECS/linux/linux-6.12.inc
-+++ b/SPECS/linux/linux-6.12.inc
+ * Fri Oct 23 2026 Guruswamy Basavaiah <guruswamy.basavaiah@broadcom.com> 6.12.113-5
+--- a/SPECS/92/linux/linux-6.12.inc
++++ b/SPECS/92/linux/linux-6.12.inc
 @@ -69,9 +69,16 @@
  %global fips_plugins 1
  %if 0%{?canister_build}
@@ -48,12 +48,12 @@
  %if 0%{?photon_subrelease} == 91
  Release:        4%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
  %else
--Release:        2%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
-+Release:        3%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
+-Release:        6%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
++Release:        7%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
  %endif
  
  %define uname_r %{version}-%{release}
-@@ -131,7 +138,25 @@ Source10002: jitterentropy_canister_wrapper.h
+@@ -139,7 +146,25 @@ Source10002: jitterentropy_canister_wrapper.h
  Source10003: jitterentropy_canister_wrapper_asm.S
  
  %if 0%{?canister_usage}
@@ -79,29 +79,29 @@
  %define ExtraBuildRequiresSansSnapshot linux-fips-canister = %{fips_canister_version}
  BuildRequires:       linux-fips-canister = %{fips_canister_version}
  %endif
---- a/SPECS/linux/linux-esx-6.12-changelog.inc
-+++ b/SPECS/linux/linux-esx-6.12-changelog.inc
+--- a/SPECS/92/linux/linux-esx-6.12-changelog.inc
++++ b/SPECS/92/linux/linux-esx-6.12-changelog.inc
 @@ -1,4 +1,8 @@
  %changelog
-+* Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-3
++* Sat Oct 24 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-7
 +- Accept the same canister_equivalent / fips_canister_override pair as
 +  linux.spec, so this flavour - the one the ISO actually boots - can link a
 +  locally built canister too. It never builds one; it only links.
- * Wed Oct 21 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-2
+ * Fri Oct 23 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-6
  - Share canister_config.inc; %%ghost the files depmod generates
- * Mon Oct 19 2026 Gerrit Photon <svc.photon-ci@broadcom.com> 6.12.113-1
---- a/SPECS/linux/linux-esx-6.12.inc
-+++ b/SPECS/linux/linux-esx-6.12.inc
+ * Fri Oct 23 2026 Guruswamy Basavaiah <guruswamy.basavaiah@broadcom.com> 6.12.113-5
+--- a/SPECS/92/linux/linux-esx-6.12.inc
++++ b/SPECS/92/linux/linux-esx-6.12.inc
 @@ -41,7 +41,7 @@
  %if 0%{?photon_subrelease} == 91
  Release:        4%{?dist}
  %else
--Release:        2%{?dist}
-+Release:        3%{?dist}
+-Release:        6%{?dist}
++Release:        7%{?dist}
  %endif
  
  %define uname_r %{version}-%{release}-esx
-@@ -80,7 +80,25 @@ Source10001: jitterentropy_canister_wrapper.c
+@@ -88,7 +88,25 @@ Source10001: jitterentropy_canister_wrapper.c
  Source10002: jitterentropy_canister_wrapper.h
  Source10003: jitterentropy_canister_wrapper_asm.S
  

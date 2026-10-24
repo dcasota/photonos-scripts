@@ -104,6 +104,33 @@ def resolved_lines(path, sub):
     return out
 
 
+def build_if_holds(spec_path, sub):
+    """Does the spec build at subrelease `sub`? Its `%global build_if` line,
+    a conjunction/disjunction of `%{photon_subrelease} <op> N` comparisons;
+    no line means every subrelease."""
+    for line in open(spec_path).read().split("\n"):
+        m = re.match(r"^%global\s+build_if\s+(.*)$", line.strip())
+        if not m:
+            continue
+        expr = m.group(1).replace("%{photon_subrelease}", str(sub)).replace("0%{?photon_subrelease}", str(sub))
+        if not re.fullmatch(r"[\d\s()<>=!&|]+", expr):
+            sys.exit(f"{spec_path}: build_if '{m.group(1)}' is not a plain subrelease comparison")
+        return bool(eval(expr.replace("&&", " and ").replace("||", " or "), {"__builtins__": {}}))
+    return True
+
+
+def kernel_dir(tree, sub):
+    """The SPECS directory whose linux.spec builds subrelease `sub`: SPECS/linux
+    or SPECS/<n>/linux, read from the tree; exactly one must qualify."""
+    cands = [d for d in ["SPECS/linux"] + sorted(
+        os.path.join("SPECS", n, "linux") for n in os.listdir(os.path.join(tree, "SPECS")) if n.isdigit())
+        if os.path.isfile(os.path.join(tree, d, "linux.spec"))]
+    hits = [d for d in cands if build_if_holds(os.path.join(tree, d, "linux.spec"), sub)]
+    if len(hits) != 1:
+        sys.exit(f"subrelease {sub}: {len(hits)} kernel directories build it ({', '.join(hits) or 'none'}), expected one")
+    return hits[0]
+
+
 def kernel_files(tree, flavour, sub):
     """(spec, preamble file, changelog file) for one kernel flavour.
 
@@ -111,7 +138,8 @@ def kernel_files(tree, flavour, sub):
     of each kernel in included files; the spec picks them by subrelease. For a
     spec without includes all three are the spec itself.
     """
-    spec = os.path.join(tree, f"SPECS/linux/{flavour}.spec")
+    kdir = kernel_dir(tree, sub)
+    spec = os.path.join(tree, kdir, f"{flavour}.spec")
     lines = resolved_lines(spec, sub)
     sources = {}
     preamble = changelog = spec
@@ -125,9 +153,9 @@ def kernel_files(tree, flavour, sub):
             continue
         name = sources[m.group(1)]
         if name == f"{flavour}-changelog.inc" or re.fullmatch(rf"{re.escape(flavour)}-[\d.]+-changelog\.inc", name):
-            changelog = os.path.join(tree, "SPECS/linux", name)
+            changelog = os.path.join(tree, kdir, name)
         elif re.fullmatch(rf"{re.escape(flavour)}-[\d.]+\.inc", name):
-            preamble = os.path.join(tree, "SPECS/linux", name)
+            preamble = os.path.join(tree, kdir, name)
     return spec, preamble, changelog
 
 
@@ -380,7 +408,7 @@ def main():
 
         # the whole directory: in the single-source layout the edits land in
         # included files, not in the specs
-        diff = sh(tree, "git", "diff", "--", "SPECS/linux/", check=False)
+        diff = sh(tree, "git", "diff", "--", kernel_dir(tree, sub) + "/", check=False)
         # Strip the index lines: they carry blob hashes that churn on every
         # base move and would make the patch look changed when it is not.
         diff = "\n".join(l for l in diff.splitlines()

@@ -747,9 +747,10 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
         // judged by it like any other RPM.
         let slot_stage = cfg.photon_tree.join("stage");
         let slot_class = crate::kernelslot::class_of(phase).to_string();
+        let slot_sub = crate::specresolve::tree_subrelease(&cfg.photon_tree);
         let slot_fams = crate::kernelslot::kernel_families(
-            &cfg.photon_tree.join("SPECS/linux"),
-            crate::specresolve::tree_subrelease(&cfg.photon_tree),
+            &cfg.photon_tree.join(crate::specresolve::kernel_dir(&cfg.photon_tree, slot_sub)?),
+            slot_sub,
         );
         crate::kernelslot::enter(
             &slot_stage,
@@ -912,15 +913,16 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
 /// and nothing else in either variant contains "poi".
 pub use crate::variants::installer_branch;
 
-/// Read Version/Release out of a patch's `SPECS/linux/linux.spec` hunks.
+/// Read Version/Release out of a patch's hunks of `spec` (the kernel
+/// directory's linux.spec, e.g. `SPECS/92/linux/linux.spec`).
 ///
 /// Context lines count: a patch that bumps Release but leaves Version alone
 /// still tells us the Version, on a ' ' line.
-fn scan_linux_spec_hunks(text: &str, version: &mut Option<String>, release: &mut Option<String>) {
+fn scan_linux_spec_hunks(text: &str, spec: &str, version: &mut Option<String>, release: &mut Option<String>) {
     let mut in_linux_spec = false;
     for line in text.lines() {
-        if line.starts_with("+++ b/") {
-            in_linux_spec = line.ends_with("SPECS/linux/linux.spec");
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            in_linux_spec = path.trim_end() == spec;
             continue;
         }
         if !in_linux_spec {
@@ -966,13 +968,11 @@ pub fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
 ///
 /// Read from the specs rather than assumed, because the Releases move with
 /// every rebase and a hardcoded pair is wrong the moment one does.
-pub fn kernel_flavour_nevrs(specs_linux: &Path) -> Vec<(String, String)> {
+/// `kernel_specs` is the kernel spec directory of the tree (`kernel_dir`),
+/// `sub` the subrelease the build reads it as.
+pub fn kernel_flavour_nevrs(kernel_specs: &Path, sub: Option<u32>) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let sub = specs_linux
-        .parent()
-        .and_then(Path::parent)
-        .and_then(crate::specresolve::tree_subrelease);
-    let read = crate::specresolve::dir_reader(specs_linux);
+    let read = crate::specresolve::dir_reader(kernel_specs);
     for flavour in ["linux", "linux-esx"] {
         let Some(text) = crate::specresolve::resolve(&read, &format!("{flavour}.spec"), sub) else {
             continue;
@@ -1063,14 +1063,19 @@ pub fn equivalent_kernel_nevr(cfg: &Config, patch: &Path) -> Result<String, Stri
 }
 
 fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Result<String, String> {
+    let sub = crate::specresolve::tree_subrelease(&cfg.photon_tree);
+    let dist = crate::specresolve::tree_dist_tag(&cfg.photon_tree)
+        .ok_or_else(|| format!("{}/build-config.json has no photon-dist-tag", cfg.photon_tree.display()))?;
     // Under git, apply the patches to a temporary index and read the spec as
     // the build's subrelease sees it. That follows the kernel into included
     // files - SPECS/linux/linux.spec keeps Release in linux-6.12.inc - and takes
     // the right side of photon_subrelease conditionals, neither of which a scan
     // of diff hunks can do: the hunks carry both kernels' Version lines.
     if cfg.photon_tree.join(".git").exists() {
-        return kernel_nevr_from_index(cfg, patch, with_embedded);
+        return kernel_nevr_from_index(cfg, patch, with_embedded, sub, &dist);
     }
+    let kdir = crate::specresolve::kernel_dir(&cfg.photon_tree, sub)?;
+    let kspec = format!("{kdir}/linux.spec");
 
     let mut version: Option<String> = None;
     let mut release: Option<String> = None;
@@ -1080,22 +1085,19 @@ fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Resul
     if with_embedded {
         scan_linux_spec_hunks(
             crate::buildmode::Embedded::CanisterEquivalent.patch(),
+            &kspec,
             &mut version,
             &mut release,
         );
     }
 
     if let Ok(text) = fs::read_to_string(patch) {
-        scan_linux_spec_hunks(&text, &mut version, &mut release);
+        scan_linux_spec_hunks(&text, &kspec, &mut version, &mut release);
     }
 
     if version.is_none() || release.is_none() {
-        let dir = cfg.photon_tree.join("SPECS/linux");
-        let text = crate::specresolve::resolve(
-            &crate::specresolve::dir_reader(&dir),
-            "linux.spec",
-            crate::specresolve::tree_subrelease(&cfg.photon_tree),
-        )
+        let dir = cfg.photon_tree.join(&kdir);
+        let text = crate::specresolve::resolve(&crate::specresolve::dir_reader(&dir), "linux.spec", sub)
         .ok_or_else(|| format!("{}: cannot read", dir.join("linux.spec").display()))?;
         for line in text.lines() {
             if let Some(v) = line.strip_prefix("Version:") {
@@ -1110,7 +1112,7 @@ fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Resul
     let r = release.ok_or("no Release: for linux")?;
     // Release carries rpm conditionals and the dist tag: 13%{?acvp_build:.acvp}%{?dist}
     let r = r.split('%').next().unwrap_or(&r).trim().to_string();
-    Ok(format!("{v}-{r}.ph5"))
+    Ok(format!("{v}-{r}{dist}"))
 }
 
 /// The kernel NEVR from `origin/<release>` with `patch` (and, for an
@@ -1119,6 +1121,8 @@ fn kernel_nevr_from_index(
     cfg: &Config,
     patch: &Path,
     with_embedded: bool,
+    sub: Option<u32>,
+    dist: &str,
 ) -> Result<String, String> {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1155,18 +1159,15 @@ fn kernel_nevr_from_index(
             .map_err(|e| format!("{}: {e}", embedded.display()))?;
             run(&["apply", "--cached", &embedded.to_string_lossy()])?;
         }
-        let read =
-            crate::specresolve::git_reader(&cfg.photon_tree, "", "SPECS/linux", Some(&index));
-        let text = crate::specresolve::resolve(
-            &read,
-            "linux.spec",
-            crate::specresolve::tree_subrelease(&cfg.photon_tree),
-        )
-        .ok_or("no SPECS/linux/linux.spec in the patched tree")?;
+        // the kernel directory of the revision the index starts from
+        let kdir = crate::specresolve::kernel_dir_at(&cfg.photon_tree, &format!("origin/{}", cfg.release), sub)?;
+        let read = crate::specresolve::git_reader(&cfg.photon_tree, "", &kdir, Some(&index));
+        let text = crate::specresolve::resolve(&read, "linux.spec", sub)
+            .ok_or_else(|| format!("no {kdir}/linux.spec in the patched tree"))?;
         let v = crate::specresolve::field(&text, "Version:").ok_or("no Version: for linux")?;
         let r = crate::specresolve::field(&text, "Release:").ok_or("no Release: for linux")?;
         let r = r.split('%').next().unwrap_or(&r).trim().to_string();
-        Ok(format!("{v}-{r}.ph5"))
+        Ok(format!("{v}-{r}{dist}"))
     })();
     let _ = fs::remove_file(&index);
     let _ = fs::remove_file(&embedded);
@@ -1472,6 +1473,13 @@ pub fn make_kernel_variant_patches(
     }
 }
 
+/// A path in a kernel spec directory: SPECS/linux/... or SPECS/<n>/linux/...
+fn is_kernel_path(f: &str) -> bool {
+    let rest = f.strip_prefix("SPECS/").unwrap_or("");
+    rest.starts_with("linux/")
+        || rest.split_once('/').is_some_and(|(n, r)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) && r.starts_with("linux/"))
+}
+
 /// Does `kbranch` already carry commit `h`? Same subject, and every file `h`
 /// changes other than a spec is identical on the kernel branch.
 fn already_on_kernel_branch(clone: &Path, h: &str, kbranch: &str, release: &str) -> Result<Option<String>, String> {
@@ -1516,10 +1524,10 @@ fn build_kernel_variant(
             clone,
             &["diff", "--name-only", &format!("origin/{rel}...origin/{b}")],
         )?;
-        let kernel_files = touched.lines().filter(|f| f.starts_with("SPECS/linux/")).count();
+        let kernel_files = touched.lines().filter(|f| is_kernel_path(f)).count();
         if kernel_files > 0 {
             log(&format!(
-                "  {b}: left out - it changes {kernel_files} file(s) under SPECS/linux, which the profile owns"
+                "  {b}: left out - it changes {kernel_files} kernel file(s) (SPECS/linux or SPECS/<n>/linux), which the profile owns"
             ));
             continue;
         }
@@ -1925,6 +1933,10 @@ mod tests {
             "+Release:        14%{?acvp_build:.acvp}%{?dist}",
         ];
         fs::write(&patch, lines.join("\n") + "\n").unwrap();
+        // the tree the patch applies to: its kernel directory and subrelease
+        fs::create_dir_all(tmp.join("SPECS/linux")).unwrap();
+        fs::write(tmp.join("SPECS/linux/linux.spec"), "Name: linux\n").unwrap();
+        crate::specresolve::test_release_config(&tmp, 92);
         let cfg = Config::for_test(&tmp);
         assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.12.103-14.ph5");
         let _ = fs::remove_dir_all(&tmp);
@@ -1947,6 +1959,7 @@ mod tests {
             "+++ b/SPECS/aide/aide.spec\n+Release:        3%{?dist}\n",
         )
         .unwrap();
+        crate::specresolve::test_release_config(&tmp, 92);
         let cfg = Config::for_test(&tmp);
         assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.12.103-9.ph5");
         let _ = fs::remove_dir_all(&tmp);
@@ -2024,7 +2037,7 @@ mod tests {
         fs::write(&patch, lines.join("\n") + "\n").unwrap();
         let build_config = |n: u32| {
             format!(
-                "{{\n  \"photon-build-param\": {{\n    \"photon-subrelease\": \"{n}\"\n  }}\n}}\n"
+                "{{\n  \"photon-build-param\": {{\n    \"photon-subrelease\": \"{n}\",\n    \"photon-dist-tag\": \".ph5\"\n  }}\n}}\n"
             )
         };
         let cfg = Config::for_test(&tmp);
@@ -2159,7 +2172,7 @@ mod tests {
             "Version:        6.12.107\nRelease:        %{kver_rel}\n",
         )
         .unwrap();
-        let got = kernel_flavour_nevrs(&tmp);
+        let got = kernel_flavour_nevrs(&tmp, Some(92));
         assert_eq!(
             got.len(),
             1,

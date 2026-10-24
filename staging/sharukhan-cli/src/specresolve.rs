@@ -216,6 +216,78 @@ pub fn field(text: &str, key: &str) -> Option<String> {
 }
 
 /// `photon-subrelease` from a tree's build-config.json.
+/// The kernel spec directory of a release tree at subrelease `sub`, relative
+/// to the tree: `SPECS/linux` or `SPECS/<n>/linux`, whichever's linux.spec
+/// builds `sub` (its `%global build_if`; none means every subrelease).
+/// Exactly one must: upstream moves the kernel between these (6.12.113 went
+/// to SPECS/92/linux in preparation for a new kernel in SPECS/linux), and a
+/// path written into the code checks the wrong kernel or none.
+pub fn kernel_dir(tree: &Path, sub: Option<u32>) -> Result<String, String> {
+    let nums: Vec<String> = std::fs::read_dir(tree.join("SPECS"))
+        .map(|rd| rd.flatten().filter_map(|e| e.file_name().into_string().ok()).collect())
+        .unwrap_or_default();
+    kernel_dir_with(&tree.display().to_string(), &nums, sub, &|rel| std::fs::read_to_string(tree.join(rel)).ok())
+}
+
+/// The same at a revision of a git repository.
+pub fn kernel_dir_at(repo: &Path, rev: &str, sub: Option<u32>) -> Result<String, String> {
+    let git = |args: &[&str]| -> Option<String> {
+        let o = std::process::Command::new("git").arg("-C").arg(repo).args(args).output().ok()?;
+        o.status.success().then(|| String::from_utf8_lossy(&o.stdout).to_string())
+    };
+    let nums: Vec<String> = git(&["ls-tree", "--name-only", rev, "SPECS/"])
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.strip_prefix("SPECS/").map(str::to_string))
+        .collect();
+    kernel_dir_with(&format!("{}@{rev}", repo.display()), &nums, sub, &|rel| git(&["show", &format!("{rev}:{rel}")]))
+}
+
+fn kernel_dir_with(what: &str, specs_entries: &[String], sub: Option<u32>, read: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
+    let sub = sub.ok_or_else(|| format!("{what}: no photon-subrelease to choose the kernel directory with"))?;
+    let mut nums: Vec<String> = specs_entries
+        .iter()
+        .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+        .map(|n| format!("SPECS/{n}/linux"))
+        .collect();
+    nums.sort();
+    let mut hits = Vec::new();
+    for d in std::iter::once("SPECS/linux".to_string()).chain(nums) {
+        let spec = format!("{d}/linux.spec");
+        let Some(text) = read(&spec) else { continue };
+        let builds = match text.lines().find_map(|l| l.trim().strip_prefix("%global build_if").map(str::trim)) {
+            None => true,
+            Some(expr) => crate::sync::eval_build_if(expr, sub)
+                .ok_or_else(|| format!("{what}: {spec}: build_if '{expr}' is not a subrelease comparison"))?,
+        };
+        if builds {
+            hits.push(d);
+        }
+    }
+    match hits.len() {
+        1 => Ok(hits.remove(0)),
+        n => Err(format!("{what}: {n} kernel directories build subrelease {sub} ({}); expected one", hits.join(", "))),
+    }
+}
+
+/// Test fixtures: a release tree's minimal build-config.json (subrelease and
+/// dist tag), written only where the fixture has none.
+#[cfg(test)]
+pub fn test_release_config(tree: &Path, sub: u32) {
+    let p = tree.join("build-config.json");
+    if !p.exists() {
+        std::fs::create_dir_all(tree).unwrap();
+        std::fs::write(&p, format!("{{\"photon-build-param\": {{\"photon-subrelease\": \"{sub}\", \"photon-dist-tag\": \".ph5\"}}}}\n")).unwrap();
+    }
+}
+
+/// `photon-dist-tag` of a tree's build-config.json (".ph5").
+pub fn tree_dist_tag(tree: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(tree.join("build-config.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v["photon-build-param"]["photon-dist-tag"].as_str().map(|s| s.trim().to_string()).filter(|s| s.starts_with('.') && s.len() > 1)
+}
+
 pub fn tree_subrelease(tree: &Path) -> Option<u32> {
     // Parsed as JSON, not scanned line by line: the scan needed the key on a
     // line of its own, so the same file written compactly read as "unknown".
@@ -245,6 +317,25 @@ pub fn is_common_tree(tree: &Path) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_kernel_directory_is_the_one_whose_build_if_holds() {
+        let d = std::env::temp_dir().join(format!("shk-kdir-{}", std::process::id()));
+        for (dir, b) in [("SPECS/90/linux", "%global build_if %{photon_subrelease} <= 90"), ("SPECS/91/linux", "%global build_if %{photon_subrelease} == 91"), ("SPECS/92/linux", "%global build_if %{photon_subrelease} >= 92")] {
+            std::fs::create_dir_all(d.join(dir)).unwrap();
+            std::fs::write(d.join(dir).join("linux.spec"), format!("{b}\nName: linux\n")).unwrap();
+        }
+        assert_eq!(kernel_dir(&d, Some(92)).unwrap(), "SPECS/92/linux");
+        assert_eq!(kernel_dir(&d, Some(91)).unwrap(), "SPECS/91/linux");
+        assert_eq!(kernel_dir(&d, Some(88)).unwrap(), "SPECS/90/linux");
+        assert!(kernel_dir(&d, None).is_err());
+        // a second directory claiming 92 is ambiguous, not a choice
+        std::fs::create_dir_all(d.join("SPECS/linux")).unwrap();
+        std::fs::write(d.join("SPECS/linux/linux.spec"), "Name: linux\n").unwrap();
+        assert!(kernel_dir(&d, Some(92)).unwrap_err().contains("2 kernel directories"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     use super::*;
     use std::fs;
 
