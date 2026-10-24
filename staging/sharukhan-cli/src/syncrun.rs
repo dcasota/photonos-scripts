@@ -1390,7 +1390,7 @@ mod tests {
         fs::create_dir_all(&d).unwrap();
         fs::write(d.join("m.tsv"), "k03 minimal 2.8 yes ext4 ks stigpkgs fails pass prebuilt\nc03 minimal 2.8 no ext4 ks fips untested pass equivalent\nf01 full 2.8 no ext4 ks none works pass prebuilt\nl01 minimal latest no ext4 ks none works pass prebuilt\n").unwrap();
         fs::write(d.join("v.conf"), "[variant 2.8]\nfix/poi-a\n[variant latest]\nfix/poi-b\n[common]\n").unwrap();
-        let mut cfg = crate::config::Config::load();
+        let mut cfg = crate::config::Config::defaults();
         cfg.matrix_tsv = d.join("m.tsv");
         cfg.variants_file = d.join("v.conf");
         cfg.fastloop_rows = vec!["k03".into(), "c03".into()];

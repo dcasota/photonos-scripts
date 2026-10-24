@@ -354,7 +354,7 @@ mod tests {
     /// that does not exist.
     #[test]
     fn the_net_axis_decides_the_second_nic_not_the_caller() {
-        let cfg = crate::config::Config::load();
+        let cfg = crate::config::Config::defaults();
         let mk = |net: &str| {
             VmSpec::for_permutation(
                 &cfg,

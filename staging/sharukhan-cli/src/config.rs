@@ -165,41 +165,40 @@ pub struct Config {
     // ---- timing ----------------------------------------------------------
     pub serial_log_prefix: String,
     pub install_timeout_sec: u64,
-    /// Three more settings the bash defined and never read. The install phase
-    /// uses MC_INSTALL_TIMEOUT_SEC only; ssh's own ConnectTimeout is 10s,
-    /// which is a connect timeout and not this phase budget.
-    #[allow(dead_code)]
-    pub boot_timeout_sec: u64,
-    #[allow(dead_code)]
-    pub ssh_timeout_sec: u64,
-    #[allow(dead_code)]
-    pub sample_sec: u64,
     /// How long to wait for a started VM to appear in the inventory before
     /// calling the start a failure. The inventory is the authority; vmrun's
     /// exit code is not evidence in either direction.
     pub start_timeout_sec: u64,
 }
 
-fn var_or(key: &str, default: &str) -> PathBuf {
-    PathBuf::from(env::var(key).unwrap_or_else(|_| default.to_string()))
+/// Where settings come from: the process environment for `load`, nothing at
+/// all for the tests' `defaults`, so a unit test never depends on this host.
+type Get<'a> = &'a dyn Fn(&str) -> Option<String>;
+
+fn var_or(get: Get, key: &str, default: &str) -> PathBuf {
+    PathBuf::from(get(key).unwrap_or_else(|| default.to_string()))
 }
 
-fn s_or(key: &str, default: &str) -> String {
-    env::var(key).unwrap_or_else(|_| default.to_string())
+fn s_or(get: Get, key: &str, default: &str) -> String {
+    get(key).unwrap_or_else(|| default.to_string())
 }
 
 /// A malformed number is reported, not silently replaced by the default: a
 /// typo in MC_INSTALL_TIMEOUT_SEC that quietly restores 2400 would be found
 /// only by watching the clock.
-fn n_or<T: std::str::FromStr + Copy>(key: &str, default: T) -> T {
-    match env::var(key) {
-        Ok(v) => v.trim().parse().unwrap_or_else(|_| {
+fn n_or<T: std::str::FromStr + Copy>(get: Get, key: &str, default: T) -> T {
+    match get(key) {
+        Some(v) => v.trim().parse().unwrap_or_else(|_| {
             eprintln!("sharukhan: {key}='{v}' is not a number; using the default");
             default
         }),
-        Err(_) => default,
+        None => default,
     }
 }
+
+/// Settings the bash defined and nothing ever read. Accepted silently they
+/// would look like knobs; they are named instead.
+const NO_EFFECT: &[&str] = &["MC_BOOT_TIMEOUT_SEC", "MC_SSH_TIMEOUT_SEC", "MC_SAMPLE_SEC"];
 
 impl Config {
     /// A Config whose only meaningful field is the photon tree.
@@ -209,93 +208,99 @@ impl Config {
     /// else, so the rest is left at its default.
     #[cfg(test)]
     pub fn for_test(tree: &std::path::Path) -> Self {
-        let mut c = Config::load();
+        let mut c = Config::defaults();
         c.photon_tree = tree.to_path_buf();
         c
     }
 
+    /// Every setting at its default, the environment ignored: for tests.
+    #[cfg(test)]
+    pub fn defaults() -> Self {
+        Config::from(&|_: &str| None)
+    }
+
     pub fn load() -> Self {
-        let here = env::var("SHARUKHAN_ROOT")
-            .unwrap_or_else(|_| "/root/photonos-scripts/staging/mission-control".to_string());
-        let net_prefix = s_or("MC_NET_PREFIX", "192.168.225");
+        Config::from(&|k: &str| env::var(k).ok())
+    }
+
+    fn from(get: Get) -> Self {
+        for k in NO_EFFECT {
+            if get(k).is_some() {
+                eprintln!("sharukhan: {k} is set but has no effect (no phase reads it; installs use MC_INSTALL_TIMEOUT_SEC)");
+            }
+        }
+        let here = get("SHARUKHAN_ROOT").unwrap_or_else(|| "/root/photonos-scripts/staging/mission-control".to_string());
+        let net_prefix = s_or(get, "MC_NET_PREFIX", "192.168.225");
         Config {
-            vmrun: var_or(
-                "VMRUN",
+            vmrun: var_or(get, "VMRUN",
                 "/mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe",
             ),
-            vdiskmanager: var_or(
-                "VDISKMANAGER",
+            vdiskmanager: var_or(get, "VDISKMANAGER",
                 "/mnt/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe",
             ),
 
-            vm_root: var_or("MC_VM_ROOT_WSL", "/mnt/c/photon-mc/vm"),
-            dhcp_leases: var_or(
-                "MC_DHCP_LEASES",
+            vm_root: var_or(get, "MC_VM_ROOT_WSL", "/mnt/c/photon-mc/vm"),
+            dhcp_leases: var_or(get, "MC_DHCP_LEASES",
                 "/mnt/c/ProgramData/VMware/vmnetdhcp.leases",
             ),
-            iso_cache: var_or("MC_ISO_CACHE", "/mnt/c/photon-mc/iso-cache"),
-            results_dir: var_or("MC_RESULTS_DIR", "/root/photon-mc/results"),
-            build_log_dir: var_or("MC_BUILD_LOG_DIR", "/root/photon-mc/build-logs"),
-            work: var_or("MC_WORK", "/root/photon-mc/work"),
-            variant_patches: var_or("MC_VARIANT_PATCH_DIR", "/root/photon-mc/variant-patches"),
-            run_log_dir: var_or("MC_RUN_LOG_DIR", "/root/photon-mc/run-logs"),
-            memory_db: var_or("SHARUKHAN_DB", "/root/photon-mc/memory.db"),
-            matrix_tsv: var_or(
-                "SHARUKHAN_MATRIX",
+            iso_cache: var_or(get, "MC_ISO_CACHE", "/mnt/c/photon-mc/iso-cache"),
+            results_dir: var_or(get, "MC_RESULTS_DIR", "/root/photon-mc/results"),
+            build_log_dir: var_or(get, "MC_BUILD_LOG_DIR", "/root/photon-mc/build-logs"),
+            work: var_or(get, "MC_WORK", "/root/photon-mc/work"),
+            variant_patches: var_or(get, "MC_VARIANT_PATCH_DIR", "/root/photon-mc/variant-patches"),
+            run_log_dir: var_or(get, "MC_RUN_LOG_DIR", "/root/photon-mc/run-logs"),
+            memory_db: var_or(get, "SHARUKHAN_DB", "/root/photon-mc/memory.db"),
+            matrix_tsv: var_or(get, "SHARUKHAN_MATRIX",
                 &format!("{here}/config/permutations.tsv"),
             ),
-            variants_file: var_or("SHARUKHAN_VARIANTS", &format!("{here}/config/variants.conf")),
+            variants_file: var_or(get, "SHARUKHAN_VARIANTS", &format!("{here}/config/variants.conf")),
 
-            photon_tree: var_or("PHOTON_TREE", "/root/5.0"),
-            poi_tree: var_or("POI_TREE", "/root/photon-os-installer"),
-            photon_scripts: var_or("PHOTON_SCRIPTS", "/root"),
+            photon_tree: var_or(get, "PHOTON_TREE", "/root/5.0"),
+            poi_tree: var_or(get, "POI_TREE", "/root/photon-os-installer"),
+            photon_scripts: var_or(get, "PHOTON_SCRIPTS", "/root"),
 
-            build_root: var_or("MC_BUILD_ROOT", "/root"),
-            build_common: s_or("MC_BUILD_COMMON", "common"),
-            release: s_or("MC_RELEASE", "5.0"),
-            photon_remote: s_or("MC_PHOTON_REMOTE", "https://github.com/dcasota/photon.git"),
-            fork: s_or("MC_FORK", "dcasota/photon"),
-            upstream: s_or("MC_UPSTREAM", "vmware/photon"),
-            gate_repo: var_or("MC_GATE_REPO", "/root/photon-mc/gate/photon.git"),
-            fork_installer: s_or("MC_FORK_INSTALLER", "dcasota/photon-os-installer"),
-            upstream_installer: s_or("MC_UPSTREAM_INSTALLER", "vmware/photon-os-installer"),
-            installer_branch: s_or("MC_INSTALLER_BRANCH", "master"),
-            iso_store: env::var_os("MC_ISO_STORE").filter(|v| !v.is_empty()).map(PathBuf::from),
-            fastloop_rows: s_or("MC_FASTLOOP_ROWS", "k03 c03").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
+            build_root: var_or(get, "MC_BUILD_ROOT", "/root"),
+            build_common: s_or(get, "MC_BUILD_COMMON", "common"),
+            release: s_or(get, "MC_RELEASE", "5.0"),
+            photon_remote: s_or(get, "MC_PHOTON_REMOTE", "https://github.com/dcasota/photon.git"),
+            fork: s_or(get, "MC_FORK", "dcasota/photon"),
+            upstream: s_or(get, "MC_UPSTREAM", "vmware/photon"),
+            gate_repo: var_or(get, "MC_GATE_REPO", "/root/photon-mc/gate/photon.git"),
+            fork_installer: s_or(get, "MC_FORK_INSTALLER", "dcasota/photon-os-installer"),
+            upstream_installer: s_or(get, "MC_UPSTREAM_INSTALLER", "vmware/photon-os-installer"),
+            installer_branch: s_or(get, "MC_INSTALLER_BRANCH", "master"),
+            iso_store: get("MC_ISO_STORE").filter(|v| !v.is_empty()).map(PathBuf::from),
+            fastloop_rows: s_or(get, "MC_FASTLOOP_ROWS", "k03 c03").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
             kernel: None,
 
-            guest_vcpus: n_or("GUEST_VCPUS", 2),
-            guest_mem_mb: n_or("GUEST_MEM_MB", 4096),
-            boot_disk_size: s_or("BOOT_DISK_SIZE", "32GB"),
-            boot_disk_adapter: s_or("BOOT_DISK_ADAPTER", "lsilogic"),
-            boot_disk_type: s_or("BOOT_DISK_TYPE", "0"),
+            guest_vcpus: n_or(get, "GUEST_VCPUS", 2),
+            guest_mem_mb: n_or(get, "GUEST_MEM_MB", 4096),
+            boot_disk_size: s_or(get, "BOOT_DISK_SIZE", "32GB"),
+            boot_disk_adapter: s_or(get, "BOOT_DISK_ADAPTER", "lsilogic"),
+            boot_disk_type: s_or(get, "BOOT_DISK_TYPE", "0"),
 
-            net_gateway: s_or("MC_NET_GATEWAY", &format!("{net_prefix}.2")),
-            net_dns: s_or("MC_NET_DNS", &format!("{net_prefix}.2")),
-            net_cidr: n_or("MC_NET_CIDR", 24),
-            net_v6_prefix: s_or("MC_NET_V6_PREFIX", "fd00:225"),
-            net_vlan_prefix: s_or("MC_NET_VLAN_PREFIX", "192.168.100"),
-            ip_base: n_or("MC_IP_BASE", 40),
-            nic_dev: s_or("MC_NIC_DEV", "e1000"),
+            net_gateway: s_or(get, "MC_NET_GATEWAY", &format!("{net_prefix}.2")),
+            net_dns: s_or(get, "MC_NET_DNS", &format!("{net_prefix}.2")),
+            net_cidr: n_or(get, "MC_NET_CIDR", 24),
+            net_v6_prefix: s_or(get, "MC_NET_V6_PREFIX", "fd00:225"),
+            net_vlan_prefix: s_or(get, "MC_NET_VLAN_PREFIX", "192.168.100"),
+            ip_base: n_or(get, "MC_IP_BASE", 40),
+            nic_dev: s_or(get, "MC_NIC_DEV", "e1000"),
             net_prefix,
 
-            ssh_key_dir: var_or(
-                "SSH_KEY_DIR",
+            ssh_key_dir: var_or(get, "SSH_KEY_DIR",
                 &format!(
                     "{}/.ssh",
-                    env::var("HOME").unwrap_or_else(|_| "/root".into())
+                    get("HOME").unwrap_or_else(|| "/root".into())
                 ),
             ),
-            ssh_key_name: s_or("SSH_KEY_NAME", "photon-mc-rsa"),
-            ssh_user: s_or("SSH_USER", "root"),
-            guest_password: env::var("MC_GUEST_PASSWORD").ok().filter(|v| !v.is_empty()),
+            ssh_key_name: s_or(get, "SSH_KEY_NAME", "photon-mc-rsa"),
+            ssh_user: s_or(get, "SSH_USER", "root"),
+            guest_password: get("MC_GUEST_PASSWORD").filter(|v| !v.is_empty()),
 
-            serial_log_prefix: s_or("SERIAL_LOG_PREFIX", "serial0"),
-            install_timeout_sec: n_or("MC_INSTALL_TIMEOUT_SEC", 2400),
-            boot_timeout_sec: n_or("MC_BOOT_TIMEOUT_SEC", 600),
-            ssh_timeout_sec: n_or("MC_SSH_TIMEOUT_SEC", 300),
-            sample_sec: n_or("MC_SAMPLE_SEC", 25),
-            start_timeout_sec: n_or("MC_START_TIMEOUT", 240),
+            serial_log_prefix: s_or(get, "SERIAL_LOG_PREFIX", "serial0"),
+            install_timeout_sec: n_or(get, "MC_INSTALL_TIMEOUT_SEC", 2400),
+            start_timeout_sec: n_or(get, "MC_START_TIMEOUT", 240),
         }
     }
 
@@ -360,7 +365,7 @@ mod tests {
 
     #[test]
     fn paths_are_derived_consistently() {
-        let c = Config::load();
+        let c = Config::defaults();
         let dir = c.vm_dir("k01");
         assert_eq!(c.vmx_path("k01"), dir.join("mc-k01.vmx"));
         assert!(c
@@ -382,7 +387,7 @@ mod tests {
     /// is not FIPS-approved and cannot be made so, hence this guard.
     #[test]
     fn the_default_ssh_key_is_fips_usable() {
-        let c = Config::load();
+        let c = Config::defaults();
         let name = c.ssh_key_name.to_ascii_lowercase();
         assert!(
             !name.contains("ed25519"),
@@ -398,7 +403,7 @@ mod tests {
     /// restoring one "just for convenience".
     #[test]
     fn guest_password_has_no_default() {
-        let mut c = Config::load();
+        let mut c = Config::defaults();
         c.guest_password = None;
         let e = c.guest_password().unwrap_err();
         assert!(e.contains("MC_GUEST_PASSWORD"));

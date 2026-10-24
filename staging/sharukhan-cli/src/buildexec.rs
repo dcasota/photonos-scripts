@@ -5009,15 +5009,15 @@ mod parity_tests {
     /// returns zero and fails here. That is exactly the bug this replaced:
     /// `file:`/`sha512:` instead of `archive:`/`archive_sha512sum:`.
     ///
-    /// Skipped, not failed, where no tree is checked out - a unit test suite
-    /// must not depend on this host.
+    /// A live test: it reads a real SPECS tree (SHARUKHAN_LIVE_SPECS), so the
+    /// unit suite does not depend on this host. Run with
+    /// `cargo test live_ -- --ignored`; without the tree it fails, it does not skip.
     #[test]
-    fn the_parser_agrees_with_the_real_specs_tree() {
-        let specs = Path::new("/root/5.0/SPECS");
-        if !specs.is_dir() {
-            eprintln!("no SPECS tree here; skipping the parity check");
-            return;
-        }
+    #[ignore = "live: needs SHARUKHAN_LIVE_SPECS=<release tree>/SPECS"]
+    fn live_the_parser_agrees_with_the_real_specs_tree() {
+        let specs_env = std::env::var("SHARUKHAN_LIVE_SPECS").expect("SHARUKHAN_LIVE_SPECS=<release tree>/SPECS");
+        let specs = Path::new(&specs_env);
+        assert!(specs.is_dir(), "{} is not a directory", specs.display());
         let mut files = 0;
         let mut archives = 0;
         let mut with_sha = 0;
@@ -5057,15 +5057,15 @@ mod parity_exact {
     /// implementation can be diffed against. Counts that merely look similar
     /// are not agreement.
     #[test]
-    fn dump_for_reference_diff() {
+    #[ignore = "live: needs SHARUKHAN_LIVE_SPECS=<release tree>/SPECS"]
+    fn live_dump_for_reference_diff() {
         // Regenerate with:
-        //   cargo test --release dump_for_reference
+        //   SHARUKHAN_LIVE_SPECS=<tree>/SPECS cargo test --release live_dump_for_reference -- --ignored
         //   diff <(sort /tmp/py-sources.txt) <(sort /tmp/rust-sources.txt)
         // Last run: 0 differences over 1968 entries in 1745 files.
-        let specs = Path::new("/root/5.0/SPECS");
-        if !specs.is_dir() {
-            return;
-        }
+        let specs_env = std::env::var("SHARUKHAN_LIVE_SPECS").expect("SHARUKHAN_LIVE_SPECS=<release tree>/SPECS");
+        let specs = Path::new(&specs_env);
+        assert!(specs.is_dir(), "{} is not a directory", specs.display());
         let mut lines: Vec<String> = Vec::new();
         let mut files: Vec<PathBuf> = crate::build::find_files_rec(specs, "config", ".yaml");
         files.sort();

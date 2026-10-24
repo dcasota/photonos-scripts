@@ -421,14 +421,16 @@ mod tests {
     /// the media only through the installer's STIG set); with only minimal's
     /// RPMs in the stage, the requirements of the already-built minimal are
     /// named (docker among them, the gate-70 failure) and minimal is not.
+    /// Live: a real build root and gate repository (SHARUKHAN_LIVE_BUILD_ROOT,
+    /// SHARUKHAN_LIVE_REPO); `cargo test live_ -- --ignored`.
     #[test]
-    fn an_already_built_packages_unbuilt_requirement_is_named() {
-        let root = Path::new("/root/photon-mc/gate/build-root");
-        let repo = Path::new("/root/photon-mc/gate/photon.git");
+    #[ignore = "live: needs SHARUKHAN_LIVE_BUILD_ROOT and SHARUKHAN_LIVE_REPO"]
+    fn live_an_already_built_packages_unbuilt_requirement_is_named() {
+        let root_env = std::env::var("SHARUKHAN_LIVE_BUILD_ROOT").expect("SHARUKHAN_LIVE_BUILD_ROOT=<build root with common and the release>");
+        let repo_env = std::env::var("SHARUKHAN_LIVE_REPO").expect("SHARUKHAN_LIVE_REPO=<gate repository>");
+        let (root, repo) = (Path::new(&root_env), Path::new(&repo_env));
         let i = Inputs::from_build_root(root, "common", "5.0");
-        if i.missing().is_some() || !repo.is_dir() {
-            return;
-        }
+        assert!(i.missing().is_none() && repo.is_dir(), "{} or {} is incomplete: {:?}", root.display(), repo.display(), i.missing());
         let t = std::env::temp_dir().join(format!("shk-specdeps-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&t);
         std::fs::create_dir_all(&t).unwrap();
@@ -476,14 +478,16 @@ mod tests {
     /// this host has them: the 5.0 specs plus a probe parse, and the probe
     /// requiring a path no spec provides fails with the builder's own words -
     /// the gate-49 failure, reproduced.
+    /// Live: a real build root and gate repository (SHARUKHAN_LIVE_BUILD_ROOT,
+    /// SHARUKHAN_LIVE_REPO); `cargo test live_ -- --ignored`.
     #[test]
-    fn the_real_parser_refuses_a_requirement_no_spec_provides() {
-        let root = Path::new("/root/photon-mc/gate/build-root");
-        let repo = Path::new("/root/photon-mc/gate/photon.git");
+    #[ignore = "live: needs SHARUKHAN_LIVE_BUILD_ROOT and SHARUKHAN_LIVE_REPO"]
+    fn live_the_real_parser_refuses_a_requirement_no_spec_provides() {
+        let root_env = std::env::var("SHARUKHAN_LIVE_BUILD_ROOT").expect("SHARUKHAN_LIVE_BUILD_ROOT=<build root with common and the release>");
+        let repo_env = std::env::var("SHARUKHAN_LIVE_REPO").expect("SHARUKHAN_LIVE_REPO=<gate repository>");
+        let (root, repo) = (Path::new(&root_env), Path::new(&repo_env));
         let i = Inputs::from_build_root(root, "common", "5.0");
-        if i.missing().is_some() || !repo.is_dir() {
-            return;
-        }
+        assert!(i.missing().is_none() && repo.is_dir(), "{} or {} is incomplete: {:?}", root.display(), repo.display(), i.missing());
         let t = std::env::temp_dir().join(format!("shk-specdata-real-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&t);
         std::fs::create_dir_all(&t).unwrap();

@@ -1709,7 +1709,7 @@ mod tests {
         g(&["add", "-A"]);
         g(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "upstream"]);
         g(&["update-ref", "refs/remotes/origin/common", "HEAD"]);
-        let mut cfg = Config::load();
+        let mut cfg = Config::defaults();
         cfg.work = root.join("work");
         // no common patch built: the pristine upstream common
         let t = common_check_tree(&cfg, &clone).unwrap();
@@ -1807,7 +1807,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("sharukhan-plan-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("patches")).unwrap();
-        let mut c = Config::load();
+        let mut c = Config::defaults();
         c.iso_cache = root.join("cache");
         c.variant_patches = root.join("patches");
         // resolve purges <photon_tree>/stage/RPMS; a test must never reach
