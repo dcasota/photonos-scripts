@@ -1965,6 +1965,19 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
         let is_changelog = mine.contains("%changelog")
             || (f.ends_with(".inc") && f.rsplit('/').next().is_some_and(|n| n.contains("changelog")));
         if !is_changelog {
+            // a spec whose changelog moved into included files must still
+            // carry every entry it had, there
+            if f.ends_with(".spec") && !mine.is_empty() {
+                let before = branchguard::file_at(dir, &base, &f);
+                let dropped = branchguard::dropped_entries(&before, &branchguard::package_changelogs(dir, branch, &f), "Daniel Casota <dcasota@gmail.com>");
+                if dropped.is_empty() && before.contains("%changelog") {
+                    println!("  [ok   ] {f}: every entry of the base's changelog is kept in the included changelogs");
+                }
+                for p in dropped {
+                    bad += 1;
+                    println!("  [FAIL ] {f}: {p}");
+                }
+            }
             continue;
         }
         let reference = branchguard::package_changelogs(dir, &base, &f);

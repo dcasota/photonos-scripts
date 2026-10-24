@@ -241,6 +241,18 @@ pub fn single_entry_problems(
 /// Only the top pair is compared. The historical tail belongs to upstream and
 /// contains genuine inversions from years back; failing a branch for those
 /// blames it for defects it did not introduce and cannot fix.
+/// Entries of the base's changelog that the head's package no longer has in
+/// any of its changelogs. A spec whose changelog moved into included files
+/// keeps every entry there; only an entry of the author's own may change.
+pub fn dropped_entries(before: &str, head_package: &str, author: &str) -> Vec<String> {
+    let now = entry_blocks(head_package);
+    entry_blocks(before)
+        .into_iter()
+        .filter(|e| !e[0].contains(author) && !now.contains(e))
+        .map(|e| format!("changes or drops an existing entry: {}", e[0]))
+        .collect()
+}
+
 pub fn top_entry_is_not_older(text: &str) -> Result<(), String> {
     let e = entries(text);
     match (e.first(), e.get(1)) {
@@ -631,5 +643,11 @@ mod tests {
         // entry of one does not swallow the next file's %changelog line
         let joined = format!("{parent}\n%changelog\n* Mon Oct 19 2026 X Y <x@y> 2.0-1\n- Other\n");
         assert!(single_entry_problems(&joined, "", parent, a, 10).is_empty());
+        // a changelog moved into includes keeps the base's entries there
+        let base_spec = "%changelog\n* Fri Oct 23 2026 V W <v@w> 1-5\n- Fix\n* Mon Oct 19 2026 V W <v@w> 1-4\n- Up\n";
+        let incs = "%changelog\n* Sat Oct 24 2026 Daniel Casota <dcasota@gmail.com> 1-6\n- Mine\n* Fri Oct 23 2026 V W <v@w> 1-5\n- Fix\n* Mon Oct 19 2026 V W <v@w> 1-4\n- Up\n";
+        assert!(dropped_entries(base_spec, incs, a).is_empty());
+        let lost = incs.replace("- Fix\n", "- Fixed\n");
+        assert_eq!(dropped_entries(base_spec, &lost, a).len(), 1);
     }
 }

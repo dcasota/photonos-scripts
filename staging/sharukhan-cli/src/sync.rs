@@ -667,6 +667,18 @@ pub fn verify(
         .collect();
     let checker = common.join("support/spec-checker/check_spec.py");
     let mut checks = Vec::new();
+    let incs: Vec<String> = git_in(repo, &["diff", "--name-only", base, &tree, "--", "*changelog*.inc"])?
+        .lines()
+        .map(str::to_string)
+        .filter(|f| work.join(f).is_file())
+        .collect();
+    for g in &incs {
+        let mine = fs::read_to_string(work.join(g)).map_err(|e| format!("{g}: {e}"))?;
+        let reference = crate::branchguard::package_changelogs(repo, base, g);
+        let before = crate::branchguard::file_at(repo, base, g);
+        let problems = crate::branchguard::single_entry_problems(&reference, &before, &mine, AUTHOR, 10);
+        checks.push(Check { spec: g.clone(), subrelease: 0, what: "changelog".into(), ok: problems.is_empty(), detail: problems.join(" | ") });
+    }
     for f in &changed {
         let abs = work.join(f);
         let text = fs::read_to_string(&abs).map_err(|e| format!("{f}: {e}"))?;
@@ -717,10 +729,16 @@ pub fn verify(
                 detail: all.lines().filter(|l| l.contains("ERROR") || l.contains("Error")).take(2).collect::<Vec<_>>().join(" | "),
             });
         }
-        // one changelog entry, one short line, against the base
+        // one changelog entry, one short line, against the base; a spec whose
+        // changelog lives in included files is checked per file below, and
+        // here only for the base's entries it must still carry somewhere
         let reference = crate::branchguard::package_changelogs(repo, base, f);
         let before = crate::branchguard::file_at(repo, base, f);
-        let problems = crate::branchguard::single_entry_problems(&reference, &before, &text, AUTHOR, 10);
+        let problems = if text.contains("%changelog") {
+            crate::branchguard::single_entry_problems(&reference, &before, &text, AUTHOR, 10)
+        } else {
+            crate::branchguard::dropped_entries(&before, &crate::branchguard::package_changelogs(repo, &tree, f), AUTHOR)
+        };
         checks.push(Check {
             spec: f.clone(),
             subrelease: 0,

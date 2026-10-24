@@ -433,7 +433,7 @@ fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
 fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
     let rows: Vec<(i64, String, String)> = ctx
         .c
-        .prepare("SELECT number, root, new_head FROM sync_pr WHERE run_id = ?1 AND state IN ('rebased', 'resolved')")
+        .prepare("SELECT number, root, new_head FROM sync_pr WHERE run_id = ?1 AND state IN ('rebased', 'resolved', 'failed')")
         .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map(|x| x.flatten().collect()))
         .map_err(sql)?;
     if rows.is_empty() {
