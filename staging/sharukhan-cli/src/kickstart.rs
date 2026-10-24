@@ -12,19 +12,6 @@ use crate::net::{Assign, Family, NetSpec, Schema};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-/// The eight names stigenable.py requests when the STIG menu is answered yes,
-/// minus the three POI#9 dropped as redundant (libselinux-utils, ntp,
-/// libgcrypt). A kickstart cannot answer that menu - it exists only in the
-/// curses configurator - so a kickstart that wants STIG must list them itself.
-/// That is what variant=stigpkgs reproduces, and it is a genuinely different
-/// code path from the UI row, not a duplicate of it.
-pub const STIG_PACKAGES: [&str; 5] = [
-    "audit",
-    "rsyslog",
-    "openssl-fips-provider",
-    "selinux-policy",
-    "aide",
-];
 
 #[derive(Serialize)]
 pub struct Password {
@@ -249,6 +236,15 @@ pub fn preinstall() -> Vec<String> {
 
 pub struct Spec<'a> {
     pub id: &'a str,
+    /// What stigenable.py requests when the STIG menu is answered yes: the
+    /// installer's KS_STIG_PACKAGES, read from the media this row installs
+    /// (oracle::installer_stig_set), so the kickstart lists what that
+    /// installer would and follows the variant's own changes to the set. A
+    /// kickstart cannot answer the menu - it exists only in the curses
+    /// configurator - so a kickstart that wants STIG must list them itself;
+    /// variant=stigpkgs reproduces that, a different code path from the UI
+    /// row. Required on a row that wants STIG.
+    pub stig_packages: Option<Vec<String>>,
     pub fs: &'a str,
     pub stig: &'a str,
     pub variant: &'a str,
@@ -475,7 +471,9 @@ pub fn build(s: &Spec) -> Result<Kickstart, String> {
     let stig_wanted = s.variant == "stigpkgs" || s.stig == "yes";
     let (additional_packages, ansible) = if stig_wanted {
         (
-            Some(STIG_PACKAGES.iter().map(|p| p.to_string()).collect()),
+            Some(s.stig_packages.clone().filter(|p| !p.is_empty()).ok_or_else(|| {
+                format!("{}: a STIG row needs the installer's KS_STIG_PACKAGES, read from its media", s.id)
+            })?),
             Some(vec![Ansible {
                 playbook: "/usr/share/ansible/stig-hardening/playbook.yml".into(),
                 logfile: "ansible-stig.log".into(),
@@ -558,6 +556,7 @@ mod tests {
     fn spec<'a>(variant: &'a str, stig: &'a str, fs: &'a str, n: &'a NetSpec) -> Spec<'a> {
         Spec {
             id: "k03",
+            stig_packages: Some(["audit", "rsyslog", "openssl-fips-provider", "selinux-policy", "aide"].iter().map(|p| p.to_string()).collect()),
             fs,
             stig,
             variant,
@@ -763,6 +762,10 @@ mod tests {
             .unwrap()
             .additional_packages
             .is_some());
+        // a STIG row without the installer's list is refused, not filled in
+        let mut no_list = spec("stigpkgs", "no", "ext4", &d);
+        no_list.stig_packages = None;
+        assert!(build(&no_list).err().is_some_and(|e| e.contains("KS_STIG_PACKAGES")));
         // and a row that asks for neither must not silently get them.
         assert!(build(&spec("none", "no", "ext4", &d))
             .unwrap()

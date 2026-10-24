@@ -77,8 +77,16 @@ fn build_kickstart(cfg: &Config, p: &Permutation, secrets: Secrets) -> Result<St
     let ip6 = identity::ip6_for(&cfg.net_v6_prefix, cfg.ip_base, vmrow.index);
     let vlan_ip = identity::ip_for(&cfg.net_vlan_prefix, cfg.ip_base, vmrow.index);
 
+    // a STIG row lists what the installer on its media would request
+    let stig_packages = if p.variant == "stigpkgs" || p.stig == "yes" {
+        let iso = cfg.iso_dir(&p.iso_type, &p.poi, &p.canister).join("photon.iso");
+        Some(crate::oracle::installer_stig_set(&iso).map_err(|e| format!("{}: KS_STIG_PACKAGES from {}: {e}", p.id, iso.display()))?)
+    } else {
+        None
+    };
     kickstart::render(&kickstart::Spec {
         id: &p.id,
+        stig_packages,
         fs: &p.fs,
         stig: &p.stig,
         variant: &p.variant,
