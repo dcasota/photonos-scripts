@@ -50,6 +50,7 @@ mod specparity;
 mod specresolve;
 mod subvault;
 mod sync;
+mod variants;
 mod syncrun;
 mod verify;
 mod vm;
@@ -121,6 +122,7 @@ PHASES (the same code `run` calls, one step at a time)
                         changelog and every Source/Patch by content (--base,
                         --new roots; --prep compares the %prep trees too)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
+    variants            does config/variants.conf match the fork's open PRs?
     wrapper             derive, check and verify build wrappers for any kernel.org
                         release (sharukhan wrapper --help)
     ingest              fold the evidence files into the memory database (idempotent)
@@ -692,6 +694,7 @@ fn main() -> ExitCode {
         "branch-check" => cmd_branch_check(&args),
         "spec-parity" => cmd_spec_parity(&args),
         "mirrors" => cmd_mirrors(&cfg),
+        "variants" => cmd_variants(&cfg),
         "ingest" => cmd_ingest(&cfg),
         "stop" => runner::cmd_stop(&cfg, args.job, args.all, args.dry_run),
         "watch" => runner::cmd_watch(&cfg, args.job, args.once, args.interval),
@@ -1204,7 +1207,7 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     }
 
     println!("automation");
-    for i in health::automation(&cfg.memory_db, 900) {
+    for i in health::automation(&cfg, 900) {
         match i.level {
             health::Level::Ok => check(&i.label, true, i.detail),
             health::Level::Fail => check(&i.label, false, i.detail),
@@ -2175,9 +2178,35 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// The variants file against the fork: a listed branch no open PR heads, or
+/// an open PR on the release or common line that no section lists.
+fn cmd_variants(cfg: &config::Config) -> Result<(), String> {
+    let vs = variants::load(&cfg.variants_file)?;
+    for v in &vs.variants {
+        println!("variant {}: {} branch(es), installer {}", v.name, v.branches.len(), variants::installer_branch(v).unwrap_or("-"));
+    }
+    println!("common: {} branch(es)", vs.common.len());
+    let open: Vec<(u64, String, String)> =
+        sync::open_prs(&cfg.fork)?.into_iter().map(|p| (p.number, p.head_ref, p.base)).collect();
+    let d = variants::drift(&vs, &open, &cfg.release, &cfg.build_common);
+    for b in &d.not_open {
+        println!("  [STALE] {b}: no open PR on {} has this head (merged, closed or renamed)", cfg.fork);
+    }
+    for (n, h, base) in &d.unlisted {
+        println!("  [NEW  ] #{n} {h} (on {base}) is in no section of {}", cfg.variants_file.display());
+    }
+    if d.not_open.is_empty() && d.unlisted.is_empty() {
+        println!("every listed branch is an open PR head, and every open PR on {} or {} is listed", cfg.release, cfg.build_common);
+        Ok(())
+    } else {
+        Err(format!("{} stale, {} unlisted", d.not_open.len(), d.unlisted.len()))
+    }
+}
+
 fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
     let mut stale = 0;
-    for variant in build::VARIANTS.iter() {
+    let vs = variants::load(&cfg.variants_file)?;
+    for variant in vs.variants.iter() {
         let branch = build::installer_branch(variant)
             .ok_or_else(|| format!("variant {} has no installer branch", variant.name))?;
         println!("variant {} (installer branch {branch})", variant.name);

@@ -73,7 +73,8 @@ pub fn power_level(status: &str) -> (Level, String) {
     }
 }
 
-pub fn automation(memory_db: &Path, watch_interval_s: i64) -> Vec<Item> {
+pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Item> {
+    let memory_db = cfg.memory_db.as_path();
     let mut v = Vec::new();
 
     // host units the automation relies on
@@ -141,6 +142,24 @@ pub fn automation(memory_db: &Path, watch_interval_s: i64) -> Vec<Item> {
     v.push(match out("docker", &["version", "--format", "{{.Server.Version}}"]) {
         Some(s) => item("docker", Level::Ok, format!("daemon {s}")),
         None => item("docker", Level::Fail, "the docker daemon does not answer"),
+    });
+    // the variants file against the fork's open PRs
+    v.push(match crate::variants::load(&cfg.variants_file) {
+        Err(e) => item("variants", Level::Fail, e),
+        Ok(vs) => match crate::sync::open_prs(&cfg.fork) {
+            Err(e) => item("variants", Level::Warn, format!("could not list {}'s PRs: {e}", cfg.fork)),
+            Ok(prs) => {
+                let open: Vec<(u64, String, String)> = prs.into_iter().map(|p| (p.number, p.head_ref, p.base)).collect();
+                let d = crate::variants::drift(&vs, &open, &cfg.release, &cfg.build_common);
+                if d.not_open.is_empty() && d.unlisted.is_empty() {
+                    item("variants", Level::Ok, "every listed branch is open, every open PR is covered")
+                } else {
+                    let mut parts: Vec<String> = d.not_open.iter().map(|b| format!("{b} not open")).collect();
+                    parts.extend(d.unlisted.iter().map(|(n, h, _)| format!("#{n} {h} unlisted")));
+                    item("variants", Level::Warn, format!("{} (`sharukhan variants`)", parts.join("; ")))
+                }
+            }
+        },
     });
     v.push(match out("timeout", &["20", "gh", "api", "rate_limit", "--jq", ".rate.remaining"]) {
         Some(s) => item("gh", Level::Ok, format!("authenticated, {s} API calls left this hour")),

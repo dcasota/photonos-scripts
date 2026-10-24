@@ -892,12 +892,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
 ///
 /// Every installer branch is `fix/poi-*` or `upstream/photon-os-installer-*`,
 /// and nothing else in either variant contains "poi".
-pub fn installer_branch(v: &Variant) -> Option<&'static str> {
-    v.branches
-        .iter()
-        .find(|b| b.contains("/poi-") || b.contains("photon-os-installer"))
-        .copied()
-}
+pub use crate::variants::installer_branch;
 
 /// Read Version/Release out of a patch's `SPECS/linux/linux.spec` hunks.
 ///
@@ -1254,266 +1249,9 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 
 // ---- variant patches -----------------------------------------------------
 
-/// One installer variant: a name and the PR branches that make it.
-///
-///   poi-2.8     5.0 + #9 #19 #21 #22 #23 #24 #28  (installer stays 2.8)
-///   poi-latest  5.0 + #9 #21 #22 #23 #24 #26   (#26 bumps it to v2.9)
-///
-/// #19 and #26 are alternatives - #19 adds patches to 2.8, #26 moves to 2.9
-/// where three of them are already upstream - so exactly one appears in each.
-///
-/// The 2.8 installer branch is fix/poi-fips-sshd-algorithms (#28), which is a
-/// SUPERSET of fix/photon-os-installer-2.8-5-interactive-osrelease: it carries
-/// that branch's two commits plus the FIPS sshd fix, taking the installer to
-/// 2.8-7. It replaces rather than joins it - two installer branches in one
-/// variant would put two Release values in the same patch.
-pub struct Variant {
-    pub name: &'static str,
-    pub branches: &'static [&'static str],
-}
-
-pub const VARIANTS: [Variant; 2] = [
-    Variant {
-        name: "2.8",
-        branches: &[
-            // fix/poi-release-dhcp-leases is stacked on
-            // fix/poi-fips-sshd-algorithms (#28) and listed instead of it
-            // (range rule): it adds 0011, with which the installer environment
-            // releases its DHCP leases before it reboots into the installed
-            // system. Without it a MAC-affine DHCP server keeps the address for
-            // the installer's client identifier until the lease expires, and the
-            // installed system boots without IPv4 (wait-online fails).
-            "fix/poi-release-dhcp-leases",
-            "fix/aide-libgcrypt-versioned-requires",
-            // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
-            // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
-            // audit_backlog_limit=8192 next to audit=1.
-            "fix/stig-audit-backlog-limit",
-            // fix/systemd-subpackage-files-once is stacked on
-            // fix/systemd-groups-and-stig-variant (#22) and listed instead of
-            // it (range rule): systemd 257.13-7 ships each file of
-            // systemd-container and systemd-journal-remote in one package.
-            // fix/systemd-subpackage-files-once (#79, on #22) is carried by
-            // systemd-43741-pending-requests (#87), stacked on it (range rule).
-            // fix/systemd-90-dhcpdecline-raw-socket is stacked on it and listed
-            // instead (range rule): SPECS/90 systemd 253.19 broadcasts DHCPDECLINE
-            // through a raw socket (the subrelease-90 counterpart of #87).
-            "fix/systemd-90-dhcpdecline-raw-socket",
-            // Upstream-bound only. fix/canister-equivalent-mode used to be
-            // listed here; it is a TEST-ONLY change with no destination in
-            // vmware/photon, so it moved to src/embedded/ and is applied by
-            // the cascade on top of this patch. This branch is its base and
-            // is genuinely upstream-bound (PR #1675), carrying
-            // fix/kernel-shared-canister-config (PR #1673) as its parent - so
-            // it is listed INSTEAD of that, not after it: cherry-picking is by
-            // range (origin/5.0..branch), and naming both would replay the
-            // shared commit twice and conflict.
-            //
-            // Needed because the include-refactor bumps linux to -12 but
-            // leaves the canister patch series unrebased: a canister=build row
-            // then applies 1004 against a 6.12.103 that no longer wraps
-            // !digest_size in WARN_ON(), and %prep dies at --fuzz=0 with
-            // "1 out of 2 hunks FAILED". Inert for the prebuilt rows - the
-            // patches it corrects are read only under %if 0%{?canister_build}.
-            // Stacked on fix/canister-build-against-current-kernel, which is
-            // itself stacked on fix/kernel-shared-canister-config. Only the
-            // tip is listed: cherry-picking is by range, so naming any base
-            // replays its commits twice and conflicts.
-            // fix/kernel-single-source is stacked on it and listed instead:
-            // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
-            // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
-            // canister PRs. Fork-only until these rows pass.
-            // fix/linux-esx-depmod-ghost is stacked on it and listed instead
-            // (range rule): linux-esx 6.12.111-4 ships the files depmod
-            // generates as %ghost.
-            "fix/linux-esx-depmod-ghost",
-            // cloud-init 26.2 renders its systemd generator with a variant
-            // that is not in the libexecdir list, so the generator looks for
-            // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
-            // "status: not started" while 25.1.3 guests report "done".
-            "fix/cloud-init-generator-libexecdir",
-            // Package defects the package lifecycle test found on every ISO
-            // (results/reports/pkglife-always-failing-triage.md).
-            "fix/glibc-ldconfig-file-trigger",
-            "fix/rpm-selinux-plugin-only-in-subpackage",
-            "fix/procps-ng-version-and-lang",
-            "fix/gcc-requires-binutils-glibc-devel",
-            "fix/ntpsec-python-config-drift",
-            "fix/rpcbind-statedir-owner",
-            "fix/rdma-core-modules-load-path",
-            "fix/libvirt-runtime-requires",
-            "fix/mariadb-file-split",
-            "fix/python-tools-require-their-modules",
-            "fix/clang-scanbuild-modules",
-            "fix/apparmor-aa-exec-long-options",
-            "fix/cassandra-tools-home",
-            "fix/dwarves-tools",
-            "fix/go-tools-version",
-            "fix/grub2-kbdcomp-version",
-            "fix/jq-version",
-            "fix/kubernetes-pause-version",
-            "fix/libcbor-release-build",
-            "fix/mkinitcpio-version",
-            "fix/net-snmp-mibs-and-perl-tools",
-            "fix/open-vm-tools-alias-import-arguments",
-            "fix/openldap-slappasswd-eof",
-            "fix/openscap-without-oscap-docker",
-            "fix/openvswitch-python-tools",
-            "fix/pmd-ng-clean-shutdown",
-            "fix/scripts-require-their-commands",
-            "fix/walinuxagent-drop-python2-agent",
-            "fix/zookeeper-summary-toolkit",
-            // daemons that fail to stop, or leave units behind on erase
-            "fix/nslcd-shutdown-abort",
-            "fix/pgbouncer-service-notify",
-            "fix/fuse3-main-signal-exit",
-            "fix/lxcfs-fusermount3",
-            "fix/vernemq-stop-status",
-            "fix/synce4l-stop-without-dpll",
-            "fix/linuxptp-phc2sys-clean-stop",
-            "fix/systemd-scriptlets-sysstat-mdadm",
-            "fix/units-stopped-on-erase-cups-nfs-utils",
-            "fix/iptables-alternatives-ghost",
-            "fix/sendmail-alias-database",
-            "fix/wavefront-proxy-stop-status",
-            // rpm -V on the FIPS rows: distro.cnf follows the FIPS provider
-            "fix/openssl-distro-cnf-verify",
-            // audit records lost under audit.STIG.rules' -b 640
-            "fix/audit-stig-backlog",
-            // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
-            // when a DHCP/NDisc client stops (systemd#43741 backport)
-            "systemd-43741-pending-requests",
-            // docker-init linked statically so `docker run --init` works (#88)
-            "fix/docker-init-static-5.0",
-        ],
-    },
-    Variant {
-        name: "latest",
-        branches: &[
-            // Stacked on fix/poi-2.9-bump, so it is listed INSTEAD of it - the
-            // same range rule as the canister branch below.
-            //
-            // The 2.8 variant carried fix/poi-fips-sshd-algorithms and this one
-            // carried nothing, so FIPS on the NEWER installer still made a
-            // system unreachable over ssh. Verified against upstream: neither
-            // master nor v2.8 sets PubkeyAcceptedAlgorithms/KexAlgorithms;
-            // _setup_security only appends openssl-fips-provider. A
-            // photon-os-installer change has to ride both variants, or the
-            // untested one is the one that reaches a user.
-            // fix/poi-2.9-eltorito-theme-modules is stacked on
-            // fix/poi-2.9-fips-sshd-algorithms and listed instead of it (range
-            // rule): it adds 0010, the png/tga loaders for the BIOS El Torito
-            // image, without which BIOS GRUB stops on an image-format error and
-            // falls back to the plain text menu.
-            // fix/poi-2.9-release-dhcp-leases is stacked on
-            // fix/poi-2.9-eltorito-theme-modules (#38) and listed instead of it
-            // (range rule): the same 0011 as the 2.8 variant, so the installer
-            // environment releases its DHCP leases before it reboots.
-            "fix/poi-2.9-release-dhcp-leases",
-            "fix/aide-libgcrypt-versioned-requires",
-            // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
-            // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
-            // audit_backlog_limit=8192 next to audit=1.
-            "fix/stig-audit-backlog-limit",
-            // fix/systemd-subpackage-files-once is stacked on
-            // fix/systemd-groups-and-stig-variant (#22) and listed instead of
-            // it (range rule): systemd 257.13-7 ships each file of
-            // systemd-container and systemd-journal-remote in one package.
-            // fix/systemd-subpackage-files-once (#79, on #22) is carried by
-            // systemd-43741-pending-requests (#87), stacked on it (range rule).
-            // fix/systemd-90-dhcpdecline-raw-socket is stacked on it and listed
-            // instead (range rule): SPECS/90 systemd 253.19 broadcasts DHCPDECLINE
-            // through a raw socket (the subrelease-90 counterpart of #87).
-            "fix/systemd-90-dhcpdecline-raw-socket",
-            // Upstream-bound only. fix/canister-equivalent-mode used to be
-            // listed here; it is a TEST-ONLY change with no destination in
-            // vmware/photon, so it moved to src/embedded/ and is applied by
-            // the cascade on top of this patch. This branch is its base and
-            // is genuinely upstream-bound (PR #1675), carrying
-            // fix/kernel-shared-canister-config (PR #1673) as its parent - so
-            // it is listed INSTEAD of that, not after it: cherry-picking is by
-            // range (origin/5.0..branch), and naming both would replay the
-            // shared commit twice and conflict.
-            //
-            // Needed because the include-refactor bumps linux to -12 but
-            // leaves the canister patch series unrebased: a canister=build row
-            // then applies 1004 against a 6.12.103 that no longer wraps
-            // !digest_size in WARN_ON(), and %prep dies at --fuzz=0 with
-            // "1 out of 2 hunks FAILED". Inert for the prebuilt rows - the
-            // patches it corrects are read only under %if 0%{?canister_build}.
-            // Stacked on fix/canister-build-against-current-kernel, which is
-            // itself stacked on fix/kernel-shared-canister-config. Only the
-            // tip is listed: cherry-picking is by range, so naming any base
-            // replays its commits twice and conflicts.
-            // fix/kernel-single-source is stacked on it and listed instead:
-            // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
-            // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
-            // canister PRs. Fork-only until these rows pass.
-            // fix/linux-esx-depmod-ghost is stacked on it and listed instead
-            // (range rule): linux-esx 6.12.111-4 ships the files depmod
-            // generates as %ghost.
-            "fix/linux-esx-depmod-ghost",
-            // cloud-init 26.2 renders its systemd generator with a variant
-            // that is not in the libexecdir list, so the generator looks for
-            // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
-            // "status: not started" while 25.1.3 guests report "done".
-            "fix/cloud-init-generator-libexecdir",
-            // Package defects the package lifecycle test found on every ISO
-            // (results/reports/pkglife-always-failing-triage.md).
-            "fix/glibc-ldconfig-file-trigger",
-            "fix/rpm-selinux-plugin-only-in-subpackage",
-            "fix/procps-ng-version-and-lang",
-            "fix/gcc-requires-binutils-glibc-devel",
-            "fix/ntpsec-python-config-drift",
-            "fix/rpcbind-statedir-owner",
-            "fix/rdma-core-modules-load-path",
-            "fix/libvirt-runtime-requires",
-            "fix/mariadb-file-split",
-            "fix/python-tools-require-their-modules",
-            "fix/clang-scanbuild-modules",
-            "fix/apparmor-aa-exec-long-options",
-            "fix/cassandra-tools-home",
-            "fix/dwarves-tools",
-            "fix/go-tools-version",
-            "fix/grub2-kbdcomp-version",
-            "fix/jq-version",
-            "fix/kubernetes-pause-version",
-            "fix/libcbor-release-build",
-            "fix/mkinitcpio-version",
-            "fix/net-snmp-mibs-and-perl-tools",
-            "fix/open-vm-tools-alias-import-arguments",
-            "fix/openldap-slappasswd-eof",
-            "fix/openscap-without-oscap-docker",
-            "fix/openvswitch-python-tools",
-            "fix/pmd-ng-clean-shutdown",
-            "fix/scripts-require-their-commands",
-            "fix/walinuxagent-drop-python2-agent",
-            "fix/zookeeper-summary-toolkit",
-            // daemons that fail to stop, or leave units behind on erase
-            "fix/nslcd-shutdown-abort",
-            "fix/pgbouncer-service-notify",
-            "fix/fuse3-main-signal-exit",
-            "fix/lxcfs-fusermount3",
-            "fix/vernemq-stop-status",
-            "fix/synce4l-stop-without-dpll",
-            "fix/linuxptp-phc2sys-clean-stop",
-            "fix/systemd-scriptlets-sysstat-mdadm",
-            "fix/units-stopped-on-erase-cups-nfs-utils",
-            "fix/iptables-alternatives-ghost",
-            "fix/sendmail-alias-database",
-            "fix/wavefront-proxy-stop-status",
-            // rpm -V on the FIPS rows: distro.cnf follows the FIPS provider
-            "fix/openssl-distro-cnf-verify",
-            // audit records lost under audit.STIG.rules' -b 640
-            "fix/audit-stig-backlog",
-            // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
-            // when a DHCP/NDisc client stops (systemd#43741 backport)
-            "systemd-43741-pending-requests",
-            // docker-init linked statically so `docker run --init` works (#88)
-            "fix/docker-init-static-5.0",
-        ],
-    },
-];
+// The variants and their branches are data: config/variants.conf, read by
+// crate::variants (SHARUKHAN_VARIANTS).
+use crate::variants::Variant;
 
 /// Build one patch per installer variant, from the PR branches, WITHOUT
 /// merging any of them.
@@ -1544,12 +1282,11 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
         }
     }
 
-    let mut branches: Vec<&str> = vec!["5.0"];
-    for v in &VARIANTS {
-        for b in v.branches {
-            if !branches.contains(b) {
-                branches.push(b);
-            }
+    let vs = crate::variants::load(&cfg.variants_file)?;
+    let mut branches: Vec<&str> = vec![cfg.release.as_str()];
+    for b in vs.all_variant_branches() {
+        if !branches.contains(&b) {
+            branches.push(b);
         }
     }
     // One ref per fetch, not all of them in one request. A single fetch naming
@@ -1566,19 +1303,19 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
     // The common tree first: the variants are checked with ITS package builder
     // and spec checker, the ones a build runs once common-fixes is applied.
     log("common tree");
-    if let Err(e) = build_common_patch(cfg, &clone, log) {
+    if let Err(e) = build_common_patch(cfg, &clone, &vs.common, log) {
         log(&format!("  common: {e}"));
         failed.push("common");
     }
     let common = common_check_tree(cfg, &clone)?;
     log(&format!("  variants are checked with the package builder of {}", common.display()));
-    for v in &VARIANTS {
+    for v in &vs.variants {
         log(&format!("variant poi-{}", v.name));
         match build_variant(cfg, &clone, v, &common, log) {
             Ok(()) => {}
             Err(e) => {
                 log(&format!("  poi-{}: {e}", v.name));
-                failed.push(v.name);
+                failed.push(v.name.as_str());
             }
         }
     }
@@ -1592,59 +1329,37 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
     }
 }
 
-/// Branches whose changes live on the `common` branch line rather than a
-/// release one.
-///
-/// Photon keeps per-release SPECS on 5.0/4.0/6.0 and the shared build tooling
-/// on `common`, and those histories never meet: `common` has no `SPECS/`, `5.0`
-/// has no `support/package-builder/`. So the variant patches - which diff
-/// `origin/5.0..branch` and are applied to `SPECS` - can never carry a change
-/// to the package builder.
-///
-/// That gap is not theoretical. `--canister equivalent` cannot work without
-/// ToolChainUtils resolving a sans-snapshot BuildRequires against the local
-/// repo, and until this patch existed that fix reached a build only because the
-/// operator's /root/common happened to sit on the right branch and sync_repo's
-/// `merge --autostash` happened to preserve it. A fresh clone (`-b common`)
-/// does not contain it, and the build fails two hours in with
-/// `linux-fips-canister-<nevr> package not found or not installed`.
-pub const COMMON_BRANCHES: &[&str] = &[
-    "fix/sans-snapshot-resolves-locally-built-canister",
-    // check_spec reads a spec as the subrelease being built sees it. Without
-    // it the build refuses the single-source kernel spec before compiling
-    // anything: it compares the last Version tag with the first changelog.
-    "fix/check-spec-subrelease-aware",
-    // The kernel-deps spec generator took the first Version: and Release:
-    // lines of the raw kernel spec; in the single-source spec those belong to
-    // the wrong kernel or live in an included file, and `make image` stops.
-    "fix/spec-generator-subrelease-aware",
-];
 
 /// The same assembly as a variant patch, against the `common` branch line.
 ///
 /// Deliberately NOT limited by pathspec the way the variant diff is limited to
 /// `SPECS/`: on this branch line every path is build tooling, and a filter here
 /// would silently drop a fix that lands outside `support/`.
-fn build_common_patch(cfg: &Config, clone: &Path, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+/// The branches are the `[common]` section of the variants file: changes that
+/// live on the `common` branch line (the package builder, the spec checker),
+/// which the SPECS-only variant patches can never carry.
+fn build_common_patch(cfg: &Config, clone: &Path, branches: &[String], log: &mut dyn FnMut(&str)) -> Result<(), String> {
     let out = cfg.variant_patches.join("common-fixes.patch");
-    git(clone, &["fetch", "-q", "origin", "common"])
-        .map_err(|e| format!("fetching common: {e}"))?;
-    for b in COMMON_BRANCHES {
+    let common = cfg.build_common.as_str();
+    git(clone, &["fetch", "-q", "origin", common])
+        .map_err(|e| format!("fetching {common}: {e}"))?;
+    for b in branches {
         git(clone, &["fetch", "-q", "origin", b]).map_err(|e| format!("fetching {b}: {e}"))?;
     }
 
     let branch = "variant-common";
-    git(clone, &["checkout", "-q", "-B", branch, "origin/common"])?;
-    for b in COMMON_BRANCHES {
-        let range = format!("origin/common..origin/{b}");
+    let origin_common = format!("origin/{common}");
+    git(clone, &["checkout", "-q", "-B", branch, &origin_common])?;
+    for b in branches {
+        let range = format!("{origin_common}..origin/{b}");
         if git(clone, &["cherry-pick", "-x", &range]).is_err() {
             let _ = git(clone, &["cherry-pick", "--abort"]);
             return Err(format!("CONFLICT applying {b}"));
         }
     }
-    let diff = git(clone, &["diff", "origin/common", branch])?;
+    let diff = git(clone, &["diff", &origin_common, branch])?;
     if diff.trim().is_empty() {
-        return Err("produced an EMPTY patch - the branches add nothing to origin/common".into());
+        return Err(format!("produced an EMPTY patch - the branches add nothing to {origin_common}"));
     }
     fs::write(&out, &diff).map_err(|e| format!("{}: {e}", out.display()))?;
     log(&format!(
@@ -1664,7 +1379,7 @@ fn build_common_patch(cfg: &Config, clone: &Path, log: &mut dyn FnMut(&str)) -> 
             "--detach",
             "-q",
             &tmp.to_string_lossy(),
-            "origin/common",
+            &origin_common,
         ],
     )?;
     let applies = git(&tmp, &["apply", "--check", &out.to_string_lossy()]).is_ok();
@@ -1673,10 +1388,10 @@ fn build_common_patch(cfg: &Config, clone: &Path, log: &mut dyn FnMut(&str)) -> 
         &["worktree", "remove", "--force", &tmp.to_string_lossy()],
     );
     if applies {
-        log("  common: applies to pristine common");
+        log(&format!("  common: applies to pristine {common}"));
         Ok(())
     } else {
-        Err("DOES NOT APPLY to pristine common".into())
+        Err(format!("DOES NOT APPLY to pristine {common}"))
     }
 }
 
@@ -1708,12 +1423,11 @@ pub fn make_kernel_variant_patches(
             clone.display()
         ));
     }
-    let mut branches: Vec<&str> = vec!["5.0", "common", kb.branch.as_str()];
-    for v in &VARIANTS {
-        for b in v.branches {
-            if !branches.contains(b) {
-                branches.push(b);
-            }
+    let vs = crate::variants::load(&cfg.variants_file)?;
+    let mut branches: Vec<&str> = vec![kc.release.as_str(), kc.build_common.as_str(), kb.branch.as_str()];
+    for b in vs.all_variant_branches() {
+        if !branches.contains(&b) {
+            branches.push(b);
         }
     }
     for b in &branches {
@@ -1721,15 +1435,15 @@ pub fn make_kernel_variant_patches(
             .map_err(|e| format!("fetching {b}: {e}"))?;
     }
     let mut failed = Vec::new();
-    for v in &VARIANTS {
+    for v in &vs.variants {
         log(&format!("variant poi-{} on {}", v.name, kb.branch));
         if let Err(e) = build_kernel_variant(&kc, &clone, v, &kb.branch, log) {
             log(&format!("  poi-{}: {e}", v.name));
-            failed.push(v.name);
+            failed.push(v.name.as_str());
         }
     }
     log("common tree");
-    if let Err(e) = build_common_patch(&kc, &clone, log) {
+    if let Err(e) = build_common_patch(&kc, &clone, &vs.common, log) {
         log(&format!("  common: {e}"));
         failed.push("common");
     }
@@ -1742,9 +1456,9 @@ pub fn make_kernel_variant_patches(
 
 /// Does `kbranch` already carry commit `h`? Same subject, and every file `h`
 /// changes other than a spec is identical on the kernel branch.
-fn already_on_kernel_branch(clone: &Path, h: &str, kbranch: &str) -> Result<Option<String>, String> {
+fn already_on_kernel_branch(clone: &Path, h: &str, kbranch: &str, release: &str) -> Result<Option<String>, String> {
     let subject = git(clone, &["log", "-1", "--format=%s", h])?.trim().to_string();
-    let base = git(clone, &["merge-base", "origin/5.0", &format!("origin/{kbranch}")])?;
+    let base = git(clone, &["merge-base", &format!("origin/{release}"), &format!("origin/{kbranch}")])?;
     let own = git(
         clone,
         &["log", "--format=%H %s", &format!("{}..origin/{kbranch}", base.trim())],
@@ -1778,10 +1492,11 @@ fn build_kernel_variant(
 ) -> Result<(), String> {
     let branch = format!("variant-{}-{}", v.name, kbranch.replace('/', "-"));
     git(clone, &["checkout", "-q", "-f", "-B", &branch, &format!("origin/{kbranch}")])?;
-    for b in v.branches {
+    let rel = kc.release.as_str();
+    for b in &v.branches {
         let touched = git(
             clone,
-            &["diff", "--name-only", &format!("origin/5.0...origin/{b}")],
+            &["diff", "--name-only", &format!("origin/{rel}...origin/{b}")],
         )?;
         let kernel_files = touched.lines().filter(|f| f.starts_with("SPECS/linux/")).count();
         if kernel_files > 0 {
@@ -1790,13 +1505,13 @@ fn build_kernel_variant(
             ));
             continue;
         }
-        let commits = git(clone, &["rev-list", "--reverse", &format!("origin/5.0..origin/{b}")])?;
+        let commits = git(clone, &["rev-list", "--reverse", &format!("origin/{rel}..origin/{b}")])?;
         for h in commits.lines() {
             if git(clone, &["cherry-pick", "-x", "--empty=drop", h]).is_ok() {
                 continue;
             }
             let _ = git(clone, &["cherry-pick", "--abort"]);
-            match already_on_kernel_branch(clone, h, kbranch)? {
+            match already_on_kernel_branch(clone, h, kbranch, &kc.release)? {
                 Some(k) => log(&format!(
                     "  {b}: {} already on {kbranch} as {k}; skipped",
                     &h[..12.min(h.len())]
@@ -1863,22 +1578,23 @@ fn build_variant(
     log: &mut dyn FnMut(&str),
 ) -> Result<(), String> {
     let branch = format!("variant-{}", v.name);
-    git(clone, &["checkout", "-q", "-B", &branch, "origin/5.0"])?;
-    for b in v.branches {
+    let base = format!("origin/{}", cfg.release);
+    git(clone, &["checkout", "-q", "-B", &branch, &base])?;
+    for b in &v.branches {
         // The RANGE, not the tip. A PR branch grows commits over time (PR#9
         // gained the selinux-relabel ordering fix on top of its original
         // commit); cherry-picking only the tip applies a change without the
         // commit it builds on, which conflicts or silently produces a PARTIAL
         // variant patch. A partial patch here nearly reintroduced a resolved
         // release-number collision.
-        let range = format!("origin/5.0..origin/{b}");
+        let range = format!("{base}..origin/{b}");
         if git(clone, &["cherry-pick", "-x", &range]).is_err() {
             let _ = git(clone, &["cherry-pick", "--abort"]);
             return Err(format!("CONFLICT applying {b}"));
         }
     }
     let out = cfg.variant_patches.join(format!("poi-{}.patch", v.name));
-    let diff = git(clone, &["diff", "origin/5.0", &branch, "--", "SPECS/"])?;
+    let diff = git(clone, &["diff", &base, &branch, "--", "SPECS/"])?;
     fs::write(&out, &diff).map_err(|e| format!("{}: {e}", out.display()))?;
     log(&format!(
         "  poi-{}: {} files, {} lines",
@@ -1901,7 +1617,7 @@ fn build_variant(
             "--detach",
             "-q",
             &tmp.to_string_lossy(),
-            "origin/5.0",
+            &base,
         ],
     )?;
     let applies = git(&tmp, &["apply", "--check", &out.to_string_lossy()]).is_ok();
@@ -1927,7 +1643,7 @@ fn build_variant(
     // its ISOs to a license key the checker does not know).
     let changed: Vec<PathBuf> = git(
         clone,
-        &["diff", "--name-only", "origin/5.0", &branch, "--", "SPECS/"],
+        &["diff", "--name-only", &base, &branch, "--", "SPECS/"],
     )?
     .lines()
     .filter(|l| l.ends_with(".spec"))
@@ -2495,40 +2211,6 @@ mod tests {
         assert_eq!(a.key(), "full-poi2.8-prebuilt");
         assert_ne!(a.key(), b.key());
     }
-
-    /// #19 and #26 are alternatives: exactly one installer PR per variant, or
-    /// the patch carries two installer versions at once.
-    ///
-    /// Matched by shape rather than by an allowlist of exact branch names. The
-    /// allowlist listed poi-2.9-bump and poi-fips-sshd literally, so when the
-    /// latest variant moved to fix/poi-2.9-fips-sshd-algorithms - a branch
-    /// stacked on the bump, listed instead of it - the count went to 0 and the
-    /// test failed for a rename rather than for a real fault. Every installer
-    /// branch is either fix/poi-* or upstream/photon-os-installer-*, and no
-    /// other branch in either variant contains "poi".
-    #[test]
-    fn each_variant_carries_exactly_one_installer_branch() {
-        for v in &VARIANTS {
-            let hits: Vec<_> = v
-                .branches
-                .iter()
-                .filter(|b| b.contains("/poi-") || b.contains("photon-os-installer"))
-                .collect();
-            assert_eq!(
-                hits.len(),
-                1,
-                "variant {} carries {} installer branches: {hits:?}",
-                v.name,
-                hits.len()
-            );
-            // The shipped helper must agree with the test's own filter -
-            // `mirrors` fails at runtime, not here, when it does not.
-            assert_eq!(
-                installer_branch(v).as_ref(),
-                hits.first().map(|b| **b).as_ref()
-            );
-        }
-    }
 }
 
 #[cfg(test)]
@@ -2991,3 +2673,4 @@ mod pristine_tests {
         assert!(why.starts_with("could not read origin/9.9"), "{why}");
     }
 }
+

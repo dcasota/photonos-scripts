@@ -48,6 +48,8 @@ pub struct Config {
     pub run_log_dir: PathBuf,
     pub memory_db: PathBuf,
     pub matrix_tsv: PathBuf,
+    /// The installer variants and the `common` branches (crate::variants).
+    pub variants_file: PathBuf,
 
     // ---- photon build tree -----------------------------------------------
     pub photon_tree: PathBuf,
@@ -71,6 +73,12 @@ pub struct Config {
     pub build_common: String,
     pub release: String,
     pub photon_remote: String,
+    /// The fork whose PRs the harness tests and syncs, and the repository it
+    /// syncs them against (owner/name on GitHub).
+    pub fork: String,
+    pub upstream: String,
+    /// The gate's git repository: PR branches, sync candidates, bases.
+    pub gate_repo: PathBuf,
     /// Set by `--kernel <release>` on the test commands: the kernel profile
     /// whose media the rows are run against (see kbuild::apply).
     pub kernel: Option<KernelAxis>,
@@ -225,6 +233,7 @@ impl Config {
                 "SHARUKHAN_MATRIX",
                 &format!("{here}/config/permutations.tsv"),
             ),
+            variants_file: var_or("SHARUKHAN_VARIANTS", &format!("{here}/config/variants.conf")),
 
             photon_tree: var_or("PHOTON_TREE", "/root/5.0"),
             poi_tree: var_or("POI_TREE", "/root/photon-os-installer"),
@@ -234,6 +243,9 @@ impl Config {
             build_common: s_or("MC_BUILD_COMMON", "common"),
             release: s_or("MC_RELEASE", "5.0"),
             photon_remote: s_or("MC_PHOTON_REMOTE", "https://github.com/dcasota/photon.git"),
+            fork: s_or("MC_FORK", "dcasota/photon"),
+            upstream: s_or("MC_UPSTREAM", "vmware/photon"),
+            gate_repo: var_or("MC_GATE_REPO", "/root/photon-mc/gate/photon.git"),
             kernel: None,
 
             guest_vcpus: n_or("GUEST_VCPUS", 2),
