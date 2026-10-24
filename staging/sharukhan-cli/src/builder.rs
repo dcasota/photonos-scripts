@@ -538,10 +538,47 @@ pub fn python_command(cwd: &Path, args: &[OsString], log: &mut dyn FnMut(&str)) 
     tool_command("python3", cwd, args, log)
 }
 
+/// `python3 <args>` with `writable` the only directories it may write.
+pub fn python_command_with(cwd: &Path, args: &[OsString], writable: &[PathBuf], log: &mut dyn FnMut(&str)) -> Result<Command, String> {
+    tool_command_with("python3", cwd, args, writable, log)
+}
+
+/// The `docker run` flags of a reader container (see `tool_command`).
+pub fn reader_flags() -> Vec<&'static str> {
+    vec![
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,nosuid,nodev,size=2g",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "-e",
+        "HOME=/tmp",
+    ]
+}
+
 /// Any tool of the builder (`python3`, `rpmspec`, ...) in `cwd`: on the host,
 /// or in the builder container with no network and only the directories the
-/// call names mounted.
+/// call names mounted - read-only.
+///
+/// These tools read specs, and a spec can run commands: `rpmspec -P` expands
+/// `%(...)`. The specs they read include ones an escalation's model proposed,
+/// so the container is a reader and nothing else: every mount read-only, the
+/// image's filesystem read-only, a private /tmp, no capabilities, no new
+/// privileges, no network. A spec that tries to write the gate tree (where the
+/// env files the host sources live) fails instead of succeeding as root.
 pub fn tool_command(prog: &str, cwd: &Path, args: &[OsString], log: &mut dyn FnMut(&str)) -> Result<Command, String> {
+    tool_command_with(prog, cwd, args, &[], log)
+}
+
+/// The same with `writable` the only directories mounted read-write (a log
+/// directory the tool is given); each must exist.
+pub fn tool_command_with(prog: &str, cwd: &Path, args: &[OsString], writable: &[PathBuf], log: &mut dyn FnMut(&str)) -> Result<Command, String> {
     match mode()? {
         Mode::Host => {
             let mut c = Command::new(prog);
@@ -552,9 +589,18 @@ pub fn tool_command(prog: &str, cwd: &Path, args: &[OsString], log: &mut dyn FnM
             let root = shared_root();
             let image = ensure(log)?;
             let mut c = Command::new("docker");
-            c.args(["run", "--rm", "--network", "none"]);
+            c.args(reader_flags());
             for d in python_mounts(&root, cwd, args)? {
-                c.arg("-v").arg(format!("{0}:{0}", d.display()));
+                // a writable directory is mounted once, read-write, below
+                if !writable.iter().any(|w| w == &d) {
+                    c.arg("-v").arg(format!("{0}:{0}:ro", d.display()));
+                }
+            }
+            for w in writable {
+                if !w.is_dir() {
+                    return Err(format!("{}: a writable directory of the builder must exist", w.display()));
+                }
+                c.arg("-v").arg(format!("{0}:{0}:rw", w.display()));
             }
             c.arg("-w").arg(cwd).arg(image).arg(prog).args(args);
             Ok(c)
@@ -776,6 +822,17 @@ pub fn cli(args: &[String]) -> u8 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_reader_container_cannot_write_and_has_no_privilege() {
+        let f = reader_flags();
+        for need in ["--network", "none", "--read-only", "--cap-drop", "ALL", "no-new-privileges"] {
+            assert!(f.contains(&need), "{need} missing from {f:?}");
+        }
+        assert!(f.iter().any(|x| x.starts_with("/tmp:")), "a private /tmp");
+        assert!(!f.contains(&"--privileged") && !f.iter().any(|x| x.contains("docker.sock")));
+    }
+
     use super::*;
 
     #[test]

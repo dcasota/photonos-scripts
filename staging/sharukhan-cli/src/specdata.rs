@@ -222,7 +222,8 @@ pub fn unbuilt_runtime_deps(
         preq_arg(release_specs),
     ];
     args.extend(lists.iter().map(|l| l.clone().into_os_string()));
-    let out = crate::builder::python_command(&inputs.package_builder, &args, &mut |l| eprintln!("{l}"))?
+    // the driver logs into log_dir: the one directory it may write
+    let out = crate::builder::python_command_with(&inputs.package_builder, &args, &[log_dir.to_path_buf()], &mut |l| eprintln!("{l}"))?
         .output()
         .map_err(|e| format!("running python3: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -323,7 +324,8 @@ pub fn check(
         preq_arg(release_specs),
     ];
     // SpecData resolves some paths relative to its own directory
-    let out = crate::builder::python_command(&inputs.package_builder, &args, &mut |l| eprintln!("{l}"))?
+    // the driver logs into log_dir: the one directory it may write
+    let out = crate::builder::python_command_with(&inputs.package_builder, &args, &[log_dir.to_path_buf()], &mut |l| eprintln!("{l}"))?
         .output()
         .map_err(|e| format!("running python3: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
