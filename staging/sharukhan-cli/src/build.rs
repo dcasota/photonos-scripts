@@ -323,6 +323,17 @@ pub fn ensure_build_trees(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(),
     Ok(())
 }
 
+/// `git fetch origin` in the trees `build_inputs` reads. A failed fetch is
+/// logged, not fatal: offline, the sync stage builds against local state too,
+/// and the record then names what is local.
+fn refresh_origins(cfg: &Config, log: &mut dyn FnMut(&str)) {
+    for tree in [cfg.photon_tree.clone(), cfg.build_root.join(&cfg.build_common)] {
+        if let Err(e) = git(&tree, &["fetch", "-q", "origin"]) {
+            log(&format!("[warn] fetching origin in {}: {e}; the input record names the local refs", tree.display()));
+        }
+    }
+}
+
 /// Sidecar recording what a cached ISO was built from.
 pub const INPUTS_FILE: &str = "inputs.txt";
 
@@ -469,6 +480,12 @@ fn resolve_in(
         // them cloned first.
         ensure_build_trees(cfg, log)?;
     }
+    // The record names origin/<branch> of both trees, which the cascade's
+    // sync stage merges. Fetch them first: when the base moved (a sync's
+    // PREPARE points the gate's branches at new bases), the record would
+    // otherwise name the old commit while the build compiles the new one, and
+    // the fresh ISO is refused as stale the moment it is used.
+    refresh_origins(cfg, log);
     let inputs = build_inputs(cfg, req, kb)?;
 
     fs::create_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
