@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS escalation (
     cache_write   INTEGER NOT NULL DEFAULT 0,
     cost_usd      REAL,
     turns         INTEGER,
-    outcome       TEXT NOT NULL,               -- running | proposed | verified | no-proposal | budget | parked | failed
+    outcome       TEXT NOT NULL,               -- running | proposed | verified | no-proposal | budget | parked | failed | void (invalidated by a sharukhan defect; not an attempt)
     detail        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_escalation_run ON escalation(run_id, pr);
@@ -178,7 +178,7 @@ fn used(c: &Connection, sql: &str, p: impl rusqlite::Params) -> i64 {
 
 /// Why an escalation may not start now, if it may not.
 pub fn admission(c: &Connection, b: &Budget, run: i64, pr: i64, today: &str) -> Option<String> {
-    let failed = used(c, "SELECT count(*) FROM escalation WHERE run_id = ?1 AND pr = ?2 AND outcome NOT IN ('running','verified','parked')", rusqlite::params![run, pr]);
+    let failed = used(c, "SELECT count(*) FROM escalation WHERE run_id = ?1 AND pr = ?2 AND outcome NOT IN ('running','verified','parked','void')", rusqlite::params![run, pr]);
     if failed >= b.attempts {
         return Some(format!("{failed} attempt(s) for PR #{pr} in run {run} did not produce a verified proposal: parked for a person"));
     }
@@ -582,12 +582,14 @@ mod tests {
             )
             .unwrap();
         };
+        ins(5, 23, 100_000, "void", "2026-10-24");
+        assert!(admission(&c, &b, 5, 23, "2026-10-24").is_none(), "a void attempt is not an attempt");
         ins(5, 23, 100_000, "no-proposal", "2026-10-24");
         ins(5, 23, 100_000, "budget", "2026-10-24");
         assert!(admission(&c, &b, 5, 23, "2026-10-24").unwrap().contains("parked for a person"));
         assert!(admission(&c, &b, 5, 92, "2026-10-24").is_none(), "another PR still may");
         ins(5, 92, 200_000, "verified", "2026-10-24");
-        assert!(admission(&c, &b, 5, 36, "2026-10-24").unwrap().contains("run 5 has used 400000"));
+        assert!(admission(&c, &b, 5, 36, "2026-10-24").unwrap().contains("run 5 has used 500000"));
         ins(6, 1, 500_000, "verified", "2026-10-24");
         assert!(admission(&c, &b, 7, 1, "2026-10-24").unwrap().contains("waits for tomorrow"));
         assert!(admission(&c, &b, 7, 1, "2026-10-25").is_none());
