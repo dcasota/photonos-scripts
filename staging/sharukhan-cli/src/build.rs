@@ -2487,7 +2487,7 @@ pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
             false,
             format!(
                 "no - the kernel moved under it; regenerate with \
-                 `tools/regen-canister-equivalent.py`"
+                 `sharukhan canister-equivalent --out src/embedded/canister-equivalent.patch`"
             ),
         )
     }

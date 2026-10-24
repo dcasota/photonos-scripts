@@ -909,9 +909,10 @@ variant patch       3         3      PR#24/#29 share one entry, #36 keeps it in 
 embedded patch      4         4      +1 each
 ```
 
-**Regenerate it, never hand-edit it.** `tools/regen-canister-equivalent.py`
-(`--repo <photon clone>`, default `$PHOTON_TREE`, so it need not touch a tree
-another build is using)
+**Regenerate it, never hand-edit it.** `sharukhan canister-equivalent --out
+src/embedded/canister-equivalent.patch` (`--repo <photon clone>`, default
+`$PHOTON_TREE`, so it need not touch a tree another build is using; `--check`
+compares a regeneration with the patch this binary embeds)
 applies the variant patch to a pristine worktree, makes the embedded edits,
 derives the kernel version, runs the spec checker over the result and writes the
 patch; `--check` only reports whether the committed patch is current. The patch

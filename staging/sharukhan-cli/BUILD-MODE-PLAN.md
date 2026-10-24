@@ -113,7 +113,7 @@ What changed in build mode since the 2026-09-03 status:
   mounts matched every process on a filesystem backed by `/`, including PID 1;
   processes are now matched by their `/proc/<pid>/root` (`6216e9d`).
 - **The embedded patch is regenerated, not hand-edited.**
-  `tools/regen-canister-equivalent.py` rebuilds it on a pristine worktree with
+  `sharukhan canister-equivalent` rebuilds it on a pristine worktree with
   the variant patch applied, derives the kernel version, and runs the spec
   checker on its output; `--check` reports whether the committed patch is
   current, and `doctor` reports whether it applies (`93f5726`, `4332585`).

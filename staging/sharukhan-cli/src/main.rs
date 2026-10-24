@@ -12,6 +12,7 @@ mod buildexec;
 mod builder;
 mod buildmode;
 mod canister;
+mod caneq;
 mod card;
 mod config;
 mod console;
@@ -125,6 +126,7 @@ PHASES (the same code `run` calls, one step at a time)
                         --new roots; --prep compares the %prep trees too)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
     variants            does config/variants.conf match the fork's open PRs?
+    canister-equivalent regenerate the embedded canister-equivalent patch (--check | --out <file>)
     wrapper             derive, check and verify build wrappers for any kernel.org
                         release (sharukhan wrapper --help)
     ingest              fold the evidence files into the memory database (idempotent)
@@ -592,6 +594,15 @@ fn main() -> ExitCode {
     }
     if let Some(c @ ("watch" | "events")) = argv.first().map(String::as_str) {
         return ExitCode::from(watch::cli(c, &argv[1..]));
+    }
+    if argv.first().map(String::as_str) == Some("canister-equivalent") {
+        return match caneq::cli(&config::Config::load(), &argv[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("sharukhan canister-equivalent: {e}");
+                ExitCode::from(1)
+            }
+        };
     }
     let args = match parse() {
         Ok(a) => a,
