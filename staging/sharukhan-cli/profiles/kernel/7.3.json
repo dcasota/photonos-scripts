@@ -1,0 +1,114 @@
+{
+  "base": {
+    "kernel": "7.2.7",
+    "script": "runPh7-2-7.sh",
+    "wrapper_version": 15
+  },
+  "changelog": {
+    "author": "Daniel Casota <dcasota@gmail.com>",
+    "date": "Sun Oct 25 2026"
+  },
+  "drop_kernel_params": [
+    {
+      "param": "noreplace-smp",
+      "reason": [
+        "noreplace-smp (UP lock-prefix patching) was removed in the 7.3 cycle; 7.3 would log it as an",
+        "unknown parameter and hand it to init. Lock prefixes are always kept now."
+      ]
+    }
+  ],
+  "fips": {
+    "comment": [
+      "FIPS canister series ported to Linux 7.3 (fips-7.3 in the kernel directory of the release branch;",
+      "manifest.json says which file each PatchN/SourceN names, which patches 7.x does not need,",
+      "and the %autopatch ranges; the port's %prep replay and rpmbuild -bp verified it).",
+      "Only for a canister build: CANISTER_MODE build builds the canister with linux and links",
+      "it into linux-esx; equivalent-a/equivalent-b are sharukhan's two phases. CANISTER_MODE",
+      "none leaves the kernel FIPS-off. No canister of this series is published, so nothing",
+      "built this way is CMVP validated."
+    ],
+    "lkcm_version": "7.3",
+    "manifest": "fips-7.3/manifest.json"
+  },
+  "kernel": "7.3",
+  "kernel_patches": [
+    {
+      "already": "RAP/KCFI patches already enabled",
+      "applied": "RAP/KCFI Patch61 (7.3 rebase) and Patch63 enabled",
+      "autopatch": [
+        61,
+        63
+      ],
+      "comment": [
+        "RAP/KCFI (\"Secure\" range) for the generic linux flavor: Patch61 points at the",
+        "7.3 rebase in secure/ on the experimental/linux-7.3 branch, Patch63 (PAX",
+        "tasklet fix) applies as is. Patch62 (objtool: return error) stays off: it no longer",
+        "applies, and RAP builds emit objtool \"no-cfi indirect call!\" notes it would make fatal.",
+        "Runs after disable_unrebased_ranges, which comments out every %autopatch each pass."
+      ],
+      "file": "0001-gcc-rap-plugin-with-kcfi-7.3.patch",
+      "flavours": [
+        "linux"
+      ],
+      "label": "RAP",
+      "mode": "replace",
+      "name": "rap",
+      "patch": 61,
+      "replaces": "0001-gcc-rap-plugin-with-kcfi.patch"
+    },
+    {
+      "already": "rdrand hwrng driver already enabled",
+      "applied": "rdrand hwrng driver (Patch6, 7.3 rebase) enabled",
+      "autopatch": [
+        6
+      ],
+      "comment": [
+        "rdrand hwrng driver (Patch6) for both flavors: systemd's 10-rdrand-rng.conf loads",
+        "rdrand-rng and both configs set HW_RANDOM_RDRAND=m. disable_unrebased_ranges deletes",
+        "Patch2-Patch49, so re-add Patch6 pointing at the 7.3 rebase in vmw/ and apply it."
+      ],
+      "file": "0001-hwrng-rdrand-Add-RNG-driver-based-on-x86-rdrand-inst-7.3.patch",
+      "flavours": [
+        "linux",
+        "linux-esx"
+      ],
+      "label": "rdrand hwrng driver",
+      "mode": "readd",
+      "name": "rdrand",
+      "patch": 6
+    },
+    {
+      "already": "vmwgfx blend mode already enabled",
+      "applied": "vmwgfx blend mode (Patch7300) enabled",
+      "autopatch": [
+        7300
+      ],
+      "comment": [
+        "vmwgfx blend mode (Patch7300) for both flavors: 7.3's DRM core warns for every plane",
+        "with alpha formats but no blend mode property; the patch declares PREMULTI."
+      ],
+      "file": "0001-drm-vmwgfx-declare-premultiplied-blend-mode-7.3.patch",
+      "flavours": [
+        "linux",
+        "linux-esx"
+      ],
+      "label": "vmwgfx blend mode",
+      "mode": "add",
+      "name": "vmwgfx",
+      "patch": 7300
+    }
+  ],
+  "prebuild_extra": [],
+  "rpm_release_iteration": 1,
+  "schema": 1,
+  "source": {
+    "sha512": "14b99ea7cc2adc0798a183ac5f3e184587f2496c3b2d1d53b625574389891c69e8be375b5d03875fe859b09ac9314aa15da604087274ba815671135bd6a0e590",
+    "verified": {
+      "method": "pgp-signature",
+      "on": "2026-10-25",
+      "signer": "647F28654894E3BD457199BE38DBBDC86092693E"
+    }
+  },
+  "summary": "RAP/KCFI on, rdrand-rng, vmwgfx blend, noreplace-smp dropped, esx BTF off, STIG initrd restore, FIPS canister for canister builds; kernel in the tree's kernel directory",
+  "wrapper_version": 1
+}
