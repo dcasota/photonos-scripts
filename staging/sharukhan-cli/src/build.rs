@@ -2542,11 +2542,11 @@ pub fn vault_mismatched_canisters(stage: &Path, want: &str) -> Vec<String> {
 /// The canister NEVR a build will actually consume: the spec's
 /// `fips_canister_version` pin, read from the tree rather than written down.
 pub fn spec_canister_pin(cfg: &Config) -> Option<String> {
-    let dir = cfg.photon_tree.join("SPECS/linux");
     // Without a subrelease the single-source spec keeps both kernels' includes
     // and the first pin - the 6.1 kernel's - would win. No answer beats the
     // wrong kernel's canister.
     let subrelease = crate::specresolve::tree_subrelease(&cfg.photon_tree)?;
+    let dir = cfg.photon_tree.join(crate::specresolve::kernel_dir(&cfg.photon_tree, Some(subrelease)).ok()?);
     let text = crate::specresolve::resolve(
         &crate::specresolve::dir_reader(&dir),
         "linux.spec",

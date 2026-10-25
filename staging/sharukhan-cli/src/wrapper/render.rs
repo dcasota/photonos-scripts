@@ -205,8 +205,8 @@ pub fn kernel_pin(c: &Ctx) -> String {
 pub fn kernel_pin_calls(c: &Ctx) -> String {
     let f = c.target.pin_fn();
     lines(&[
-        format!("{f} SPECS/linux/linux.spec || exit 1"),
-        format!("{f} SPECS/linux/linux-esx.spec || exit 1"),
+        format!("{f} {} || exit 1", super::profile::Flavour::Linux.spec()),
+        format!("{f} {} || exit 1", super::profile::Flavour::LinuxEsx.spec()),
     ])
 }
 
@@ -458,8 +458,8 @@ pub fn kernel_fips(c: &Ctx) -> String {
         format!("{func}() {{"),
         "  spec=\"$1\"".into(),
         "  [ -f \"$spec\" ] || return 0".into(),
-        format!("  [ -f \"{}\" ] || {{ echo \"[{tag}] ERROR: {} missing\" 1>&2; return 1; }}", f.manifest, f.manifest),
-        format!("  python3 - \"$spec\" \"{}\" \"{}\" << '{FIPS_EOF}'", f.manifest, f.lkcm_version),
+        format!("  [ -f \"$KDIR/{}\" ] || {{ echo \"[{tag}] ERROR: $KDIR/{} missing\" 1>&2; return 1; }}", f.manifest, f.manifest),
+        format!("  python3 - \"$spec\" \"$KDIR/{}\" \"{}\" << '{FIPS_EOF}'", f.manifest, f.lkcm_version),
     ]);
     v.extend(FIPS_SPEC_EDIT.lines().map(str::to_string));
     v.extend([
@@ -467,8 +467,8 @@ pub fn kernel_fips(c: &Ctx) -> String {
         "}".into(),
         "case \"${CANISTER_MODE:-none}\" in".into(),
         "  build|equivalent-a|equivalent-b)".into(),
-        format!("    {func} SPECS/linux/linux.spec || exit 1"),
-        format!("    {func} SPECS/linux/linux-esx.spec || exit 1"),
+        format!("    {func} {} || exit 1", super::profile::Flavour::Linux.spec()),
+        format!("    {func} {} || exit 1", super::profile::Flavour::LinuxEsx.spec()),
         "    ;;".into(),
         "  none)".into(),
         format!("    echo \"[{tag}] FIPS canister off (CANISTER_MODE=none)\""),

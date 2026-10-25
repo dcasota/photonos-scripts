@@ -61,7 +61,9 @@ pub struct Profile {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fips {
-    /// Release-tree path of the manifest, under `SPECS/linux/`.
+    /// Path of the manifest relative to the kernel spec directory (which the
+    /// branch and the pin script read from the tree), e.g.
+    /// `fips-7.3/manifest.json`.
     pub manifest: String,
     /// The LKCM series stamped into the canister (`FIPS_CANISTER_VERSION`):
     /// the target's `<major>.<minor>`.
@@ -140,11 +142,19 @@ pub enum Flavour {
 }
 
 impl Flavour {
-    pub fn spec(&self) -> &'static str {
+    /// The flavour's spec, a file of the kernel spec directory.
+    pub fn file(&self) -> &'static str {
         match self {
-            Flavour::Linux => "SPECS/linux/linux.spec",
-            Flavour::LinuxEsx => "SPECS/linux/linux-esx.spec",
+            Flavour::Linux => "linux.spec",
+            Flavour::LinuxEsx => "linux-esx.spec",
         }
+    }
+
+    /// The spec as the wrapper's pin script names it: in `$KDIR`, the kernel
+    /// spec directory it reads from the tree (`SPECS/linux` or
+    /// `SPECS/<subrelease>/linux`), never a path written into the profile.
+    pub fn spec(&self) -> String {
+        format!("\"$KDIR/{}\"", self.file())
     }
 }
 
@@ -296,15 +306,10 @@ impl Profile {
                 && !c.starts_with('-')
                 && c.chars().all(|x| x.is_ascii_alphanumeric() || matches!(x, '.' | '_' | '-'))
         };
-        if comps.len() < 4
-            || comps[0] != "SPECS"
-            || comps[1] != "linux"
-            || !comps.iter().all(|c| plain(c))
-            || !f.manifest.ends_with(".json")
-        {
+        if comps.len() < 2 || !comps.iter().all(|c| plain(c)) || !f.manifest.ends_with(".json") {
             return Err(perr(
                 "fips.manifest",
-                "must be a plain relative path SPECS/linux/<dir>/<name>.json",
+                "must be a plain path <dir>/<name>.json relative to the kernel spec directory",
             ));
         }
         let series = target.series();
@@ -775,16 +780,17 @@ pub mod tests {
 
     #[test]
     fn a_fips_section_is_validated() {
-        let ok = r#"{"manifest": "SPECS/linux/fips-7.3/manifest.json", "lkcm_version": "7.3", "comment": ["x"]}"#;
+        let ok = r#"{"manifest": "fips-7.3/manifest.json", "lkcm_version": "7.3", "comment": ["x"]}"#;
         assert!(with_fips(ok).is_ok(), "{:?}", with_fips(ok).err());
         for (bad, why) in [
-            (r#"{"manifest": "SPECS/linux/../x.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
-            (r#"{"manifest": "SPECS/foo/fips/m.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
-            (r#"{"manifest": "/SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
-            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.2", "comment": ["x"]}"#, "fips.lkcm_version"),
-            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": []}"#, "fips.comment"),
-            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": ["the 7.2.7 base"]}"#, "fips.comment[0]"),
-            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": ["x"], "extra": 1}"#, "unknown field"),
+            (r#"{"manifest": "../x.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
+            (r#"{"manifest": "m.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
+            (r#"{"manifest": "/fips/m.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
+            (r#"{"manifest": "fips/m.txt", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
+            (r#"{"manifest": "fips/m.json", "lkcm_version": "7.2", "comment": ["x"]}"#, "fips.lkcm_version"),
+            (r#"{"manifest": "fips/m.json", "lkcm_version": "7.3", "comment": []}"#, "fips.comment"),
+            (r#"{"manifest": "fips/m.json", "lkcm_version": "7.3", "comment": ["the 7.2.7 base"]}"#, "fips.comment[0]"),
+            (r#"{"manifest": "fips/m.json", "lkcm_version": "7.3", "comment": ["x"], "extra": 1}"#, "unknown field"),
         ] {
             let e = with_fips(bad).expect_err(bad);
             assert!(e.contains(why), "{bad}: {e}");

@@ -537,6 +537,76 @@ mod controls {
         derive_text(base, p).unwrap_err().to_string()
     }
 
+    /// The pin script's own resolver (`pin_kernel_dir`, for a run by hand)
+    /// and sharukhan's `kernel_dir` (what a build exports as KDIR) must name
+    /// the same directory, or fail together, for every layout and subrelease.
+    #[test]
+    fn the_pin_scripts_kernel_directory_is_sharukhans() {
+        let b = base();
+        let start = b.find("pin_kernel_dir() {").expect("the base defines pin_kernel_dir");
+        let end = start + b[start..].find("\nKDIRPY\n}\n").expect("its heredoc ends") + "\nKDIRPY\n}\n".len();
+        let func = &b[start..end];
+        let root = std::env::temp_dir().join(format!("shk-kdir-{}", std::process::id()));
+        let shell = |tree: &Path| -> (bool, String) {
+            let o = std::process::Command::new("sh").arg("-c").arg(format!("{func}pin_kernel_dir")).current_dir(tree).output().unwrap();
+            (o.status.success(), String::from_utf8_lossy(&o.stdout).trim().to_string())
+        };
+        let tree = |name: &str, specs: &[(&str, &str)], sub: Option<u32>| -> PathBuf {
+            let t = root.join(name);
+            let _ = std::fs::remove_dir_all(&t);
+            std::fs::create_dir_all(&t).unwrap();
+            for (dir, build_if) in specs {
+                std::fs::create_dir_all(t.join(dir)).unwrap();
+                let head = if build_if.is_empty() { String::new() } else { format!("%global build_if {build_if}\n") };
+                std::fs::write(t.join(dir).join("linux.spec"), format!("{head}Name: linux\nVersion: 6.12.1\n")).unwrap();
+            }
+            if let Some(n) = sub {
+                crate::specresolve::test_release_config(&t, n);
+            }
+            t
+        };
+        let layouts: Vec<(&str, Vec<(&str, &str)>)> = vec![
+            ("single", vec![("SPECS/linux", "")]),
+            (
+                "per-subrelease",
+                vec![
+                    ("SPECS/90/linux", "0%{?photon_subrelease} <= 90"),
+                    ("SPECS/91/linux", "%{photon_subrelease} >= 91 && %{photon_subrelease} <= 91"),
+                    ("SPECS/92/linux", "%{photon_subrelease} >= 92"),
+                ],
+            ),
+            ("negated", vec![("SPECS/linux", "!(%{photon_subrelease} < 92)"), ("SPECS/91/linux", "%{photon_subrelease} == 91 || %{photon_subrelease} == 90")]),
+            ("ambiguous", vec![("SPECS/linux", ""), ("SPECS/92/linux", "%{photon_subrelease} >= 92")]),
+            ("unparseable", vec![("SPECS/92/linux", "%{with_kernel}")]),
+        ];
+        let mut compared = 0;
+        for (name, specs) in &layouts {
+            for sub in [90u32, 91, 92, 93] {
+                let t = tree(name, specs, Some(sub));
+                let rust = crate::specresolve::kernel_dir(&t, Some(sub));
+                let (ok, out) = shell(&t);
+                match rust {
+                    Ok(d) => assert!(ok && out == d, "{name} sr{sub}: sharukhan {d}, pin script ok={ok} '{out}'"),
+                    Err(e) => assert!(!ok && out.is_empty(), "{name} sr{sub}: sharukhan refuses ({e}), pin script ok={ok} '{out}'"),
+                }
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 20);
+        // a tree without any kernel spec: the pin script has none and goes on
+        // (a helper pre-pass); sharukhan never builds such a tree
+        let t = tree("none", &[], Some(92));
+        assert_eq!(shell(&t), (true, String::new()));
+        // a kernel but no subrelease to choose with: refused, as sharukhan does
+        let t = tree("nosub", &[("SPECS/linux", "")], None);
+        assert!(crate::specresolve::kernel_dir(&t, crate::specresolve::tree_subrelease(&t)).is_err());
+        assert!(!shell(&t).0);
+        // the derived wrapper carries the same resolver
+        let d = derive_text(&base(), &profile()).unwrap();
+        assert!(d.script.contains(&func.replace("runPh7-2-7", "runPh7-3-RC4")), "the derived wrapper resolves KDIR the same way");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn the_committed_pair_derives_and_renders_the_target_tag_directly() {
         let d = derive_text(&base(), &profile()).unwrap();
@@ -614,12 +684,12 @@ mod controls {
 
     #[test]
     fn a_base_bumped_since_review_names_the_review_to_do() {
-        let b = base().replace("wrapper v14", "wrapper v15");
+        let b = base().replace("wrapper v15", "wrapper v16");
         let e = fails(&b, &profile());
         assert!(
-            e.contains("is wrapper v15")
-                && e.contains("reviewed against v14")
-                && e.contains("base.wrapper_version = 15"),
+            e.contains("is wrapper v16")
+                && e.contains("reviewed against v15")
+                && e.contains("base.wrapper_version = 16"),
             "{e}"
         );
         let mut p = profile();

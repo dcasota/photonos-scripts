@@ -3,7 +3,7 @@
 #
 # @sharukhan-slot header begin
 # Photon OS 5.0 userland + experimental Linux 7.2.7
-# wrapper v14
+# wrapper v15
 # @sharukhan-slot header end
 #
 # $1 BASE_DIR        default /root
@@ -32,7 +32,7 @@ export EDITOR=true
 export VISUAL=true
 
 # @sharukhan-slot banner begin
-echo "[runPh7-2-7] wrapper v14 + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage + installer initrd list restore (STIG)"
+echo "[runPh7-2-7] wrapper v15 + kernel spec directory read from the tree + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage + installer initrd list restore (STIG)"
 # @sharukhan-slot banner end
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
@@ -128,6 +128,129 @@ COMMON_DIR="${COMMON_DIR:-${BASE_DIR:-/root}/${COMMON_BRANCH:-common}}"
 BASE_DIR="${BASE_DIR:-/root}"
 COMMON_BRANCH="${COMMON_BRANCH:-common}"
 RELEASE_BRANCH="${RELEASE_BRANCH:-experimental/linux-7.2.7}"
+
+# The kernel's spec directory: the one SPECS/linux or SPECS/<n>/linux whose
+# linux.spec builds the tree's photon-subrelease - sharukhan's kernel_dir, the
+# same rule. sharukhan exports KDIR when it injects this script; a run by hand
+# resolves it here. A tree without any kernel spec (a helper pre-pass) has none.
+pin_kernel_dir() {
+  python3 << 'KDIRPY'
+import json, os, re, sys
+
+def fail(m):
+    print(f"[runPh7-2-7] ERROR: {m}", file=sys.stderr)
+    sys.exit(1)
+
+def evaluate(expr, sub):
+    e = (expr.replace("0%{?photon_subrelease}", str(sub))
+             .replace("%{?photon_subrelease}", str(sub))
+             .replace("%{photon_subrelease}", str(sub)))
+    toks, i = [], 0
+    while i < len(e):
+        c = e[i]
+        if c.isspace():
+            i += 1
+        elif "0" <= c <= "9":
+            j = i
+            while j < len(e) and "0" <= e[j] <= "9":
+                j += 1
+            toks.append(e[i:j])
+            i = j
+        elif e[i:i + 2] in ("&&", "||", "==", "!=", ">=", "<="):
+            toks.append(e[i:i + 2])
+            i += 2
+        elif c in "()<>!":
+            toks.append(c)
+            i += 1
+        else:
+            return None
+    pos = [0]
+    def peek():
+        return toks[pos[0]] if pos[0] < len(toks) else None
+    def unary():
+        t = peek()
+        if t is None:
+            return None
+        if t == "!":
+            pos[0] += 1
+            v = unary()
+            return None if v is None else int(v == 0)
+        if t == "(":
+            pos[0] += 1
+            v = disj()
+            if v is None or peek() != ")":
+                return None
+            pos[0] += 1
+            return v
+        if re.fullmatch(r"[0-9]+", t):
+            pos[0] += 1
+            return int(t)
+        return None
+    ops = {"==": lambda a, b: a == b, "!=": lambda a, b: a != b, ">=": lambda a, b: a >= b,
+           "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, "<": lambda a, b: a < b}
+    def comparison():
+        l = unary()
+        if l is None or peek() not in ops:
+            return l
+        op = ops[peek()]
+        pos[0] += 1
+        r = unary()
+        return None if r is None else int(op(l, r))
+    def conj():
+        v = comparison()
+        while v is not None and peek() == "&&":
+            pos[0] += 1
+            r = comparison()
+            v = None if r is None else int(v != 0 and r != 0)
+        return v
+    def disj():
+        v = conj()
+        while v is not None and peek() == "||":
+            pos[0] += 1
+            r = conj()
+            v = None if r is None else int(v != 0 or r != 0)
+        return v
+    v = disj()
+    return None if v is None or pos[0] != len(toks) else v != 0
+
+nums = sorted(n for n in (os.listdir("SPECS") if os.path.isdir("SPECS") else []) if re.fullmatch(r"[0-9]+", n))
+present = [d for d in ["SPECS/linux"] + [f"SPECS/{n}/linux" for n in nums] if os.path.isfile(f"{d}/linux.spec")]
+if not present:
+    sys.exit(0)
+try:
+    raw = json.load(open("build-config.json"))["photon-build-param"]["photon-subrelease"]
+    sub = int(str(raw).strip())
+except (OSError, ValueError, KeyError, TypeError):
+    fail(f"{os.getcwd()}: no photon-subrelease in build-config.json to choose the kernel directory with")
+hits = []
+for d in present:
+    expr = None
+    for line in open(f"{d}/linux.spec", errors="replace"):
+        t = line.strip()
+        if t.startswith("%global build_if"):
+            expr = t[len("%global build_if"):].strip()
+            break
+    if expr is None:
+        hits.append(d)
+        continue
+    v = evaluate(expr, sub)
+    if v is None:
+        fail(f"{d}/linux.spec: build_if '{expr}' is not a subrelease comparison")
+    if v:
+        hits.append(d)
+if len(hits) != 1:
+    fail(f"{len(hits)} kernel directories build subrelease {sub} ({', '.join(hits)}); expected one")
+print(hits[0])
+KDIRPY
+}
+if [ -z "${KDIR:-}" ]; then
+  KDIR=$(pin_kernel_dir) || exit 1
+fi
+if [ -n "$KDIR" ] && [ ! -f "$KDIR/linux.spec" ]; then
+  echo "[runPh7-2-7] ERROR: KDIR=$KDIR has no linux.spec in $PWD" 1>&2
+  exit 1
+fi
+echo "[runPh7-2-7] kernel spec directory: ${KDIR:-none in this tree}"
 
 # Older wrapper runs commented out build_if in SPECS/90 (and its untracked
 # _disabled_selinux34 copies), so SELinux 3.4 built beside 3.10 and SpecData
@@ -264,8 +387,8 @@ CVEINC
 # Pull origin's empty kernel_cve_patches.inc; if fetch fails or the file
 # still declares PatchNNNN, overwrite it locally so %prep cannot apply ioam6.
 sync_cve_include() {
-  inc="SPECS/linux/kernel_cve_patches.inc"
-  mkdir -p SPECS/linux
+  [ -n "$KDIR" ] || return 0
+  inc="$KDIR/kernel_cve_patches.inc"
   if git remote get-url origin >/dev/null 2>&1; then
     git fetch origin "${RELEASE_BRANCH}" 2>/dev/null || git fetch origin 2>/dev/null || true
     if git show "origin/${RELEASE_BRANCH}:${inc}" >/dev/null 2>&1; then
@@ -327,8 +450,9 @@ drop_skipped_patches() {
       sed -i "/$pat/d" "$spec"
       echo "[runPh7-2-7] dropped $pat from $spec"
     fi
-    rm -f "SPECS/linux/"*"$pat"* \
-          "SPECS/linux/CVE/"*"$pat"* \
+    [ -n "$KDIR" ] || continue
+    rm -f "$KDIR/"*"$pat"* \
+          "$KDIR/CVE/"*"$pat"* \
           "stage/SOURCES/"*"$pat"* \
           "$BASE_DIR/$RELEASE_BRANCH/stage/SOURCES/"*"$pat"* 2>/dev/null || true
   done
@@ -390,15 +514,15 @@ print('[runPh7-2-7] common-branch-path =', c['common-branch-path'])
 fi
 
 # @sharukhan-slot kernel-pin-calls begin
-pin_727 SPECS/linux/linux.spec SPECS/linux/linux.spec.7.2.7.patch
-pin_727 SPECS/linux/linux-esx.spec SPECS/linux/linux-esx.spec.7.2.7.patch
+pin_727 "$KDIR/linux.spec" "$KDIR/linux.spec.7.2.7.patch"
+pin_727 "$KDIR/linux-esx.spec" "$KDIR/linux-esx.spec.7.2.7.patch"
 # @sharukhan-slot kernel-pin-calls end
 sync_cve_include
-drop_skipped_patches SPECS/linux/linux.spec
-drop_skipped_patches SPECS/linux/linux-esx.spec
-drop_skipped_patches SPECS/linux/kernel_cve_patches.inc
-disable_unrebased_ranges SPECS/linux/linux.spec
-disable_unrebased_ranges SPECS/linux/linux-esx.spec
+drop_skipped_patches "$KDIR/linux.spec"
+drop_skipped_patches "$KDIR/linux-esx.spec"
+drop_skipped_patches "$KDIR/kernel_cve_patches.inc"
+disable_unrebased_ranges "$KDIR/linux.spec"
+disable_unrebased_ranges "$KDIR/linux-esx.spec"
 # @sharukhan-slot kernel-patches begin
 # @sharukhan-slot kernel-patches end
 # Replace the 6.12 config-applicability include with a 7.2.7 merge:
@@ -480,8 +604,8 @@ for i, l in enumerate(lines):
 print(f"[runPh7-2-7] WARNING: no config-check include in {spec}", file=sys.stderr)
 PY
 }
-inject_config_merge SPECS/linux/linux.spec '%{SOURCE7}'
-inject_config_merge SPECS/linux/linux-esx.spec '%{SOURCE4}'
+inject_config_merge "$KDIR/linux.spec" '%{SOURCE7}'
+inject_config_merge "$KDIR/linux-esx.spec" '%{SOURCE4}'
 
 # ENA 2.17.0 fails on 7.x kernels: page_pool_get_stats() is void.
 # Skip Amazon ENA/EFA and viomem OOT modules (in-tree ena may still build).
@@ -525,8 +649,8 @@ else:
     print(f"[runPh7-2-7] {p}: no ENA/EFA/viomem build blocks found")
 PY
 }
-skip_oot_modules SPECS/linux/linux.spec
-skip_oot_modules SPECS/linux/linux-esx.spec
+skip_oot_modules "$KDIR/linux.spec"
+skip_oot_modules "$KDIR/linux-esx.spec"
 
 # gettext in the linux sandbox so msgfmt can build cpupower .gmo.
 # NLS= remains as fallback if gettext is not yet in the graph.
@@ -554,8 +678,8 @@ p.write_text(ins + "".join(lines))
 print(f"[runPh7-2-7] {p}: prepended BuildRequires: {pkg}")
 PY
 }
-add_buildrequires SPECS/linux/linux.spec gettext
-add_buildrequires SPECS/linux/linux-esx.spec gettext
+add_buildrequires "$KDIR/linux.spec" gettext
+add_buildrequires "$KDIR/linux-esx.spec" gettext
 
 pin_cpupower_nls() {
   spec="$1"
@@ -569,8 +693,8 @@ pin_cpupower_nls() {
     echo "[runPh7-2-7] $spec: cpupower_install NLS= (skip missing .gmo)"
   fi
 }
-pin_cpupower_nls SPECS/linux/linux.spec
-pin_cpupower_nls SPECS/linux/linux-esx.spec
+pin_cpupower_nls "$KDIR/linux.spec"
+pin_cpupower_nls "$KDIR/linux-esx.spec"
 
 # cxxwrap + rust.channel=dev made stage1 compile rustc diagnostics as
 # <anon> (backticks in E0658 proc_macro_span). Restore upstream rust.spec.
@@ -660,8 +784,8 @@ else:
     print(f"[runPh7-2-7] {p}: %files already consistent")
 PY
 }
-pin_linux_files SPECS/linux/linux.spec
-pin_linux_files SPECS/linux/linux-esx.spec
+pin_linux_files "$KDIR/linux.spec"
+pin_linux_files "$KDIR/linux-esx.spec"
 
 pin_rust_skip_docs() {
   spec="SPECS/rust/rust.spec"
@@ -904,8 +1028,8 @@ if command -v fetch_or_validate_source >/dev/null 2>&1; then
 fi
 # @sharukhan-slot kernel-source end
 
-if [ -f SPECS/linux/linux.spec ]; then
-  kver=$(awk '/^Version:/{print $2; exit}' SPECS/linux/linux.spec 2>/dev/null)
+if [ -n "$KDIR" ] && [ -f "$KDIR/linux.spec" ]; then
+  kver=$(awk '/^Version:/{print $2; exit}' "$KDIR/linux.spec" 2>/dev/null)
   echo "[runPh7-2-7] linux.spec Version=$kver"
   # @sharukhan-slot version-assert begin
   if [ "${PIN_REQUIRE_KVER:-1}" = 1 ] && [ "$kver" != "7.2.7" ]; then
@@ -921,7 +1045,7 @@ fi
 # not a TTY (nohup, CI, no-pty sessions). Keep the pinned specs clean:
 # no double blank lines, no blank line inside %changelog.
 pin_spec_lint() {
-  for spec in SPECS/linux/linux.spec SPECS/linux/linux-esx.spec \
+  for spec in "$KDIR/linux.spec" "$KDIR/linux-esx.spec" \
               SPECS/postgresql/postgresql18.spec; do
     [ -f "$spec" ] || continue
     python3 - "$spec" << 'PY'
@@ -977,7 +1101,7 @@ while i < len(lines):
             i += 1
         out.append('''    if git apply "$DOWNSTREAM_PATCH"; then
       echo "[runPh7-2-7] Applied downstream-fixes.patch"
-    elif git apply --exclude='SPECS/linux/*' --exclude='SPECS/90/*' --exclude='SPECS/openssh/*' --exclude='SPECS/stig-hardening/stig-hardening.spec' "$DOWNSTREAM_PATCH"; then
+    elif git apply --exclude='SPECS/linux/*' --exclude='SPECS/[0-9]*/linux/*' --exclude='SPECS/90/*' --exclude='SPECS/openssh/*' --exclude='SPECS/stig-hardening/stig-hardening.spec' "$DOWNSTREAM_PATCH"; then
       echo "[runPh7-2-7] Applied downstream-fixes.patch with stale-spec excludes"
     else
       echo "[runPh7-2-7] WARNING: downstream-fixes.patch still does not apply; continuing" 1>&2

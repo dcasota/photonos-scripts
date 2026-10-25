@@ -2,7 +2,9 @@
 //!
 //! A derived wrapper pins a tarball and applies patch files at build time from
 //! `experimental/linux-<release>`. The branch documents its kernel in
-//! `SPECS/linux/EXPERIMENTAL-<release>.md`; that manifest, the profile and the
+//! `EXPERIMENTAL-<release>.md` of its kernel spec directory - `SPECS/linux` or
+//! `SPECS/<subrelease>/linux`, read from the branch with the same rule a build
+//! uses (`specresolve::kernel_dir_at`); that manifest, the profile and the
 //! computed identity must agree on the tarball URL, its sha512, the tagged
 //! commit and the RPM Version/Release, and every patch file the profile names
 //! must exist on the branch exactly once. Read with `git show`/`git ls-tree`
@@ -85,7 +87,9 @@ pub fn check_manifest(
     target: &KernelRelease,
     md: &str,
     files: &[&str],
+    kdir: &str,
 ) -> Result<Vec<String>> {
+    let kprefix = format!("{kdir}/");
     let f = manifest_fields(md)?;
     let row = |k: &str| {
         f.get(k)
@@ -166,11 +170,11 @@ pub fn check_manifest(
         Ok(())
     };
     for k in &profile.kernel_patches {
-        once("SPECS/linux/", &k.file)?;
+        once(&kprefix, &k.file)?;
         if let Some(r) = &k.replaces {
-            once("SPECS/linux/", r)?;
+            once(&kprefix, r)?;
         }
-        checked.push(format!("SPECS/linux: {}", k.file));
+        checked.push(format!("{kdir}: {}", k.file));
     }
     if let Some(ip) = &profile.installer_patches {
         for p in &ip.patches {
@@ -183,9 +187,10 @@ pub fn check_manifest(
 
 /// Check a FIPS series manifest (JSON, from the branch) against the branch
 /// file list: the shape the wrapper's editor relies on, and every file it
-/// names present exactly once under SPECS/linux/ (rpm sees the directory
-/// flattened, so a basename must be unique there).
-pub fn check_fips_manifest(json: &str, files: &[&str]) -> Result<Vec<String>> {
+/// names present exactly once under the kernel spec directory (rpm sees the
+/// directory flattened, so a basename must be unique there).
+pub fn check_fips_manifest(json: &str, files: &[&str], kdir: &str) -> Result<Vec<String>> {
+    let kprefix = format!("{kdir}/");
     let bad = |what: &str, why: String| verify_err(format!("FIPS manifest {what}"), "valid", why);
     let m: serde_json::Value =
         serde_json::from_str(json).map_err(|e| bad("JSON", e.to_string()))?;
@@ -277,11 +282,11 @@ pub fn check_fips_manifest(json: &str, files: &[&str]) -> Result<Vec<String>> {
     for f in &named {
         let hits = files
             .iter()
-            .filter(|p| p.starts_with("SPECS/linux/") && p.rsplit('/').next() == Some(f.as_str()))
+            .filter(|p| p.starts_with(&kprefix) && p.rsplit('/').next() == Some(f.as_str()))
             .count();
         if hits != 1 {
             return Err(verify_err(
-                format!("FIPS file {f} under SPECS/linux/"),
+                format!("FIPS file {f} under {kprefix}"),
                 "exactly one",
                 hits.to_string(),
             ));
@@ -318,25 +323,21 @@ pub fn verify(repo: &Path, profile: &Profile) -> Result<BranchReport> {
     })?
     .trim()
     .to_string();
-    let manifest = format!("SPECS/linux/EXPERIMENTAL-{}.md", target.ksrc());
+    // the kernel directory of the branch, by the rule a build of it uses
+    let sub = git(repo, &["show", &format!("{commit}:build-config.json")])
+        .ok()
+        .and_then(|t| crate::specresolve::subrelease_in(&t))
+        .ok_or_else(|| verify_err(format!("build-config.json at {git_ref}"), "a photon-subrelease", "none"))?;
+    let kdir = crate::specresolve::kernel_dir_at(repo, &commit, Some(sub)).map_err(|e| verify_err("kernel spec directory", "exactly one", e))?;
+    let manifest = format!("{kdir}/EXPERIMENTAL-{}.md", target.ksrc());
     let md = git(repo, &["show", &format!("{commit}:{manifest}")])?;
-    let listing = git(
-        repo,
-        &[
-            "ls-tree",
-            "-r",
-            "--name-only",
-            &commit,
-            "--",
-            "SPECS/linux",
-            "SPECS/photon-os-installer",
-        ],
-    )?;
+    let listing = git(repo, &["ls-tree", "-r", "--name-only", &commit, "--", &kdir, "SPECS/photon-os-installer"])?;
     let files: Vec<&str> = listing.lines().collect();
-    let mut checked = check_manifest(profile, &target, &md, &files)?;
+    let mut checked = vec![format!("kernel spec directory {kdir} (subrelease {sub})")];
+    checked.extend(check_manifest(profile, &target, &md, &files, &kdir)?);
     if let Some(f) = &profile.fips {
-        let json = git(repo, &["show", &format!("{commit}:{}", f.manifest)])?;
-        checked.extend(check_fips_manifest(&json, &files)?);
+        let json = git(repo, &["show", &format!("{commit}:{kdir}/{}", f.manifest)])?;
+        checked.extend(check_fips_manifest(&json, &files, &kdir)?);
     }
     Ok(BranchReport {
         git_ref,
@@ -378,7 +379,7 @@ mod tests {
     #[test]
     fn a_matching_manifest_and_file_list_pass() {
         let p = profile();
-        let c = check_manifest(&p, &p.release().unwrap(), &md(), &FILES).unwrap();
+        let c = check_manifest(&p, &p.release().unwrap(), &md(), &FILES, "SPECS/linux").unwrap();
         assert!(c.iter().any(|l| l.contains("93f51579")), "{c:?}");
     }
 
@@ -400,11 +401,11 @@ mod tests {
         ] {
             let m = md().replacen(from, to, 1);
             assert_ne!(m, md());
-            let e = check_manifest(&p, &t, &m, &FILES).unwrap_err().to_string();
+            let e = check_manifest(&p, &t, &m, &FILES, "SPECS/linux").unwrap_err().to_string();
             assert!(e.contains(needle), "{needle}: {e}");
         }
         let dup = format!("{}| sha512 | x |\n", md());
-        assert!(check_manifest(&p, &t, &dup, &FILES)
+        assert!(check_manifest(&p, &t, &dup, &FILES, "SPECS/linux")
             .unwrap_err()
             .to_string()
             .contains("twice"));
@@ -419,13 +420,13 @@ mod tests {
             .copied()
             .filter(|f| !f.contains("-7.3.patch"))
             .collect();
-        assert!(check_manifest(&p, &t, &md(), &missing)
+        assert!(check_manifest(&p, &t, &md(), &missing, "SPECS/linux")
             .unwrap_err()
             .to_string()
             .contains("kcfi-7.3.patch"));
         let mut twice = FILES.to_vec();
         twice.push("SPECS/linux/other/0001-gcc-rap-plugin-with-kcfi-7.3.patch");
-        assert!(check_manifest(&p, &t, &md(), &twice)
+        assert!(check_manifest(&p, &t, &md(), &twice, "SPECS/linux")
             .unwrap_err()
             .to_string()
             .contains("exactly one"));
@@ -435,7 +436,7 @@ mod tests {
             .filter(|f| !f.contains("0008"))
             .chain(["SPECS/linux/0008-x.patch"])
             .collect();
-        assert!(check_manifest(&p, &t, &md(), &wrong_dir).is_err());
+        assert!(check_manifest(&p, &t, &md(), &wrong_dir, "SPECS/linux").is_err());
     }
 
     #[test]
@@ -462,6 +463,7 @@ mod tests {
             std::fs::write(&path, "x\n").unwrap();
         }
         std::fs::write(dir.join("SPECS/linux/EXPERIMENTAL-7.3-rc4.md"), md()).unwrap();
+        crate::specresolve::test_release_config(&dir, 92);
         g(&["add", "-A"]);
         g(&["commit", "-q", "-m", "fixture"]);
         let p = profile();
@@ -478,6 +480,72 @@ mod tests {
         assert_eq!(r.manifest, "SPECS/linux/EXPERIMENTAL-7.3-rc4.md");
         assert_eq!(r.commit.len(), 40);
         assert!(verify(&dir.join("missing"), &p).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The per-subrelease layout: the kernel lives in SPECS/<n>/linux, and the
+    /// branch is checked in the directory that builds its subrelease - not in
+    /// SPECS/linux, and not in another subrelease's directory.
+    #[test]
+    fn the_kernel_directory_is_read_from_the_branch() {
+        let dir = std::env::temp_dir().join(format!("shk-branch-sr-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let g = |args: &[&str]| {
+            let st = Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(["-c", "user.name=T", "-c", "user.email=t@example.invalid"])
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .stdout(Stdio::null())
+                .status()
+                .unwrap();
+            assert!(st.success(), "{args:?}");
+        };
+        g(&["init", "-q"]);
+        let put = |rel: &str, text: &str| {
+            let path = dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        };
+        put("SPECS/91/linux/linux.spec", "%global build_if %{photon_subrelease} == 91\nName: linux\n");
+        put("SPECS/92/linux/linux.spec", "%global build_if %{photon_subrelease} >= 92\nName: linux\n");
+        for f in FILES.iter().filter(|f| f.starts_with("SPECS/linux/") && !f.ends_with("linux.spec")) {
+            put(&f.replacen("SPECS/linux/", "SPECS/92/linux/", 1), "x\n");
+            // a decoy in the other subrelease's directory must not count
+            put(&f.replacen("SPECS/linux/", "SPECS/91/linux/", 1), "x\n");
+        }
+        for f in FILES.iter().filter(|f| f.starts_with("SPECS/photon-os-installer/")) {
+            put(f, "x\n");
+        }
+        put("SPECS/92/linux/EXPERIMENTAL-7.3-rc4.md", &md());
+        crate::specresolve::test_release_config(&dir, 92);
+        g(&["add", "-A"]);
+        g(&["commit", "-q", "-m", "fixture"]);
+        g(&["update-ref", "refs/remotes/origin/experimental/linux-7.3-rc4", "HEAD"]);
+        let p = profile();
+        let r = verify(&dir, &p).unwrap();
+        assert_eq!(r.manifest, "SPECS/92/linux/EXPERIMENTAL-7.3-rc4.md");
+        assert!(r.checked.iter().any(|c| c == "kernel spec directory SPECS/92/linux (subrelease 92)"), "{:?}", r.checked);
+        assert!(r.checked.iter().any(|c| c.starts_with("SPECS/92/linux: ")), "{:?}", r.checked);
+        // the patch only in the other subrelease's directory: refused
+        g(&["rm", "-q", "SPECS/92/linux/secure/0001-gcc-rap-plugin-with-kcfi-7.3.patch"]);
+        g(&["commit", "-q", "-m", "drop"]);
+        g(&["update-ref", "refs/remotes/origin/experimental/linux-7.3-rc4", "HEAD"]);
+        let e = verify(&dir, &p).unwrap_err().to_string();
+        assert!(e.contains("kcfi-7.3.patch") && e.contains("SPECS/92/linux/"), "{e}");
+        // two directories building the same subrelease: no guess
+        put("SPECS/92/linux/linux.spec", "%global build_if %{photon_subrelease} >= 91\nName: linux\n");
+        g(&["add", "-A"]);
+        g(&["commit", "-q", "-m", "ambiguous"]);
+        g(&["update-ref", "refs/remotes/origin/experimental/linux-7.3-rc4", "HEAD"]);
+        let _ = std::fs::write(dir.join("build-config.json"), "{\"photon-build-param\": {\"photon-subrelease\": \"91\", \"photon-dist-tag\": \".ph5\"}}\n");
+        g(&["add", "-A"]);
+        g(&["commit", "-q", "-m", "sr91"]);
+        g(&["update-ref", "refs/remotes/origin/experimental/linux-7.3-rc4", "HEAD"]);
+        let e = verify(&dir, &p).unwrap_err().to_string();
+        assert!(e.contains("2 kernel directories build subrelease 91"), "{e}");
         let _ = std::fs::remove_dir_all(&dir);
     }
     const FIPS_JSON: &str = r#"{
@@ -497,28 +565,28 @@ mod tests {
 
     #[test]
     fn a_fips_manifest_whose_files_are_on_the_branch_passes() {
-        let c = check_fips_manifest(FIPS_JSON, &FIPS_FILES).unwrap();
+        let c = check_fips_manifest(FIPS_JSON, &FIPS_FILES, "SPECS/linux").unwrap();
         assert!(c[0].contains("4 files present once"), "{c:?}");
     }
 
     #[test]
     fn a_fips_manifest_is_refused_when_a_file_is_missing_or_ambiguous() {
         let missing: Vec<&str> = FIPS_FILES.iter().copied().filter(|f| !f.ends_with("w-7.3.c")).collect();
-        let e = check_fips_manifest(FIPS_JSON, &missing).unwrap_err().to_string();
+        let e = check_fips_manifest(FIPS_JSON, &missing, "SPECS/linux").unwrap_err().to_string();
         assert!(e.contains("w-7.3.c"), "{e}");
         let mut dup = FIPS_FILES.to_vec();
         dup.push("SPECS/linux/other/a-7.3.patch");
-        let e = check_fips_manifest(FIPS_JSON, &dup).unwrap_err().to_string();
+        let e = check_fips_manifest(FIPS_JSON, &dup, "SPECS/linux").unwrap_err().to_string();
         assert!(e.contains("a-7.3.patch") && e.contains('2'), "{e}");
     }
 
     #[test]
     fn a_fips_manifest_with_a_patch_outside_every_range_is_refused() {
         let j = FIPS_JSON.replace("\"10119\"", "\"10150\"");
-        let e = check_fips_manifest(&j, &FIPS_FILES).unwrap_err().to_string();
+        let e = check_fips_manifest(&j, &FIPS_FILES, "SPECS/linux").unwrap_err().to_string();
         assert!(e.contains("Patch10150"), "{e}");
         let j = FIPS_JSON.replace("\"10003\": \"superseded\"", "\"10001\": \"superseded\"");
-        let e = check_fips_manifest(&j, &FIPS_FILES).unwrap_err().to_string();
+        let e = check_fips_manifest(&j, &FIPS_FILES, "SPECS/linux").unwrap_err().to_string();
         assert!(e.contains("Patch10001"), "{e}");
     }
 }

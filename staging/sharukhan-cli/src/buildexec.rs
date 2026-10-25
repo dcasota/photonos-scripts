@@ -276,10 +276,13 @@ fn kernel_pins(c: &mut Ctx, kernel: &str, script: &str) -> Result<(), String> {
         ));
         return Ok(());
     }
+    // the kernel spec directory the build itself uses; the pin script takes
+    // it as KDIR instead of resolving it again
+    let kdir = crate::specresolve::kernel_dir(&tree, build_subrelease(c, &tree))?;
     let file = c.spec.base_dir.join(format!(".sharukhan-pins-{kernel}.sh"));
     fs::write(&file, script).map_err(|e| format!("{}: {e}", file.display()))?;
     c.say(&format!(
-        "  sourcing {} in {} (CANISTER_MODE={mode})",
+        "  sourcing {} in {} (CANISTER_MODE={mode}, KDIR={kdir})",
         file.display(),
         tree.display()
     ));
@@ -294,6 +297,7 @@ fn kernel_pins(c: &mut Ctx, kernel: &str, script: &str) -> Result<(), String> {
         .env("RELEASE_BRANCH", &c.spec.release)
         .env("COMMON_DIR", c.spec.tree(Tree::Common))
         .env("CANISTER_MODE", mode)
+        .env("KDIR", &kdir)
         .env("PIN_REQUIRE_KVER", "1")
         .output()
         .map_err(|e| format!("running the {kernel} pin script: {e}"))?;

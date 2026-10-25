@@ -1371,7 +1371,7 @@ How it is built, in short (the full contract is [FRD-001](specs/features/kernel-
   (`base.wrapper_version`), because a fix in the base flows into every derived wrapper.
 
 `runPh7-3-RC4.sh` is the first derived wrapper; the golden test keeps it byte-identical to what the
-committed base and `profiles/kernel/7.3-rc4.json` derive (wrapper v10, base v14).
+committed base and `profiles/kernel/7.3-rc4.json` derive (wrapper v11, base v15).
 
 ### A FIPS canister series for a profile kernel
 

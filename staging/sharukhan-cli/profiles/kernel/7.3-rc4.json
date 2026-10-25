@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "kernel": "7.3-rc4",
-  "base": {"script": "runPh7-2-7.sh", "kernel": "7.2.7", "wrapper_version": 14},
-  "wrapper_version": 10,
+  "base": {"script": "runPh7-2-7.sh", "kernel": "7.2.7", "wrapper_version": 15},
+  "wrapper_version": 11,
   "summary": "RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush, FIPS canister for canister builds",
   "rpm_release_iteration": 1,
   "source": {
@@ -100,7 +100,7 @@
   },
   "prebuild_extra": ["cloud-init", "sudo", "dbus", "photon-os-installer"],
   "fips": {
-    "manifest": "SPECS/linux/fips-7.3/manifest.json",
+    "manifest": "fips-7.3/manifest.json",
     "lkcm_version": "7.3",
     "comment": [
       "FIPS canister series ported to Linux 7.3-rc4 (SPECS/linux/fips-7.3 on the release branch;",

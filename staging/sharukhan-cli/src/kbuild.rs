@@ -232,8 +232,9 @@ mod tests {
         let kb = load("7.3-rc4").unwrap();
         assert_eq!(kb.branch, "experimental/linux-7.3-rc4");
         assert_eq!(kb.nevr, "7.3.0-0.rc4.1.ph5");
-        assert!(kb.pins.contains("pin_73rc4 SPECS/linux/linux.spec"));
-        assert!(kb.pins.contains("enable_fips_73rc4 SPECS/linux/linux-esx.spec"));
+        assert!(kb.pins.contains("pin_73rc4 \"$KDIR/linux.spec\""));
+        assert!(kb.pins.contains("enable_fips_73rc4 \"$KDIR/linux-esx.spec\""));
+        assert!(!kb.pins.contains("SPECS/linux/linux"), "no kernel path written into the pins");
         assert!(kb.pins.trim_end().ends_with("worktree_now"));
         assert!(kb.prebuild.contains(&"photon-os-installer".to_string()), "{:?}", kb.prebuild);
     }
