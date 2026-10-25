@@ -248,7 +248,7 @@ sharukhan plan --only k01,k02        # what will run, is the ISO cached
 sharukhan status                     # room to run it, and how many at once
 sharukhan run --dry-run --only k01,k02   # every gate, for real, executing nothing
 nohup sharukhan run --only k01,k02 &     # prints a job id
-tail -f /root/photon-mc/run-logs/run-<stamp>.log   # follow it (the path is printed)
+sharukhan watch --job 1              # follow it (the run log, until the job ends)
 sharukhan stop --job 1               # if it has to end early
 sharukhan report --only k01,k02      # what happened, against the documented verdict
 sharukhan findings                   # what previous runs established
@@ -743,11 +743,9 @@ reports what is up and leaves `sharukhan teardown --id <id>` to the operator.
 
 ### `watch` — what is running, and follow it
 
-> **In this build** `sharukhan watch` is dispatched to the upstream watcher
-> (see "The upstream watcher and its events"), so `watch --job <id>` and the
-> job table view below are not reachable from the command line. The output
-> below is from before that change; follow a job with `tail -f` on its run log
-> and list jobs with `sharukhan status`.
+> `sharukhan watch --job <id>` follows a job. `sharukhan watch` without
+> `--job` is the upstream watcher (see "The upstream watcher and its
+> events"); list jobs with `sharukhan status`.
 
 With no arguments: every job, whether its process is really there, the matrix
 VMs, and free space.
@@ -2140,13 +2138,14 @@ sharukhan run --all --allow-build
 
 ### Following a job
 
-`sharukhan watch` is the upstream watcher (see its chapter); `watch --job`
-does not follow a job in this build. Follow the run log the job printed
-instead:
+`sharukhan watch --job <id>` prints the job's state and follows its run log
+until it ends (`--once` prints once). Without `--job`, `sharukhan watch` is
+the upstream watcher (see its chapter).
 
 ```bash
-tail -f /root/photon-mc/run-logs/run-<stamp>.log
-sharukhan status
+sharukhan watch --job 90 --once      # state and the latest log lines
+sharukhan watch --job 90             # follow until the job ends
+sharukhan status                     # every job, and whether its process is alive
 ```
 
 ## Things learned the hard way

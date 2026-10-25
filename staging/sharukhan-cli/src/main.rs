@@ -138,7 +138,7 @@ PHASES (the same code `run` calls, one step at a time)
                         decide | body | lint | approve-upstream | reset-trees: the build trees back to the
                         gate repository's branches)
     service             install | status | remove the host services, their settings and secret files
-    escalate            hand a refused PR to Claude under budgets (preflight | ledger | --run --pr)
+    escalate            hand a refused PR to Claude under budgets (preflight | queue | ledger | --run --pr)
     wrapper             derive, check and verify build wrappers for any kernel.org
                         release (sharukhan wrapper --help)
     ingest              fold the evidence files into the memory database (idempotent)
@@ -604,7 +604,9 @@ fn main() -> ExitCode {
         }
         return ExitCode::from(sync::cli(&argv[1..]));
     }
-    if let Some(c @ ("watch" | "events")) = argv.first().map(String::as_str) {
+    // `watch --job <id>` follows a job (runner::cmd_watch); any other `watch` is the upstream watcher
+    let follows_job = argv.first().map(String::as_str) == Some("watch") && argv.iter().any(|a| a == "--job");
+    if let Some(c @ ("watch" | "events")) = argv.first().map(String::as_str).filter(|_| !follows_job) {
         return ExitCode::from(watch::cli(c, &argv[1..]));
     }
     if argv.first().map(String::as_str) == Some("service") {
