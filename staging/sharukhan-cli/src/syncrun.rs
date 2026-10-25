@@ -1166,7 +1166,7 @@ pub fn decide(c: &Connection, run: i64, n: i64, cand: &str, base_to: Option<&str
 
 pub fn cli(args: &[String]) -> Option<u8> {
     let sub = args.first().map(String::as_str)?;
-    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto" | "lint" | "body" | "decide") {
+    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto" | "lint" | "body" | "decide" | "reset-trees") {
         return None;
     }
     let cfg = crate::config::Config::load();
@@ -1185,6 +1185,21 @@ pub fn cli(args: &[String]) -> Option<u8> {
         let until = until_arg.as_deref();
         let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(String::as_str);
         match sub {
+            "reset-trees" => {
+                // the build trees back to the gate repository's branches, as PREPARE does,
+                // for a gate run by hand; refused while a run or job uses them
+                let busy = crate::service::busy(&cfg.memory_db)?;
+                if !busy.is_empty() {
+                    return Err(format!("{} running; the build trees are in use", busy.join(", ")));
+                }
+                let mut done = Vec::new();
+                for (tree, branch) in [(cfg.build_common.as_str(), cfg.build_common.as_str()), (cfg.release.as_str(), cfg.release.as_str())] {
+                    let dir = cfg.build_root.join(tree);
+                    reset_build_tree(&dir, &cfg.variant_patches, &cfg.gate_repo, branch)?;
+                    done.push(format!("{} = {branch} {}", dir.display(), &git(&dir, &["rev-parse", "HEAD"])?[..12]));
+                }
+                Ok(format!("clean: {}; `sharukhan variant-patches` makes the patches against them", done.join(", ")))
+            }
             "decide" => {
                 let usage = "sync decide <run> <pr> candidate <ref> [--base <branch>]";
                 let id = num(1)?;
