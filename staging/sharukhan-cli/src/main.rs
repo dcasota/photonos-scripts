@@ -2221,10 +2221,15 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
                         )),
                     )
                 }) {
-                    Ok(n) => println!(
-                        "  [ok   ] the package builder parses all {n} specs of {branch} and resolves every requirement; the spec checker accepts its {} changed spec(s)",
-                        changed.len()
-                    ),
+                    Ok((n, warnings)) => {
+                        println!(
+                            "  [ok   ] the package builder parses all {n} specs of {branch} and resolves every requirement; the spec checker accepts its {} changed spec(s)",
+                            changed.len()
+                        );
+                        for w in &warnings {
+                            println!("  [warn ] {w}");
+                        }
+                    }
                     Err(e) => {
                         bad += 1;
                         println!("  [FAIL ] the package builder refuses {branch}: {e}");

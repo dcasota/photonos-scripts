@@ -298,7 +298,7 @@ pub fn check(
     release_specs: &Path,
     changed: &[PathBuf],
     log_dir: &Path,
-) -> Result<usize, String> {
+) -> Result<(usize, Vec<String>), String> {
     if let Some(m) = inputs.missing() {
         return Err(format!("cannot run the package builder's spec parser: {m}"));
     }
@@ -339,10 +339,19 @@ pub fn check(
             .find_map(|l| l.strip_prefix("SPECDATA-OK "))
             .and_then(|n| n.trim().parse::<usize>().ok())
         {
-            return Ok(n);
+            return Ok((n, checker_warnings(&format!("{stdout}\n{stderr}"))));
         }
     }
     Err(builder_error(&stdout, &stderr))
+}
+
+/// The spec checker's advisory lines ("WARNING in <spec>: ..."): findings a
+/// build does not stop for, such as a broken branch of a build toggle the
+/// build does not use. Reported, never a refusal.
+pub fn checker_warnings(out: &str) -> Vec<String> {
+    let mut v: Vec<String> = out.lines().map(str::trim).filter(|l| l.starts_with("WARNING in ")).map(str::to_string).collect();
+    v.dedup();
+    v
 }
 
 /// The spec checker's own error lines ("ERROR in <spec>: ...").
@@ -379,6 +388,18 @@ pub fn builder_error(stdout: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn advisory_lines_are_kept_apart_from_errors() {
+        // the checker's own output for systemd's broken STIG branch in warn mode
+        let out = "Checking spec file: /t/SPECS/systemd/systemd.spec\n--- List of warnings in /t/SPECS/systemd/systemd.spec ---\n\n --- Build toggle parse matrix findings ---\n\
+                   WARNING in /t/SPECS/systemd/systemd.spec: build toggle STIG_HARDEN is declared but unreachable\n\
+                   WARNING in /t/SPECS/systemd/systemd.spec: rpmspec failed for cell [STIG_HARDEN=1]\nerror: patch 4 defined multiple times\n";
+        let w = checker_warnings(out);
+        assert_eq!(w.len(), 2);
+        assert!(w[1].ends_with("cell [STIG_HARDEN=1]"));
+        assert_eq!(checker_errors(out), "the spec checker failed (build.py's check_spec_files would stop the build)", "a warning is not an error");
+    }
 
     #[test]
     fn the_builders_exception_is_what_is_reported() {

@@ -469,6 +469,7 @@ fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
         let bad: Vec<String> = checks.iter().filter(|c| !c.ok).map(|c| format!("{} sr{} {}: {}", c.spec, c.subrelease, c.what, c.detail)).collect();
         log.push(format!("#{n}: {} check(s), {} failed", checks.len(), bad.len()));
         log.extend(bad.iter().map(|b| format!("  FAIL {b}")));
+        log.extend(checks.iter().filter(|c| c.what == "check_spec advisory").map(|c| format!("  WARN {} sr{}: {}", c.spec, c.subrelease, c.detail)));
         let st = if bad.is_empty() { "verified" } else { "failed" };
         ctx.c.execute("UPDATE sync_pr SET state = ?1 WHERE run_id = ?2 AND number = ?3", rusqlite::params![st, ctx.run, n]).map_err(sql)?;
         if !bad.is_empty() {

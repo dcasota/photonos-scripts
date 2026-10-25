@@ -1681,12 +1681,16 @@ fn build_variant(
         &changed,
         &cfg.work.join(format!("specdata-{}", v.name)),
     ) {
-        Ok(n) => {
+        Ok((n, warnings)) => {
             log(&format!(
-                "  poi-{}: the package builder parses all {n} specs and resolves every requirement; the spec checker accepts the {} changed spec(s)",
+                "  poi-{}: the package builder parses all {n} specs and resolves every requirement; the spec checker accepts the {} changed spec(s){}",
                 v.name,
-                changed.len()
+                changed.len(),
+                if warnings.is_empty() { String::new() } else { format!(", with {} advisory warning(s) a build does not stop for:", warnings.len()) }
             ));
+            for w in &warnings {
+                log(&format!("    {w}"));
+            }
             Ok(())
         }
         Err(e) => Err(format!("the package builder refuses the variant's specs: {e}")),

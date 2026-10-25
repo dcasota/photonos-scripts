@@ -668,6 +668,8 @@ pub fn verify(
         .filter(|f| work.join(f).is_file())
         .collect();
     let checker = common.join("support/spec-checker/check_spec.py");
+    // a checker with the parse matrix takes --parse-matrix; an older one would refuse the option
+    let advisory = fs::read_to_string(&checker).map(|t| t.contains("\"--parse-matrix\"")).unwrap_or(false);
     let mut checks = Vec::new();
     // the subreleases of the merged tree itself: a PR that conditions a spec
     // on a new subrelease is checked at it
@@ -720,14 +722,12 @@ pub fn verify(
                     detail: err.lines().find(|l| l.contains("error")).unwrap_or("").to_string(),
                 });
             }
-            let args: Vec<OsString> = vec![
-                checker.clone().into(),
-                "--mainline".into(),
-                mainline.clone().into(),
-                "--subrelease".into(),
-                sub.to_string().into(),
-                abs.clone().into(),
-            ];
+            // a parse matrix finding is advisory here, as in a build: reported, not a failure
+            let mut args: Vec<OsString> = vec![checker.clone().into()];
+            if advisory {
+                args.extend(["--parse-matrix".into(), "warn".into()]);
+            }
+            args.extend(["--mainline".into(), mainline.clone().into(), "--subrelease".into(), sub.to_string().into(), abs.clone().into()]);
             let o = crate::builder::python_command(common, &args, log)?
                 .output()
                 .map_err(|e| format!("check_spec: {e}"))?;
@@ -739,6 +739,16 @@ pub fn verify(
                 ok: o.status.success(),
                 detail: all.lines().filter(|l| l.contains("ERROR") || l.contains("Error")).take(2).collect::<Vec<_>>().join(" | "),
             });
+            let warnings = crate::specdata::checker_warnings(&all);
+            if !warnings.is_empty() {
+                checks.push(Check {
+                    spec: f.clone(),
+                    subrelease: sub,
+                    what: "check_spec advisory".into(),
+                    ok: true,
+                    detail: format!("{} warning(s): {}", warnings.len(), warnings.iter().take(3).cloned().collect::<Vec<_>>().join(" | ")),
+                });
+            }
         }
         // one changelog entry, one short line, against the base; a spec whose
         // changelog lives in included files is checked per file below, and
