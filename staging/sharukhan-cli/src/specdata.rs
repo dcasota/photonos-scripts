@@ -345,6 +345,18 @@ pub fn check(
     Err(builder_error(&stdout, &stderr))
 }
 
+/// The head of a spec checker command line that checks as build.py does: a
+/// checker with the parse matrix (#25) is told its findings are warnings,
+/// because build.py's call makes them warnings; an older checker has no such
+/// option and is called as before.
+pub fn checker_argv(checker: &Path) -> Vec<OsString> {
+    let mut v: Vec<OsString> = vec![checker.into()];
+    if std::fs::read_to_string(checker).map(|t| t.contains("\"--parse-matrix\"")).unwrap_or(false) {
+        v.extend(["--parse-matrix".into(), "warn".into()]);
+    }
+    v
+}
+
 /// The spec checker's advisory lines ("WARNING in <spec>: ..."): findings a
 /// build does not stop for, such as a broken branch of a build toggle the
 /// build does not use. Reported, never a refusal.
@@ -388,6 +400,19 @@ pub fn builder_error(stdout: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_checker_is_called_as_build_py_calls_it() {
+        let d = std::env::temp_dir().join(format!("shk-checker-argv-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let new = d.join("new.py");
+        std::fs::write(&new, "parser.add_argument(\n    \"--parse-matrix\",\n").unwrap();
+        let old = d.join("old.py");
+        std::fs::write(&old, "parser.add_argument(\"--mainline\")\n").unwrap();
+        assert_eq!(checker_argv(&new), vec![OsString::from(&new), "--parse-matrix".into(), "warn".into()]);
+        assert_eq!(checker_argv(&old), vec![OsString::from(&old)], "an older checker would refuse the option");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn advisory_lines_are_kept_apart_from_errors() {

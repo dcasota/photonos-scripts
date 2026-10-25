@@ -339,7 +339,8 @@ pub fn regenerate(r: &Request, log: &mut dyn FnMut(&str)) -> Result<String, Stri
             edited.push(tree.join(&spec));
         }
         // the specs as build.py checks them
-        let mut args: Vec<std::ffi::OsString> = vec![checker.clone().into(), "--subrelease".into(), sub.to_string().into()];
+        let mut args: Vec<std::ffi::OsString> = crate::specdata::checker_argv(&checker);
+        args.extend(["--subrelease".into(), sub.to_string().into()]);
         args.extend(edited.iter().map(|p| p.clone().into_os_string()));
         let o = crate::builder::python_command(r.common, &args, log)?.output().map_err(|e| format!("check_spec: {e}"))?;
         if !o.status.success() {
@@ -350,6 +351,9 @@ pub fn regenerate(r: &Request, log: &mut dyn FnMut(&str)) -> Result<String, Stri
             ));
         }
         log("  check_spec: exit 0");
+        for w in crate::specdata::checker_warnings(&format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))) {
+            log(&format!("  check_spec advisory: {w}"));
+        }
         // index lines carry blob hashes that churn on every base move
         let diff = git(&tree, &["diff", "--", &format!("{kdir}/")])?;
         Ok(diff.lines().filter(|l| !l.starts_with("index ") && !l.starts_with("diff --git")).map(|l| format!("{l}\n")).collect())

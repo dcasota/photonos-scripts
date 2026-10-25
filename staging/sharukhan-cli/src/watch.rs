@@ -74,6 +74,8 @@ pub const KINDS: &[&str] = &[
     "sync-failed",
     "sync-done",
     "sync-description-edited",
+    "spec-advisory",
+    "sync-held",
     "escalation-proposed",
     "escalation-failed",
     "escalation-parked",

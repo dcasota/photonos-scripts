@@ -321,11 +321,9 @@ fn kernel_spec_check(c: &Ctx, tree: &Path, which: &[&str]) -> Result<(bool, Vec<
     let sub = crate::specresolve::tree_subrelease(tree)
         .ok_or_else(|| format!("{}/build-config.json has no photon-subrelease", tree.display()))?;
     let specs = tree.join(crate::specresolve::kernel_dir(tree, Some(sub))?);
-    let mut args: Vec<std::ffi::OsString> = vec![
-        common.join("support/spec-checker/check_spec.py").into(),
-        "--subrelease".into(),
-        sub.to_string().into(),
-    ];
+    // as build.py checks them: a parse matrix finding is a warning, not a refusal
+    let mut args: Vec<std::ffi::OsString> = crate::specdata::checker_argv(&common.join("support/spec-checker/check_spec.py"));
+    args.extend(["--subrelease".into(), sub.to_string().into()]);
     args.extend(which.iter().map(|w| specs.join(w).into_os_string()));
     let out = crate::builder::python_command(&common, &args, &mut |l| eprintln!("{l}"))?
         .output()
@@ -376,7 +374,12 @@ fn prune_kernel_specs(c: &mut Ctx, kernel: &str) -> Result<(), String> {
             listed.extend(l.iter().cloned());
             per_spec.push((spec, l));
         }
-        let (ok, l, _) = kernel_spec_check(c, &tree, &["linux.spec", "linux-esx.spec"])?;
+        let (ok, l, text) = kernel_spec_check(c, &tree, &["linux.spec", "linux-esx.spec"])?;
+        if round == 1 {
+            for w in crate::specdata::checker_warnings(&text) {
+                c.say(&format!("    check_spec advisory: {w}"));
+            }
+        }
         all_ok &= ok;
         listed.extend(l);
         listed.sort();

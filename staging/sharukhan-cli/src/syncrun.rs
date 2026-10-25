@@ -477,6 +477,20 @@ fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
         }
     }
     fs::write(ctx.dir.join("VERIFY.log"), log.join("\n") + "\n").map_err(|e| format!("{e}"))?;
+    // advisory findings do not stop the run, but someone must hear of them
+    let advisories: Vec<&String> = log.iter().filter(|l| l.starts_with("  WARN ")).collect();
+    if !advisories.is_empty() {
+        crate::escalate::record_once(
+            ctx.c,
+            "spec-advisory",
+            &format!("sync run {}", ctx.run),
+            &format!(
+                "{} advisory spec check finding(s) a build does not stop for, e.g. {}; see VERIFY.log",
+                advisories.len(),
+                advisories[0].trim_start_matches("  WARN ")
+            ),
+        )?;
+    }
     if failed.is_empty() {
         Ok(Outcome::Done(format!("{} PR(s) verified", rows.len())))
     } else {
@@ -1521,6 +1535,19 @@ fn announce(c: &Connection, run: i64, outcome: &str) -> Result<(), String> {
     crate::watch::record(c, kind, &format!("sync run {run}"), None, None, outcome).map(|_| ())
 }
 
+/// Open fork PRs whose branch in the gate repository is not GitHub's head:
+/// (number, branch, local head, GitHub head). Such a branch holds a change
+/// not published yet (or GitHub moved on), and ANALYZE refuses the run for
+/// it, so `sync auto` does not start one until they agree.
+pub fn unpublished(local: &dyn Fn(&str) -> Option<String>, prs: &[crate::sync::Pr]) -> Vec<(u64, String, String, String)> {
+    prs.iter()
+        .filter_map(|p| {
+            let l = local(&p.head_ref)?;
+            (l != p.gh_head).then(|| (p.number, p.head_ref.clone(), l, p.gh_head.clone()))
+        })
+        .collect()
+}
+
 /// Seconds since an event's stamp, if it parses.
 fn age_s(at: &str) -> Option<i64> {
     Some(crate::health::epoch(&now())? - crate::health::epoch(at)?)
@@ -1562,6 +1589,23 @@ pub fn auto(
         if a < quiet_s {
             return Ok(format!("the fork moved {a}s ago; waiting for {quiet_s}s of quiet"));
         }
+    }
+    // a change held in the gate repository and not on GitHub would stop ANALYZE
+    let prs = crate::sync::open_prs(fork)?;
+    let held = unpublished(&|b| git(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{b}")]).ok(), &prs);
+    if !held.is_empty() {
+        let what = held
+            .iter()
+            .map(|(n, b, l, g)| format!("#{n} {b} (gate {} / GitHub {})", &l[..l.len().min(10)], &g[..g.len().min(10)]))
+            .collect::<Vec<_>>()
+            .join(", ");
+        crate::escalate::record_once(
+            c,
+            "sync-held",
+            &format!("{fork} sync"),
+            &format!("no sync started: the gate repository and GitHub differ for {what}; publish the change or reset the gate branch to GitHub's head"),
+        )?;
+        return Ok(format!("the fork moved, but {} PR(s) differ between the gate repository and GitHub: {what}; the sync waits", held.len()));
     }
     // a gate or build run by hand owns the gate repository and the builder
     let jobs = crate::job::live(c)?;
@@ -2074,6 +2118,20 @@ mod tests {
         assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200, &mut esc).unwrap(), "run 1 is needs-decision; escalation: #23 verified");
         drop(esc);
         assert_eq!(asked, vec![1]);
+    }
+
+    #[test]
+    fn a_change_held_in_the_gate_repository_holds_the_sync() {
+        let pr = |n: u64, b: &str, h: &str| crate::sync::Pr { number: n, base: "5.0".into(), head_ref: b.into(), gh_head: h.into() };
+        let prs = vec![pr(25, "fix/spec-checker-parse-matrix", "a0f2068138"), pr(23, "fix/stig", "447621c3f9"), pr(99, "new/branch", "1111111111")];
+        let local = |b: &str| match b {
+            "fix/spec-checker-parse-matrix" => Some("5ad76466cd".to_string()),
+            "fix/stig" => Some("447621c3f9".to_string()),
+            _ => None,
+        };
+        let held = unpublished(&local, &prs);
+        assert_eq!(held, vec![(25, "fix/spec-checker-parse-matrix".to_string(), "5ad76466cd".to_string(), "a0f2068138".to_string())]);
+        assert!(unpublished(&|_| None, &prs).is_empty(), "a branch the gate repository does not have is ANALYZE's to fetch");
     }
 
     #[test]

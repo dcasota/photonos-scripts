@@ -668,8 +668,6 @@ pub fn verify(
         .filter(|f| work.join(f).is_file())
         .collect();
     let checker = common.join("support/spec-checker/check_spec.py");
-    // a checker with the parse matrix takes --parse-matrix; an older one would refuse the option
-    let advisory = fs::read_to_string(&checker).map(|t| t.contains("\"--parse-matrix\"")).unwrap_or(false);
     let mut checks = Vec::new();
     // the subreleases of the merged tree itself: a PR that conditions a spec
     // on a new subrelease is checked at it
@@ -722,11 +720,8 @@ pub fn verify(
                     detail: err.lines().find(|l| l.contains("error")).unwrap_or("").to_string(),
                 });
             }
-            // a parse matrix finding is advisory here, as in a build: reported, not a failure
-            let mut args: Vec<OsString> = vec![checker.clone().into()];
-            if advisory {
-                args.extend(["--parse-matrix".into(), "warn".into()]);
-            }
+            // checked as build.py checks: a parse matrix finding is a warning, reported below
+            let mut args: Vec<OsString> = crate::specdata::checker_argv(&checker);
             args.extend(["--mainline".into(), mainline.clone().into(), "--subrelease".into(), sub.to_string().into(), abs.clone().into()]);
             let o = crate::builder::python_command(common, &args, log)?
                 .output()
