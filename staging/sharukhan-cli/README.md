@@ -13,7 +13,97 @@ Every command reports what it actually observed. Where a fact cannot be
 established it says so rather than guessing — a harness that confidently
 reports a wrong answer is worse than one that reports nothing.
 
-## Status
+## Contents
+
+- [Status: one CLI, the bash harness archived](#status-one-cli-the-bash-harness-archived)
+- [Build](#build)
+- [Installing the host services: `sharukhan service`](#installing-the-host-services-sharukhan-service)
+  - [What gets installed](#what-gets-installed)
+  - [Install or update](#install-or-update)
+  - [Check: `service status`](#check-service-status)
+  - [Remove: `service remove`](#remove-service-remove)
+  - [Commands run by hand use the same settings](#commands-run-by-hand-use-the-same-settings)
+  - [When the timed sync is needed, and when not](#when-the-timed-sync-is-needed-and-when-not)
+- [Typical session](#typical-session)
+  - [A gate run by hand](#a-gate-run-by-hand)
+  - [A day with the automation](#a-day-with-the-automation)
+- [Running the permutation matrix: commands](#running-the-permutation-matrix-commands)
+  - [`doctor` — check the environment before anything is built or run](#doctor--check-the-environment-before-anything-is-built-or-run)
+  - [`plan` — what would run, and what has to be built first](#plan--what-would-run-and-what-has-to-be-built-first)
+  - [`status` — VMs, disk, and how much parallelism that allows](#status--vms-disk-and-how-much-parallelism-that-allows)
+  - [`findings` — what previous runs established](#findings--what-previous-runs-established)
+  - [`report` — results of the last run of each permutation](#report--results-of-the-last-run-of-each-permutation)
+  - [`run` — drive permutations end to end, sequentially](#run--drive-permutations-end-to-end-sequentially)
+  - [`stop` — end a job and its process tree](#stop--end-a-job-and-its-process-tree)
+  - [`watch` — what is running, and follow it](#watch--what-is-running-and-follow-it)
+  - [The state the job table exists to survive](#the-state-the-job-table-exists-to-survive)
+  - [One phase at a time](#one-phase-at-a-time)
+- [Package lifecycle: install, test and remove every package of a row](#package-lifecycle-install-test-and-remove-every-package-of-a-row)
+- [Build mode: sharukhan builds the ISO itself](#build-mode-sharukhan-builds-the-iso-itself)
+  - [Two trees, and why that matters](#two-trees-and-why-that-matters)
+  - [The common tree must hold only the build's own edits](#the-common-tree-must-hold-only-the-builds-own-edits)
+  - [Test-only changes are compiled in](#test-only-changes-are-compiled-in)
+  - [The canister question, in the order it is asked](#the-canister-question-in-the-order-it-is-asked)
+  - [One build, not two](#one-build-not-two)
+  - [The embedded patch pins Release numbers, and 5.0 moves](#the-embedded-patch-pins-release-numbers-and-50-moves)
+  - [`--compose-only`](#--compose-only)
+  - [The installer that composes the media is the variant's: `composer`](#the-installer-that-composes-the-media-is-the-variants-composer)
+  - [How a medium boots: `iso-boot`](#how-a-medium-boots-iso-boot)
+- [Remaster mode: an Azure variant of an ISO that already exists](#remaster-mode-an-azure-variant-of-an-iso-that-already-exists)
+  - [Why remaster rather than build](#why-remaster-rather-than-build)
+  - [The dependency closure is computed, not listed](#the-dependency-closure-is-computed-not-listed)
+  - [The toolchain comes off the input ISO](#the-toolchain-comes-off-the-input-iso)
+  - [The accelerator is gated on byte identity](#the-accelerator-is-gated-on-byte-identity)
+  - [What verify reads back off the finished ISO](#what-verify-reads-back-off-the-finished-iso)
+  - [The replacement set is derived](#the-replacement-set-is-derived)
+  - [A config change must change the NEVR](#a-config-change-must-change-the-nevr)
+- [Kernel wrappers: `sharukhan wrapper`](#kernel-wrappers-sharukhan-wrapper)
+  - [A FIPS canister series for a profile kernel](#a-fips-canister-series-for-a-profile-kernel)
+- [Kernel-profile builds and runs: `--kernel`](#kernel-profile-builds-and-runs---kernel)
+  - [Linux 7.3-rc4 (2026-09-29)](#linux-73-rc4-2026-09-29)
+- [Keeping the fork's PRs current: `sharukhan sync`](#keeping-the-forks-prs-current-sharukhan-sync)
+  - [The stages](#the-stages)
+  - [Starting, following and resuming a run](#starting-following-and-resuming-a-run)
+  - [When a PR needs a decision](#when-a-pr-needs-a-decision)
+  - [Descriptions](#descriptions)
+  - [Upstream PRs: shared branches, staged first](#upstream-prs-shared-branches-staged-first)
+  - [The timer: `sync auto`](#the-timer-sync-auto)
+  - [Other sync commands](#other-sync-commands)
+- [The escalation: `sharukhan escalate` and `sharukhan mcp`](#the-escalation-sharukhan-escalate-and-sharukhan-mcp)
+  - [Before the first escalation: `escalate preflight`](#before-the-first-escalation-escalate-preflight)
+  - [One escalation, the queue, the ledger](#one-escalation-the-queue-the-ledger)
+  - [Taking a verified proposal](#taking-a-verified-proposal)
+  - [Budgets and price weights](#budgets-and-price-weights)
+  - [How the model is confined](#how-the-model-is-confined)
+  - [The MCP server: `sharukhan mcp`](#the-mcp-server-sharukhan-mcp)
+- [The upstream watcher and its events](#the-upstream-watcher-and-its-events)
+- [Data files the automation reads](#data-files-the-automation-reads)
+  - [`config/variants.conf`: installer variants and the common branches](#configvariantsconf-installer-variants-and-the-common-branches)
+  - [`config/check-prs.tsv`: which PR a check proves](#configcheck-prstsv-which-pr-a-check-proves)
+  - [`memory.db` and `MEMORY.md`](#memorydb-and-memorymd)
+  - [The embedded canister-equivalent patch](#the-embedded-canister-equivalent-patch)
+- [`helper-scripts/` — the run wrappers](#helper-scripts--the-run-wrappers)
+  - [The two-pass protocol](#the-two-pass-protocol)
+  - [They need `MC_GUEST_PASSWORD` in the environment](#they-need-mc_guest_password-in-the-environment)
+  - [Paths are absolute and host-specific](#paths-are-absolute-and-host-specific)
+- [Configuration](#configuration)
+  - [Paths, the VM and the network](#paths-the-vm-and-the-network)
+  - [The settings file and the secret files](#the-settings-file-and-the-secret-files)
+  - [Settings of the build, the fork and the sync](#settings-of-the-build-the-fork-and-the-sync)
+- [The network axis](#the-network-axis)
+  - [What this host cannot test, and why](#what-this-host-cannot-test-and-why)
+  - [n05 fails for the environment's reason, not POI's](#n05-fails-for-the-environments-reason-not-pois)
+  - [n03 needs a second NIC, and that now works](#n03-needs-a-second-nic-and-that-now-works)
+  - [When an install is finished, and how that is known](#when-an-install-is-finished-and-how-that-is-known)
+- [Troubleshooting](#troubleshooting)
+  - [Every ISO group is refused at once](#every-iso-group-is-refused-at-once)
+  - [The disk fills during a build](#the-disk-fills-during-a-build)
+  - [`stop` and containers](#stop-and-containers)
+  - [A manual gate after a stopped or failed build](#a-manual-gate-after-a-stopped-or-failed-build)
+  - [Following a job](#following-a-job)
+- [Things learned the hard way](#things-learned-the-hard-way)
+
+## Status: one CLI, the bash harness archived
 
 `sharukhan` is now the only script. The `mission-control` bash harness has been
 absorbed: `run` no longer shells out to `mc-run.sh` - it resolves the ISO,
@@ -56,7 +146,125 @@ Three dependencies (`rusqlite` with bundled SQLite, `serde`, `serde_json`).
 No network access at runtime. `cargo test` runs the unit tests, which include the
 check that `photon-matrix.vmx.template` and the VMX renderer have not diverged.
 
-## Commands
+## Installing the host services: `sharukhan service`
+
+The watcher, the timed sync and the builder's shared mount run as systemd
+units. `sharukhan service` writes them from templates compiled into the
+binary, so they are versioned with the code instead of being edited by hand.
+
+### What gets installed
+
+| Path | What it is |
+|---|---|
+| `/usr/local/libexec/sharukhan/sharukhan` | the binary the units and every job run (installed atomically) |
+| `/etc/sharukhan/sharukhan.env` | the services' settings, `KEY="value"` lines; nothing secret |
+| `/etc/sharukhan/secrets/anthropic-api-key` | the escalation's API key, mode 0600 (only with `--escalation-key-from-env`) |
+| `/etc/sharukhan/secrets/guest-password` | the guest root password, mode 0600 (only with `--guest-password-from-env`) |
+| `/etc/systemd/system/sharukhan-watch.service` | the upstream watcher (`sharukhan watch --interval <s>`) |
+| `/etc/systemd/system/sharukhan-sync.service` + `.timer` | `sharukhan sync auto` on a timer (only with `--sync`) |
+| `/etc/systemd/system/photon-mc-gate-shared.service` + `/usr/local/sbin/photon-mc-gate-shared` | the shared bind mount the builder container needs (only with `MC_BUILDER=container`) |
+
+The settings file names the secret files (`MC_ANTHROPIC_KEY_FILE`,
+`MC_GUEST_PASSWORD_FILE`); the values themselves are never written to a unit,
+the settings file, an argv or the output.
+
+### Install or update
+
+Run it in the host mount namespace, from a shell that has the settings you
+want the services to carry:
+
+```bash
+. /root/photon-mc/gate/env-isolated.sh            # the gate settings
+export HOME=/root MC_NOTIFY=file:/root/photon-mc/events.log
+nsenter --target 1 --mount -- \
+  sharukhan service install --sync --guest-password-from-env --escalation-key-from-env
+```
+
+* Every setting sharukhan knows that is set in the environment goes into the
+  settings file; settings already in the file and not in the environment are
+  kept. `--unset KEY` removes one.
+* `--escalation-key-from-env` takes `ANTHROPIC_API_KEY`, checks its shape and
+  that the API accepts it, then writes the key file.
+* `--guest-password-from-env` takes `MC_GUEST_PASSWORD`. `--sync` refuses
+  without a guest password file: a sync reaches GATE, which installs VMs.
+* `--watch-interval S`, `--sync-every SPAN` (e.g. `30min`, `1h`) and
+  `--sync-quiet S` set the service options.
+* It refuses while a sync run, a job or an escalation is running: those
+  processes run the installed binary.
+* Running it again changes only what differs and says what.
+
+```bash
+sharukhan service install --dry-run                 # what would change
+sharukhan service install --root /tmp/svc-review    # render into a directory, systemd untouched
+```
+
+### Check: `service status`
+
+```bash
+sharukhan service status
+```
+
+It renders what `install` would write from the settings file on disk and
+compares: every file is `current`, `missing` or `differs` (with the lines),
+each secret file is checked for owner and mode, and the installed binary is
+compared with the one running. It exits non-zero on drift; `sharukhan doctor`
+reports the same as its "service files" item.
+
+### Remove: `service remove`
+
+```bash
+sharukhan service remove --sync          # only the sync service and timer
+sharukhan service remove                 # every unit and the settings file
+sharukhan service remove --key --guest-password   # ...and those secret files
+```
+
+A secret file goes only when named. The binary stays.
+
+### Commands run by hand use the same settings
+
+`/root/photon-mc/gate/env-isolated.sh` loads `/etc/sharukhan/sharukhan.env`
+(after `env.sh`, which only provides the guest password for bash scripts that
+check `MC_GUEST_PASSWORD` themselves), so a gate run by hand and a sync started
+by systemd see the same paths. Change a setting with `service install`, not by
+editing a script.
+
+### When the timed sync is needed, and when not
+
+* **Needed** when the fork's PRs should follow the fork's release and `common`
+  branches without anyone starting it: the timer checks every
+  `SHARUKHAN_SYNC_EVERY` and starts a run once a base moved and stayed quiet
+  for `SHARUKHAN_SYNC_QUIET` seconds.
+* **Not needed** while you drive a sync by hand (only one run exists at a
+  time), and it waits by itself while a gate or build job is running.
+* **The watcher** only reads and records; it should always run.
+
+## Typical session
+
+### A gate run by hand
+
+```
+sharukhan doctor                     # is the machine fit to run anything
+sharukhan plan --only k01,k02        # what will run, is the ISO cached
+sharukhan status                     # room to run it, and how many at once
+sharukhan run --dry-run --only k01,k02   # every gate, for real, executing nothing
+nohup sharukhan run --only k01,k02 &     # prints a job id
+tail -f /root/photon-mc/run-logs/run-<stamp>.log   # follow it (the path is printed)
+sharukhan stop --job 1               # if it has to end early
+sharukhan report --only k01,k02      # what happened, against the documented verdict
+sharukhan findings                   # what previous runs established
+```
+
+### A day with the automation
+
+```
+sharukhan service status             # services, settings and secret files as installed
+sharukhan events --new               # what moved upstream, what waits for a person
+sharukhan sync status                # the last runs and their stages
+sharukhan escalate ledger            # what the escalation did and cost
+sharukhan sync approve-upstream 7    # after reading UPSTREAM.table
+```
+
+## Running the permutation matrix: commands
 
 ### `doctor` — check the environment before anything is built or run
 
@@ -490,6 +698,12 @@ sharukhan: job 1 (run k03,k04) is still running as pid 3360082; refusing to star
 
 ### `stop` — end a job and its process tree
 
+> **Containers too.** In container mode (`MC_BUILDER=container`) a build runs
+> inside `docker run`, and killing the client leaves the container running.
+> Every container a job starts is labelled `sharukhan.job=<id>`; `stop` lists
+> those containers and stops them after the processes, and says so if one
+> survives `docker stop`.
+
 The job's own pid is not enough: killing it leaves `mc-run.sh` and its children
 orphaned and still installing. `stop` walks `/proc` for the whole tree, and
 `--dry-run` shows exactly what would be signalled:
@@ -528,6 +742,12 @@ this host also runs `runner-2` and `spagat-smoke`, which are not ours. `stop`
 reports what is up and leaves `sharukhan teardown --id <id>` to the operator.
 
 ### `watch` — what is running, and follow it
+
+> **In this build** `sharukhan watch` is dispatched to the upstream watcher
+> (see "The upstream watcher and its events"), so `watch --job <id>` and the
+> job table view below are not reachable from the command line. The output
+> below is from before that change; follow a job with `tail -f` on its run log
+> and list jobs with `sharukhan status`.
 
 With no arguments: every job, whether its process is really there, the matrix
 VMs, and free space.
@@ -1225,6 +1445,317 @@ based on 7.3.0-0.rc4.1.ph5. **Not CMVP validated** - no canister of the 7.3
 series is published; the port's per-patch decisions are in
 `SPECS/linux/fips-7.3/README.md` on the release branch.
 
+## Keeping the fork's PRs current: `sharukhan sync`
+
+When the fork's release branch (`MC_RELEASE`, default `5.0`) or its `common`
+branch moves, every open PR of the fork (`MC_FORK`, default `dcasota/photon`)
+has to be rebased, checked, built, gated and published again. `sharukhan sync`
+does that as a resumable state machine recorded in `memory.db`.
+
+### The stages
+
+```
+ANALYZE -> REBASE -> VERIFY -> PREPARE -> FASTLOOP -> GATE -> PUBLISH -> STAGEVM -> UPSTREAM -> DONE
+```
+
+| Stage | What it does |
+|---|---|
+| `ANALYZE` | lists the fork's open PRs, checks each local head equals GitHub's, and decides per PR: keep, or rebase (a PR stacked on a rebased one is rebased too) |
+| `REBASE` | moves each PR onto its new base, parents first; a refused rebase stops the run as `needs-decision` |
+| `VERIFY` | `rpmspec -P` per subrelease and arch, `check_spec`, and the one-changelog-entry rule against the new base |
+| `PREPARE` | points the gate repository at the candidates, resets the build trees and regenerates the variant patches |
+| `FASTLOOP` | builds the minimal ISO of the default variant and installs `MC_FASTLOOP_ROWS` (default `k03 c03`) |
+| `GATE` | `sharukhan run --all --allow-build`: every ISO, every unattended row |
+| `PUBLISH` | pushes with `--force-with-lease`, carries each description, checks GitHub shows both |
+| `STAGEVM` | for PRs held for the upstream stage: the staged code is the gated code, then `MC_STAGED_ROWS` (default `k11`) is installed from it |
+| `UPSTREAM` | waits for `sync approve-upstream`, then moves the shared branches and updates both descriptions in place |
+| `DONE` | records the synced bases |
+
+Rules that hold throughout:
+
+* One run at a time.
+* Before every stage the inputs are checked again: if a base head or a PR head
+  moved, the run stops as `superseded`.
+* A stage left `running` by a process that is gone is `interrupted` and runs
+  again on resume; every stage is idempotent.
+* `abort` takes effect between stages, never inside PUBLISH.
+* Nothing reaches GitHub before PUBLISH. Candidates live in the gate
+  repository as `sync/<run>/<branch>`.
+
+### Starting, following and resuming a run
+
+```bash
+sharukhan sync start                    # a run against the fork's current bases
+sharukhan sync start --until GATE       # stop before GATE (paused)
+sharukhan sync status                   # the last five runs and their stages
+sharukhan sync resume 7                 # continue run 7 from where it stopped
+sharukhan sync abort 7                  # between stages; restores the gate refs
+```
+
+`start` also takes `--fork <owner/repo>`, `--repo <gate repository>` and
+`--against <repository>` (new bases from another repository, for a preview).
+Stage logs go to `$MC_RESULTS_DIR/sync/<run>/`.
+
+`MC_PUBLISH_DCASOTA` decides PUBLISH:
+
+| Value | PUBLISH |
+|---|---|
+| `auto` (default) | pushes when every description passes the lint |
+| `approve` | always waits for `sharukhan sync approve <run>` |
+| `preview` | the run ends before PREPARE: candidates only, nothing built or published |
+
+### When a PR needs a decision
+
+A refused rebase or failed checks stop the run as `needs-decision`. The
+escalation (below) may propose a fix; either way the answer is recorded with
+`decide`:
+
+```bash
+sharukhan sync decide 7 23 candidate refs/heads/resolve/23
+sharukhan sync decide 7 92 candidate refs/heads/resolve/92 --base 5.0   # and move the PR's base
+sharukhan sync resume 7
+```
+
+The candidate must sit on the new position of the base the PR will have.
+Resuming keeps every PR already rebased or resolved.
+
+### Descriptions
+
+PUBLISH carries each PR's description to its new head (moved paths, Release
+numbers) and lints it: Problem / Change / Testing sections, Dependencies when
+stacked, no stale paths or versions. A change whose content changed needs a
+description reviewed for it:
+
+```bash
+sharukhan sync lint                              # every open PR's description now
+sharukhan sync lint 23 36                        # only these
+sharukhan sync body --set 7 23 reviewed-23.md    # a reviewed description for run 7
+sharukhan sync body --set 7 23 proposed          # the escalation's, once its proposal is decided
+sharukhan sync body --set-upstream 7 36 up-36.md # the upstream PR's description
+sharukhan sync body --restore 7 23               # put back the text from before run 7
+```
+
+The previous text of every edited description is kept as
+`PUBLISH/<n>.orig` (and `<n>.upstream.orig`).
+
+### Upstream PRs: shared branches, staged first
+
+An upstream PR (`MC_UPSTREAM`, default `vmware/photon`) opened from a fork
+branch shares that branch with the fork's own PR. GitHub cannot give a PR
+another head, and the maintainers keep their conversation on the PR they have,
+so sharukhan never closes, re-opens or comments on an upstream PR, and it
+never opens one:
+
+1. **PUBLISH** pushes such a branch, and every PR stacked on it, to
+   `staging/<branch>` on the fork, a branch no PR uses.
+2. **STAGEVM** checks `staging/<branch>` is the gated candidate and the
+   upstream PR's head has not moved, then installs `MC_STAGED_ROWS` from it.
+3. **UPSTREAM** prepares both descriptions and checks the head merges cleanly
+   onto the upstream PR's base. The upstream description may not name the
+   fork's owner, nor a PR number that is not an upstream PR of the fork and
+   not already in its text. It waits for a person whatever
+   `MC_PUBLISH_DCASOTA` says:
+
+```bash
+cat $MC_RESULTS_DIR/sync/7/UPSTREAM.table       # what will move, both descriptions' verdicts
+sharukhan sync approve-upstream 7
+```
+
+After approval it moves the shared branch with a lease, checks both PRs show
+the new head, edits both descriptions in place, checks GitHub's merge verdict
+and deletes `staging/<branch>`. For these PRs the fork PR shows the new code
+at the same moment as the upstream PR.
+
+### The timer: `sync auto`
+
+```bash
+sharukhan sync auto                  # what the timer runs
+sharukhan sync auto --quiet 3600     # quiet period override (default SHARUKHAN_SYNC_QUIET, else 7200 s)
+```
+
+It starts a run only when the watcher recorded a move of the fork's bases
+that has been quiet long enough, no run is active and no gate or build job is
+running. A run that waits for a decision is handed to the escalation queue on
+every tick. Notifications go to `MC_NOTIFY`.
+
+### Other sync commands
+
+```bash
+sharukhan sync reset-trees            # build trees back to the gate repository's branches, as PREPARE does
+sharukhan sync baseline 5.0 <sha>     # record the synced base of a root
+sharukhan sync analyze --repo <git dir> --fork <owner/repo> --base 5.0=<old>..<new>
+sharukhan sync verify  --repo <git dir> --base <rev> --common <common tree> <ref>...
+```
+
+`reset-trees` refuses edits no variant patch or fixup explains, and refuses
+while a run or job uses the trees: use it before a gate run by hand.
+
+## The escalation: `sharukhan escalate` and `sharukhan mcp`
+
+A PR the sync could not rebase, or whose checks failed, can be handed to
+Claude. The model gets only sharukhan's own tools, works under token budgets,
+and nothing it says is believed: sharukhan reruns its own checks on whatever
+it proposes, and a proposal becomes a candidate only through `sync decide`.
+
+### Before the first escalation: `escalate preflight`
+
+```bash
+sharukhan escalate preflight
+```
+
+It checks the API key without spending a token (set, shaped like an
+Anthropic key, accepted by `GET /v1/models`) and prints the budgets and the
+price weights. The key comes from `MC_ANTHROPIC_KEY_FILE` (a root-owned 0600
+file, written by `service install --escalation-key-from-env`) or else from
+`ANTHROPIC_API_KEY`. It is passed to `curl` on stdin and to `claude` in its
+environment only; it is never printed, logged or stored elsewhere.
+
+### One escalation, the queue, the ledger
+
+```bash
+sharukhan escalate --run 7 --pr 23     # one attempt for PR #23 of run 7
+sharukhan escalate queue --run 7       # every refused or failed PR of run 7, parents first
+sharukhan escalate ledger              # the last 30 attempts: tokens, turns, cost, outcome
+```
+
+The queue skips a PR waiting on an undecided parent, one with a verified
+proposal and one out of attempts. A run or day budget, a rate limit or a
+missing key stops the queue; `sync auto` admits it again on its next tick. A
+parked PR is one notification, not one per tick. `MC_ESCALATE=off` leaves a
+stopped run to a person.
+
+Outcomes in the ledger: `verified` (sharukhan's own verify passes the
+proposal), `proposed` (it does not), `no-proposal`, `budget`, `parked`,
+`failed`, `interrupted` (its process died; counts as an attempt) and `void`
+(invalidated by a sharukhan defect; not an attempt).
+
+### Taking a verified proposal
+
+```bash
+sharukhan escalate ledger | head -3
+sharukhan sync decide 7 23 candidate refs/heads/sync/7/proposal/<branch>
+sharukhan sync body --set 7 23 proposed     # the description it proposed, if it passes the lint
+sharukhan sync resume 7
+```
+
+### Budgets and price weights
+
+Tokens are counted by price relative to uncached input: input and output 1,
+cache read 0.1, cache write 1.25 (5-minute cache) or 2.0 (1-hour cache).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MC_ESC_TOKENS_PER_ESCALATION` | `150000` | weighted tokens of one attempt; the stream is stopped when exceeded |
+| `MC_ESC_TOKENS_PER_RUN` | `500000` | weighted tokens of all attempts of one sync run |
+| `MC_ESC_TOKENS_PER_DAY` | `1000000` | weighted tokens per day |
+| `MC_ESC_ATTEMPTS` | `2` | failed attempts per PR and run before it is parked for a person |
+| `MC_ESC_MAX_TURNS` | `25` | turns per attempt |
+| `MC_ESC_MODEL` / `MC_ESC_FALLBACK_MODEL` | `opus` / `sonnet` | models |
+| `MC_ESC_WEIGHT_CACHE_READ` | `0.1` | price weight |
+| `MC_ESC_WEIGHT_CACHE_WRITE_5M` / `_1H` | `1.25` / `2.0` | price weights |
+| `MC_ESCALATE` | `auto` | `auto` or `off`; anything else is an error |
+
+### How the model is confined
+
+* `claude --bare -p --tools ""`: no built-in tool (no shell, files, web or
+  sub-agents); the only tools are `mcp__sharukhan__*`.
+* A private empty working directory and `HOME`, an environment of `PATH`,
+  `HOME`, the key and `DISABLE_AUTOUPDATER` only.
+* The MCP server is started under `env -i` with only the settings its own work
+  needs, so it never sees the key.
+* `verify` runs the spec tools in read-only, capability-free containers without
+  network; only a directory the caller names is writable.
+
+### The MCP server: `sharukhan mcp`
+
+```bash
+sharukhan mcp --run 7 --pr 23                       # escalation profile (default)
+sharukhan mcp --run 7 --pr 23 --profile readonly    # read tools only
+```
+
+A stdio JSON-RPC server bound to one sync run and PR. Its tools:
+
+| Tool | Profile | What it returns or does |
+|---|---|---|
+| `subject` | both | the run, the PR, the stage that stopped, its refusal, the revisions |
+| `pr_diff` | both | the PR's own change, paginated |
+| `upstream_diff` | both | what upstream changed in one path between the old and the new base |
+| `file_at` / `list_files` | both | a file, or a directory listing, at a named revision |
+| `log_excerpt` | both | lines of a stage log of this run |
+| `rules` / `findings` | both | the project's rules; recorded findings |
+| `propose_patch` | escalation | commits a diff on the proposal ref `refs/heads/sync/<run>/proposal/<branch>`; nothing is pushed |
+| `verify` | escalation | sharukhan's checks on the proposal |
+| `propose_description` | escalation | writes `PUBLISH/<n>.proposed`, linted |
+
+Results are redacted (keys and tokens) and paginated.
+
+## The upstream watcher and its events
+
+```bash
+sharukhan watch                  # poll every 900 s (default), record events, notify
+sharukhan watch --interval 600   # at least 60
+sharukhan watch --once           # one cycle
+sharukhan events                 # the last 50 events
+sharukhan events --new           # the open ones
+sharukhan events ack 412         # handled
+sharukhan events ignore 413
+```
+
+Branch heads come from `git ls-remote`; a move becomes one typed event in
+`memory.db` (`upstream-moved`, `reference-ahead`, `pr-head-moved`,
+`sync-needs-decision`, `escalation-proposed`, ...). `MC_NOTIFY` lists the
+channels, comma-separated: `file:<path>` (default
+`/root/photon-mc/events.log`), `ntfy:https://...`,
+`gh-issue:<owner>/<repo>#<n>`. Nothing leaves the host unless a remote channel
+is configured.
+
+## Data files the automation reads
+
+### `config/variants.conf`: installer variants and the common branches
+
+```
+[variant 2.8]          # the first variant is the default
+fix/some-branch
+[variant latest]
+fix/some-branch
+[common]
+fix/check-spec-subrelease-aware
+[excluded]
+fix/experiment  # why it is in no variant (the reason is required)
+```
+
+`sharukhan variants` compares it with the fork's open PRs: every listed branch
+must be an open PR head and every open PR on the release or `common` branch
+must be covered: listed, excluded with a reason, or the parent of a listed
+branch (a listed child carries its parent's commits).
+`SHARUKHAN_VARIANTS` overrides the path.
+
+### `config/check-prs.tsv`: which PR a check proves
+
+One line per oracle check id followed by one or more PR labels, separated by
+whitespace (`guest.selinux PR#31`, or `media.x PR#85 PR#86`; labels are
+`PR#<n>` or `POI#<n>`). A `check_result` carries those labels, so a failure
+reads as "PR#22 regressed". Comments are whole lines starting with `#`. `sharukhan doctor`
+warns when a label names a PR that is no longer open. `SHARUKHAN_CHECK_PRS`
+overrides the path.
+
+### `memory.db` and `MEMORY.md`
+
+```bash
+sharukhan ingest                         # fold results/ into memory.db (idempotent)
+sharukhan db render MEMORY.md            # the database as Markdown
+sharukhan db render /path/memory.db out.md
+```
+
+The database is the system of record; `MEMORY.md` is a generated view.
+
+### The embedded canister-equivalent patch
+
+```bash
+sharukhan canister-equivalent --check        # is the embedded patch current?
+sharukhan canister-equivalent --out new.patch
+```
+
 ## `helper-scripts/` — the run wrappers
 
 Five scripts that drive `sharukhan` through a specific multi-hour sequence.
@@ -1276,21 +1807,9 @@ They hardcode `/root/photonos-scripts/...`, `/root/photon-mc/...` and
 `/root/5.0`. They are a record of how this host was driven, not a portable
 tool. Read them before running one anywhere else.
 
-## Typical session
-
-```
-sharukhan doctor                     # is the machine fit to run anything
-sharukhan plan --only k01,k02        # what will run, is the ISO cached
-sharukhan status                     # room to run it, and how many at once
-sharukhan run --dry-run --only k01,k02   # every gate, for real, executing nothing
-nohup sharukhan run --only k01,k02 &     # prints a job id
-sharukhan watch --job 1              # follow it
-sharukhan stop --job 1               # if it has to end early
-sharukhan report --only k01,k02      # what happened, against the documented verdict
-sharukhan findings                   # what previous runs established
-```
-
 ## Configuration
+
+### Paths, the VM and the network
 
 Every path has a default and an environment override. Nothing is tied to one
 machine.
@@ -1333,17 +1852,62 @@ machine.
 | `SSH_KEY_DIR` | `$HOME/.ssh` |
 | `SSH_KEY_NAME` | `photon-mc-rsa` |
 | `SSH_USER` | `root` |
-| `MC_GUEST_PASSWORD` | **required, no default** — the root password of every VM the harness installs |
+| `MC_GUEST_PASSWORD` | **required, no default** — the root password of every VM the harness installs (or `MC_GUEST_PASSWORD_FILE`, below) |
 | `SERIAL_LOG_PREFIX` | `serial0` |
 | `MC_INSTALL_TIMEOUT_SEC` | `2400` |
-| `MC_BOOT_TIMEOUT_SEC` | `600` |
-| `MC_SSH_TIMEOUT_SEC` | `300` |
-| `MC_SAMPLE_SEC` | `25` |
+| `MC_BOOT_TIMEOUT_SEC` | no effect: nothing reads it, a warning says so (installs use `MC_INSTALL_TIMEOUT_SEC`) |
+| `MC_SSH_TIMEOUT_SEC` | no effect, as above |
+| `MC_SAMPLE_SEC` | no effect, as above |
 | `MC_START_TIMEOUT` | `240` |
 
 ```
 SHARUKHAN_DB=/tmp/other.db sharukhan findings
 ```
+
+### The settings file and the secret files
+
+The services read `/etc/sharukhan/sharukhan.env` (written by
+`sharukhan service install`); `env-isolated.sh` loads the same file for
+commands run by hand. It holds `KEY="value"` lines and nothing secret. A
+secret is a file named by a setting, owned by the reading user, mode 0600, in
+a directory nobody else can write:
+
+| Setting | Points to | Read by |
+|---|---|---|
+| `MC_GUEST_PASSWORD_FILE` | the guest root password | everything that installs or configures a guest, when `MC_GUEST_PASSWORD` is not set |
+| `MC_ANTHROPIC_KEY_FILE` | the Anthropic API key | the escalation, before `ANTHROPIC_API_KEY` |
+
+A test (`every_variable_the_code_reads_is_classified`) fails when the code
+reads an environment variable that is neither a service setting, a secret
+pointer, a secret nor named as something else, so a new setting cannot be
+left out of the services by accident.
+
+### Settings of the build, the fork and the sync
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MC_FORK` | `dcasota/photon` | the fork whose PRs are gated and synced |
+| `MC_UPSTREAM` | `vmware/photon` | the upstream repository of the fork |
+| `MC_FORK_INSTALLER` / `MC_UPSTREAM_INSTALLER` | `dcasota/photon-os-installer` / `vmware/photon-os-installer` | the same for the installer |
+| `MC_INSTALLER_BRANCH` | `master` | the installer branch |
+| `MC_GATE_REPO` | `/root/photon-mc/gate/photon.git` | the gate repository (bare) |
+| `MC_AUTHOR` | the gate repository's git `user.name` and `user.email` | `Name <mail>` of rebased commits and changelog entries; with neither, a sync refuses |
+| `MC_BUILDER` | `host` | `host` or `container`: where make and the spec tools run |
+| `MC_BUILDER_SHARED_ROOT` | `/root/photon-mc/gate` | the shared bind mount of the builder container |
+| `MC_BUILDER_DIR` | `/root/photon-mc/gate/builder` | the builder image's context |
+| `MC_ISO_STORE` | none | where finished ISOs are moved; the cache keeps a link |
+| `SHARUKHAN_VARIANTS` | `$SHARUKHAN_ROOT/config/variants.conf` | installer variants and common branches |
+| `SHARUKHAN_CHECK_PRS` | `$SHARUKHAN_ROOT/config/check-prs.tsv` | check to PR attribution |
+| `MC_FASTLOOP_ROWS` | `k03 c03` | rows of a sync's FASTLOOP (minimal ISOs of the default variant) |
+| `MC_STAGED_ROWS` | `k11` | rows of a sync's STAGEVM |
+| `MC_PUBLISH_DCASOTA` | `auto` | `auto`, `approve` or `preview` (see the sync chapter) |
+| `MC_NOTIFY` | `file:/root/photon-mc/events.log` | notification channels |
+| `SHARUKHAN_SYNC_QUIET` | `7200` | seconds a base must be quiet before `sync auto` starts a run |
+| `SHARUKHAN_SYNC_EVERY` | `30min` | the sync timer's interval (service option) |
+| `SHARUKHAN_WATCH_INTERVAL` | `900` | the watcher's interval in seconds (service option) |
+
+The escalation's settings are in its own chapter.
+
 
 ## The network axis
 
@@ -1527,6 +2091,63 @@ still waiting: serial size=0, tools ip=none, ssh at 192.168.225.79 silent,
 That line is what found (d): every quiet report on the static rows named
 `photon-installer` as the last lease, which is the signal saying it cannot see
 this row.
+
+## Troubleshooting
+
+### Every ISO group is refused at once
+
+Read the first `REFUSED` line; the others repeat it.
+
+* **`... is missing or has no 'file' binary`** while `docker run --rm
+  <composer image> sh -c 'command -v file'` works on the host: Docker's
+  default bridge may be gone. `ip link show docker0` fails and the Docker
+  journal shows `Failed to add veth... to bridge via netlink: Device does not
+  exist`. Containers on `--network none` still work, which is why spec checks
+  pass. Restarting Docker (`systemctl restart docker`) recreates `docker0`;
+  containers with a restart policy come back by themselves.
+* **`build-config.json has no photon-dist-tag`**: a tree sharukhan reads has
+  no dist tag. The dist tag, the kernel directory and the branch are read
+  from the tree, never assumed.
+
+### The disk fills during a build
+
+A full build needs tens of gigabytes; `run` checks the disk before it starts
+a VM, but not other writers on the same disk. Stop the job before the disk is
+full, find the writer, then restart:
+
+```bash
+df -h /
+sharukhan stop --job 90
+```
+
+### `stop` and containers
+
+In container mode a build runs inside `docker run`. Every container a job
+starts carries the label `sharukhan.job=<id>`, and `sharukhan stop --job <id>`
+stops those containers after the processes, saying which, if any, survived:
+
+```bash
+docker ps --filter label=sharukhan.job=90
+```
+
+### A manual gate after a stopped or failed build
+
+```bash
+sharukhan sync reset-trees                 # refuses edits no patch explains
+sharukhan variant-patches
+sharukhan run --all --allow-build
+```
+
+### Following a job
+
+`sharukhan watch` is the upstream watcher (see its chapter); `watch --job`
+does not follow a job in this build. Follow the run log the job printed
+instead:
+
+```bash
+tail -f /root/photon-mc/run-logs/run-<stamp>.log
+sharukhan status
+```
 
 ## Things learned the hard way
 

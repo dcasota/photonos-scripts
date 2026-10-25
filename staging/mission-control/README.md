@@ -4,10 +4,13 @@
 > `sharukhan`.** `bin/` and `lib/` moved to `superseded-bash/` (the two names
 > here are now symlinks, for one in-flight build - see
 > [`superseded-bash/README.md`](superseded-bash/README.md)). `config/` is still
-> live: `permutations.tsv` is read at runtime and
-> `photon-matrix.vmx.template` is compiled into the binary. Everything below
-> still describes what the harness DOES; the commands are now
-> `sharukhan <phase>`.
+> live: `permutations.tsv`, `variants.conf` (installer variants and common
+> branches) and `check-prs.tsv` (which PR a check proves) are read at runtime,
+> and `photon-matrix.vmx.template` is compiled into the binary. Everything
+> below still describes what the harness DOES; the commands are now
+> `sharukhan <phase>`. Installing the services, the fork sync, the escalation
+> and the settings are documented in
+> [`../sharukhan-cli/README.md`](../sharukhan-cli/README.md#contents).
 
 `ISO-PERMUTATION-MATRIX.md` says of itself: **"No builds were run."** Fourteen
 of its sixteen rows are resolution predictions or code reading; only two were
