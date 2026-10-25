@@ -182,3 +182,12 @@ CREATE TABLE IF NOT EXISTS heartbeat (
     at     TEXT NOT NULL,
     detail TEXT
 );
+
+-- What `ingest` has read: a results file whose signature (ingest format,
+-- stamp, size and mtime of it and its pkglife file) is unchanged is not read
+-- again (src/ingest.rs INGEST_FILE_DDL).
+CREATE TABLE IF NOT EXISTS ingest_file (
+    path        TEXT PRIMARY KEY,   -- a results checks-<stamp>.jsonl
+    signature   TEXT NOT NULL,      -- format, stamp, size and mtime of it and its pkglife file
+    ingested_at TEXT NOT NULL
+);

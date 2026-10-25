@@ -275,6 +275,7 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
     let conn = open_rw(&cfg.memory_db)?;
     conn.execute_batch(PACKAGE_LIFECYCLE_DDL)
         .map_err(|e| format!("package_lifecycle schema: {e}"))?;
+    conn.execute_batch(INGEST_FILE_DDL).map_err(|e| format!("ingest_file schema: {e}"))?;
     let host = hostname();
     let ver = env!("CARGO_PKG_VERSION");
     let mut sum = Summary {
@@ -285,6 +286,18 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
     };
 
     for (stamp, perms) in &byrun {
+        // Evidence already indexed and unchanged since is not read again:
+        // re-reading every run after every run took twenty minutes.
+        let todo: Vec<(&String, &std::path::PathBuf, String)> = perms
+            .iter()
+            .map(|(perm, file)| (perm, file, signature(file, stamp)))
+            .filter(|(_, file, sig)| seen(&conn, file).as_deref() != Some(sig.as_str()))
+            .collect();
+        if todo.is_empty() {
+            continue;
+        }
+        // one transaction per run: its evidence is in the database whole or not at all
+        let tx = conn.unchecked_transaction().map_err(|e| format!("{e}"))?;
         // One run per stamp, keyed by the stamp itself so re-ingest updates
         // rather than duplicates.
         let selector: Vec<&str> = perms.keys().map(|s| s.as_str()).collect();
@@ -312,7 +325,8 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
         };
         sum.runs += 1;
 
-        for (perm, file) in perms {
+        for (perm, file, sig) in &todo {
+            let (perm, file) = (*perm, *file);
             let text = std::fs::read_to_string(file).unwrap_or_default();
             let recs: Vec<Record> = text.lines().filter_map(parse).collect();
             if recs.is_empty() {
@@ -411,9 +425,47 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
             if life.is_file() && !life.is_symlink() {
                 sum.packages += ingest_lifecycle(&conn, pid, &life, stamp)?;
             }
+            conn.execute(
+                "INSERT INTO ingest_file (path, signature, ingested_at) VALUES (?1, ?2, ?3) \
+                 ON CONFLICT(path) DO UPDATE SET signature = excluded.signature, ingested_at = excluded.ingested_at",
+                params![file.to_string_lossy(), sig, crate::job::now()],
+            )
+            .map_err(|e| format!("{e}"))?;
         }
+        tx.commit().map_err(|e| format!("{e}"))?;
     }
     Ok(sum)
+}
+
+/// The version of what ingest derives from a results file. Raise it when
+/// that changes, and the next ingest reads every file again.
+const INGEST_FORMAT: u32 = 1;
+
+const INGEST_FILE_DDL: &str = "CREATE TABLE IF NOT EXISTS ingest_file (
+    path        TEXT PRIMARY KEY,   -- a results checks-<stamp>.jsonl
+    signature   TEXT NOT NULL,      -- format, stamp, size and mtime of it and its pkglife file
+    ingested_at TEXT NOT NULL
+);";
+
+fn file_sig(p: &Path) -> String {
+    match std::fs::metadata(p) {
+        Ok(m) => {
+            let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos()).unwrap_or(0);
+            format!("{}:{t}", m.len())
+        }
+        Err(_) => "-".into(),
+    }
+}
+
+/// What a checks file and its lifecycle file are now: when it equals what
+/// was recorded at the last ingest, the database already holds them.
+fn signature(checks: &Path, stamp: &str) -> String {
+    let life = checks.with_file_name(format!("pkglife-{stamp}.jsonl"));
+    format!("v{INGEST_FORMAT} {stamp} {} {}", file_sig(checks), file_sig(&life))
+}
+
+fn seen(conn: &Connection, file: &Path) -> Option<String> {
+    conn.query_row("SELECT signature FROM ingest_file WHERE path = ?1", params![file.to_string_lossy()], |r| r.get(0)).ok()
 }
 
 /// A stamp in the same shape the evidence writer produces, derived from a
@@ -553,6 +605,34 @@ mod tests {
         let sql = include_str!("../schema/memory.sql");
         let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(norm(sql).contains(&norm(PACKAGE_LIFECYCLE_DDL)));
+    }
+
+    #[test]
+    fn evidence_is_read_once_and_again_only_when_it_changes() {
+        let d = std::env::temp_dir().join(format!("shk-ingest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("results/k01")).unwrap();
+        let db = d.join("m.db");
+        Connection::open(&db).unwrap().execute_batch(include_str!("../schema/memory.sql")).unwrap();
+        let mut cfg = Config::defaults();
+        cfg.results_dir = d.join("results");
+        cfg.memory_db = db.clone();
+        cfg.matrix_tsv = d.join("none.tsv");
+        let f = d.join("results/k01/checks-20261025T000000Z.jsonl");
+        std::fs::write(&f, "{\"perm\":\"k01\",\"check\":\"a\",\"status\":\"pass\"}\n{\"perm\":\"k01\",\"check\":\"b\",\"status\":\"fail\"}\n").unwrap();
+        let s = all(&cfg).unwrap();
+        assert_eq!((s.runs, s.checks), (1, 2));
+        let s = all(&cfg).unwrap();
+        assert_eq!((s.runs, s.checks), (0, 0), "unchanged evidence is not read again");
+        std::fs::write(&f, "{\"perm\":\"k01\",\"check\":\"a\",\"status\":\"pass\"}\n").unwrap();
+        let s = all(&cfg).unwrap();
+        assert_eq!((s.runs, s.checks), (1, 1), "a changed file is read again");
+        let c = Connection::open(&db).unwrap();
+        let n: i64 = c.query_row("SELECT count(*) FROM check_result", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1, "replaced, not appended");
+        let r: String = c.query_row("SELECT result FROM permutation", [], |r| r.get(0)).unwrap();
+        assert_eq!(r, "1 pass");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

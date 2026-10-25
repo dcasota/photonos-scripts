@@ -35,9 +35,19 @@ pub fn open_rw(path: &Path) -> Result<Connection, String> {
     if !path.exists() {
         return Err(format!("no memory database at {}", path.display()));
     }
-    Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
-        .map_err(|e| format!("opening {} read-write: {e}", path.display()))
+    let c = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e| format!("opening {} read-write: {e}", path.display()))?;
+    // Writers take turns: the watcher, a sync, an escalation and a run's
+    // ingest share this database, and one of them finding it busy for a
+    // moment is not an error ("database is locked" refused a run on
+    // 2026-10-25 while another run was indexing).
+    c.busy_timeout(std::time::Duration::from_secs(BUSY_TIMEOUT_SECS))
+        .map_err(|e| format!("{}: busy timeout: {e}", path.display()))?;
+    Ok(c)
 }
+
+/// How long a writer waits for another one before giving up.
+pub const BUSY_TIMEOUT_SECS: u64 = 120;
 
 pub fn now() -> String {
     // No chrono dependency. `date -u` is present everywhere this runs, and the
