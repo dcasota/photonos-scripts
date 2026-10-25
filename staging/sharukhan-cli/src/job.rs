@@ -46,6 +46,19 @@ pub fn open_rw(path: &Path) -> Result<Connection, String> {
     Ok(c)
 }
 
+/// Read-only, never created, and waiting like a writer does: a reader can
+/// meet a writer's checkpoint too.
+pub fn open_ro(path: &Path) -> Result<Connection, String> {
+    if !path.exists() {
+        return Err(format!("no memory database at {}", path.display()));
+    }
+    let c = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("opening {} read-only: {e}", path.display()))?;
+    c.busy_timeout(std::time::Duration::from_secs(BUSY_TIMEOUT_SECS))
+        .map_err(|e| format!("{}: busy timeout: {e}", path.display()))?;
+    Ok(c)
+}
+
 /// How long a writer waits for another one before giving up.
 pub const BUSY_TIMEOUT_SECS: u64 = 120;
 

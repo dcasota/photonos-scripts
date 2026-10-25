@@ -209,7 +209,7 @@ fn parse(line: &str) -> Option<Record> {
 }
 
 fn open_rw(path: &Path) -> Result<Connection, String> {
-    Connection::open(path).map_err(|e| format!("{}: {e}", path.display()))
+    crate::job::open_rw(path)
 }
 
 /// Ingest every `checks-<stamp>.jsonl` under `results/`.

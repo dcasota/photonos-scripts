@@ -20,7 +20,7 @@
 //! opened read-only. Upstream content (commit messages, logs, PR text) reaches
 //! the model as data inside tool results, never as instructions of this server.
 
-use rusqlite::{Connection, OpenFlags};
+
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -76,7 +76,7 @@ impl Subject {
 }
 
 pub fn load(db: &Path, results: &Path, run: i64, pr: i64) -> Result<Subject, String> {
-    let c = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| format!("{}: {e}", db.display()))?;
+    let c = crate::job::open_ro(db)?;
     let sql = |e: rusqlite::Error| format!("{}: {e}", db.display());
     let (repo, bases): (String, String) =
         c.query_row("SELECT repo, bases FROM sync_run WHERE id = ?1", [run], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|_| format!("no sync run {run}"))?;
@@ -384,7 +384,7 @@ impl Server {
                 Ok(page(&text, off, lim))
             }
             "rules" => {
-                let c = Connection::open_with_flags(&self.db, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| format!("{e}"))?;
+                let c = crate::job::open_ro(&self.db)?;
                 let scope = a.get("scope").and_then(Value::as_str).unwrap_or("%");
                 let mut st = c
                     .prepare("SELECT slug, scope, rule, coalesce(how_to_apply,'') FROM rule WHERE superseded_by IS NULL AND scope LIKE ?1 ORDER BY scope, slug")
@@ -397,7 +397,7 @@ impl Server {
                 Ok(page(&rows.join("\n"), off, lim))
             }
             "findings" => {
-                let c = Connection::open_with_flags(&self.db, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| format!("{e}"))?;
+                let c = crate::job::open_ro(&self.db)?;
                 let q = format!("%{}%", arg_str(a, "contains")?);
                 let mut st = c
                     .prepare("SELECT slug, severity, title, evidence, coalesce(mitigation,'') FROM finding WHERE superseded_by IS NULL AND (title LIKE ?1 OR evidence LIKE ?1) ORDER BY id DESC LIMIT 40")

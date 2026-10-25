@@ -6,7 +6,6 @@
 //! The database is opened read-only: a render never writes to it, and can run
 //! while a gate is recording.
 
-use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 
 fn sev_rank(s: &str) -> u8 {
@@ -40,7 +39,7 @@ pub fn render(db_path: &Path, now: &str) -> Result<(String, usize, usize), Strin
     if !db_path.exists() {
         return Err(format!("no database at {}", db_path.display()));
     }
-    let db = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| format!("{}: {e}", db_path.display()))?;
+    let db = crate::job::open_ro(db_path)?;
     let sql = |e: rusqlite::Error| format!("{}: {e}", db_path.display());
     let count = |t: &str| -> Result<i64, String> { db.query_row(&format!("SELECT COUNT(*) FROM {t}"), [], |r| r.get(0)).map_err(sql) };
     let text = |r: &rusqlite::Row, i: usize| -> rusqlite::Result<String> { Ok(r.get::<_, Option<String>>(i)?.unwrap_or_default()) };
@@ -197,6 +196,7 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
 
     #[test]
     fn a_render_is_grouped_by_severity_and_flags_blockers() {

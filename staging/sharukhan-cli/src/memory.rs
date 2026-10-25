@@ -3,7 +3,7 @@
 //! Findings and run results live in SQLite so they survive the session that
 //! produced them. Every query is parameterised.
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::Connection;
 use std::path::Path;
 
 pub struct Finding {
@@ -15,11 +15,7 @@ pub struct Finding {
 }
 
 pub fn open(path: &Path) -> Result<Connection, String> {
-    if !path.exists() {
-        return Err(format!("no memory database at {}", path.display()));
-    }
-    Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|e| format!("opening {}: {e}", path.display()))
+    crate::job::open_ro(path)
 }
 
 fn columns(conn: &Connection, table: &str) -> Vec<String> {
