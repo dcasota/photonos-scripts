@@ -806,6 +806,8 @@ mod tests {
             "SHARUKHAN_LIVE_BUILD_ROOT",
             "SHARUKHAN_LIVE_REPO",
             "SHARUKHAN_LIVE_SPECS",
+            // set by a job for the processes it starts, never by a person
+            "SHARUKHAN_JOB",
             // kernel config symbols read with Config::get, not the environment
             "HYPERV",
             "HYPERV_STORAGE",

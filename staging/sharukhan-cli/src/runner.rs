@@ -180,6 +180,8 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             .join(",");
         let pid = std::process::id() as i32;
         let job_id = job::start(&conn, "run", &label, pid, &log_path.to_string_lossy())?;
+        // every container this job starts is labelled with it (builder::JOB_LABEL)
+        std::env::set_var("SHARUKHAN_JOB", job_id.to_string());
         println!("\njob {job_id} (pid {pid}) -> {}", log_path.display());
         println!("  sharukhan watch --job {job_id}");
         println!("  sharukhan stop  --job {job_id}");
@@ -673,6 +675,10 @@ pub fn cmd_stop(cfg: &Config, target: Option<i64>, all: bool, dry: bool) -> Resu
         for k in &kids {
             println!("    {} {}", k.pid, first_words(&k.cmdline, 8));
         }
+        let containers = crate::builder::job_containers(j.id).unwrap_or_default();
+        if !containers.is_empty() {
+            println!("  {} container(s) of the job: {}", containers.len(), containers.join(" "));
+        }
         if dry {
             println!("  dry run: nothing signalled");
             continue;
@@ -701,6 +707,16 @@ pub fn cmd_stop(cfg: &Config, target: Option<i64>, all: bool, dry: bool) -> Resu
             }
             std::thread::sleep(std::time::Duration::from_secs(1));
             left = survivors(pid, &kids);
+        }
+        // the processes are gone; a container they started may not be
+        match crate::builder::stop_job_containers(j.id) {
+            Ok(still) if still.is_empty() => {
+                if !containers.is_empty() {
+                    println!("  its container(s) stopped");
+                }
+            }
+            Ok(still) => println!("  container(s) still running after docker stop: {} - `docker stop` them", still.join(" ")),
+            Err(e) => println!("  could not list the job's containers: {e}"),
         }
         job::finish(&conn, j.id, job::STOPPED)?;
         if left.is_empty() {

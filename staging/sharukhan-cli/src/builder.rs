@@ -427,9 +427,41 @@ pub fn make_command(release: &Path, args: &[&str], log: &mut dyn FnMut(&str)) ->
     }
 }
 
+/// The label a container of a job carries (SHARUKHAN_JOB, set by the job's
+/// driver), so `sharukhan stop` ends the container and not only the
+/// `docker run` client: a killed client leaves its container running.
+pub const JOB_LABEL: &str = "sharukhan.job";
+
+fn label_job(c: &mut Command) {
+    if let Ok(j) = std::env::var("SHARUKHAN_JOB") {
+        if !j.is_empty() && j.chars().all(|x| x.is_ascii_digit()) {
+            c.args(["--label", &format!("{JOB_LABEL}={j}")]);
+        }
+    }
+}
+
+/// The running containers of job `job`.
+pub fn job_containers(job: i64) -> Result<Vec<String>, String> {
+    let out = run("docker", &["ps", "-q", "--filter", &format!("label={JOB_LABEL}={job}")])?;
+    Ok(out.split_whitespace().map(str::to_string).collect())
+}
+
+/// Stop the containers of job `job`; the ones still running afterwards.
+pub fn stop_job_containers(job: i64) -> Result<Vec<String>, String> {
+    let ids = job_containers(job)?;
+    if !ids.is_empty() {
+        let mut a = vec!["stop", "-t", "20"];
+        a.extend(ids.iter().map(String::as_str));
+        let _ = run("docker", &a);
+    }
+    job_containers(job)
+}
+
 pub fn container_make(image: &str, root: &Path, release: &Path, args: &[&str]) -> Command {
     let mut c = Command::new("docker");
-    c.args(["run", "--rm", "--privileged", "--network", "host"])
+    c.args(["run", "--rm", "--privileged", "--network", "host"]);
+    label_job(&mut c);
+    c
         .args(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
         .arg("--mount")
         .arg(format!(
@@ -488,8 +520,9 @@ pub fn container_script(
     extra: &[PathBuf],
 ) -> Command {
     let mut c = Command::new("docker");
-    c.args(["run", "--rm", "--privileged", "--network", "host"])
-        .args(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
+    c.args(["run", "--rm", "--privileged", "--network", "host"]);
+    label_job(&mut c);
+    c.args(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
         .arg("--mount")
         .arg(format!(
             "type=bind,src={r},dst={r},bind-propagation=rshared",
@@ -592,6 +625,7 @@ pub fn tool_command_with(prog: &str, cwd: &Path, args: &[OsString], writable: &[
             let image = ensure(log)?;
             let mut c = Command::new("docker");
             c.args(reader_flags());
+            label_job(&mut c);
             for d in python_mounts(&root, cwd, args)? {
                 // a writable directory is mounted once, read-write, below
                 if !writable.iter().any(|w| w == &d) {
@@ -824,6 +858,19 @@ pub fn cli(args: &[String]) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    /// Live: a container labelled with a job is found and stopped by its
+    /// label. Uses the docker daemon and the builder image.
+    #[test]
+    #[ignore]
+    fn live_a_jobs_container_is_stopped_by_its_label() {
+        let (image, _) = current_image().unwrap();
+        let job = 900_000_000 + std::process::id() as i64;
+        let id = run("docker", &["run", "-d", "--rm", "--network", "none", "--label", &format!("{JOB_LABEL}={job}"), &image, "sleep", "300"]).unwrap();
+        assert_eq!(job_containers(job).unwrap(), vec![id[..12].to_string()]);
+        assert!(stop_job_containers(job).unwrap().is_empty(), "stopped");
+        assert!(job_containers(job + 1).unwrap().is_empty(), "another job's label matches nothing");
+    }
+
 
     #[test]
     fn a_reader_container_cannot_write_and_has_no_privilege() {
