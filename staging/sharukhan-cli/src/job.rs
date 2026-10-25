@@ -124,6 +124,19 @@ pub fn list(conn: &Connection, running_only: bool) -> Result<Vec<Job>, String> {
     Ok(rows.flatten().collect())
 }
 
+/// The jobs whose process is alive, as "job <id> (<kind> <label>)"; none
+/// when the database has no job table yet.
+pub fn live(conn: &Connection) -> Result<Vec<String>, String> {
+    let has: bool = conn
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'job'")
+        .and_then(|mut s| s.exists([]))
+        .map_err(|e| format!("{e}"))?;
+    if !has {
+        return Ok(Vec::new());
+    }
+    Ok(list(conn, true)?.into_iter().filter(Job::is_live).map(|j| format!("job {} ({} {})", j.id, j.kind, j.label)).collect())
+}
+
 impl Job {
     /// What the row claims, checked against the process table. A row saying
     /// 'running' whose pid is gone is the crashed-driver case: the state is

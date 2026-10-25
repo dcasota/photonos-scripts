@@ -75,7 +75,11 @@ pub fn ensure_schema(c: &Connection) -> Result<(), String> {
 /// Whether a stopped sync run is handed to the escalation by itself:
 /// MC_ESCALATE=auto (the default) or off. Anything else is an error, not off.
 pub fn enabled() -> Result<bool, String> {
-    match std::env::var("MC_ESCALATE").ok().as_deref().map(str::trim) {
+    parse_enabled(std::env::var("MC_ESCALATE").ok().as_deref())
+}
+
+pub fn parse_enabled(v: Option<&str>) -> Result<bool, String> {
+    match v.map(str::trim) {
         None | Some("") | Some("auto") => Ok(true),
         Some("off") => Ok(false),
         Some(v) => Err(format!("MC_ESCALATE={v}: valid are auto and off")),
@@ -235,17 +239,12 @@ pub fn key_shape_ok(k: &str) -> bool {
     k.starts_with("sk-ant-") && (60..=256).contains(&k.len()) && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// The key: MC_ANTHROPIC_KEY_FILE (root-owned, 0600) if set, else
-/// ANTHROPIC_API_KEY. Errors name the source, never the value.
+/// The key: MC_ANTHROPIC_KEY_FILE (a secret file, crate::secret) if set,
+/// else ANTHROPIC_API_KEY. Errors name the source, never the value.
 pub fn read_key() -> Result<String, String> {
     if let Some(p) = std::env::var_os("MC_ANTHROPIC_KEY_FILE").filter(|v| !v.is_empty()) {
-        use std::os::unix::fs::MetadataExt;
         let p = PathBuf::from(p);
-        let m = std::fs::metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-        if m.uid() != 0 || m.mode() & 0o077 != 0 {
-            return Err(format!("{}: must be owned by root with mode 0600 (is uid {} mode {:o})", p.display(), m.uid(), m.mode() & 0o777));
-        }
-        let k = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?.trim().to_string();
+        let k = crate::secret::read(&p)?;
         return if key_shape_ok(&k) { Ok(k) } else { Err(format!("{}: does not hold an Anthropic API key", p.display())) };
     }
     let k = std::env::var("ANTHROPIC_API_KEY").map_err(|_| "ANTHROPIC_API_KEY is not set (nor MC_ANTHROPIC_KEY_FILE)".to_string())?;

@@ -1093,6 +1093,11 @@ pub fn auto(
             return Ok(format!("the fork moved {a}s ago; waiting for {quiet_s}s of quiet"));
         }
     }
+    // a gate or build run by hand owns the gate repository and the builder
+    let jobs = crate::job::live(c)?;
+    if !jobs.is_empty() {
+        return Ok(format!("{} running; the sync waits for it", jobs.join(", ")));
+    }
     if !in_host_namespace() {
         return Err("sync auto builds and installs: run it in the host mount namespace".into());
     }
@@ -1345,12 +1350,12 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 Ok(out)
             }
             "auto" => {
-                let quiet: i64 = args
-                    .iter()
-                    .position(|a| a == "--quiet")
-                    .and_then(|i| args.get(i + 1))
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(7200);
+                // --quiet, else SHARUKHAN_SYNC_QUIET (the service's setting), else two hours
+                let quiet_s = args.iter().position(|a| a == "--quiet").and_then(|i| args.get(i + 1)).cloned().or_else(|| std::env::var("SHARUKHAN_SYNC_QUIET").ok());
+                let quiet: i64 = match quiet_s {
+                    Some(v) => v.trim().parse().ok().filter(|n: &i64| *n >= 0).ok_or_else(|| format!("quiet period {v}: a number of seconds"))?,
+                    None => 7200,
+                };
                 let r = auto(&c, &cfg.fork, &cfg.gate_repo, &[cfg.release.as_str(), cfg.build_common.as_str()], &results, quiet, &mut |run| {
                     crate::escalate::queue(&cfg, run, &mut |l| eprintln!("{l}"))
                 })?;

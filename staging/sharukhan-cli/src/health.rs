@@ -77,6 +77,16 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
     let memory_db = cfg.memory_db.as_path();
     let mut v = Vec::new();
 
+    // the services as `sharukhan service install` writes them
+    v.push(match crate::service::status(&crate::service::Paths { root: "/".into() }) {
+        Ok((_, false)) => item("service files", Level::Ok, "as `sharukhan service install` writes them"),
+        Ok((lines, true)) => item(
+            "service files",
+            Level::Warn,
+            format!("{} (`sharukhan service status`)", lines.iter().filter(|l| l.contains("missing") || l.contains("differs")).cloned().collect::<Vec<_>>().join("; ")),
+        ),
+        Err(e) => item("service files", Level::Fail, e),
+    });
     // host units the automation relies on
     v.push(unit("sharukhan-watch.service", "records upstream moves and PR changes"));
     v.push(unit("sharukhan-sync.timer", "starts a sync when the fork's base moved"));

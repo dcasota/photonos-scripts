@@ -162,7 +162,7 @@ pub struct Config {
     /// Stock Photon has no 'operator' user; vm-lab's default is
     /// SPAGAT-specific.
     pub ssh_user: String,
-    guest_password: Option<String>,
+    guest_password: Option<Result<String, String>>,
 
     // ---- timing ----------------------------------------------------------
     pub serial_log_prefix: String,
@@ -299,7 +299,12 @@ impl Config {
             ),
             ssh_key_name: s_or(get, "SSH_KEY_NAME", "photon-mc-rsa"),
             ssh_user: s_or(get, "SSH_USER", "root"),
-            guest_password: get("MC_GUEST_PASSWORD").filter(|v| !v.is_empty()),
+            // the value, or a secret file holding it (the services: `sharukhan service install`)
+            guest_password: get("MC_GUEST_PASSWORD").filter(|v| !v.is_empty()).map(Ok).or_else(|| {
+                get("MC_GUEST_PASSWORD_FILE")
+                    .filter(|v| !v.is_empty())
+                    .map(|f| crate::secret::read(std::path::Path::new(&f)).map_err(|e| format!("MC_GUEST_PASSWORD_FILE: {e}")))
+            }),
 
             serial_log_prefix: s_or(get, "SERIAL_LOG_PREFIX", "serial0"),
             install_timeout_sec: n_or(get, "MC_INSTALL_TIMEOUT_SEC", 2400),
@@ -317,12 +322,14 @@ impl Config {
     /// MC_GUEST_PASSWORD stops before it creates a VM whose password nobody
     /// recorded.
     pub fn guest_password(&self) -> Result<&str, String> {
-        self.guest_password.as_deref().ok_or_else(|| {
-            "MC_GUEST_PASSWORD is not set. It is the root password of every VM this harness \
-             installs, so it has no default and is never written down here. Export it for the \
-             run, e.g. `read -rs MC_GUEST_PASSWORD; export MC_GUEST_PASSWORD`."
-                .to_string()
-        })
+        match &self.guest_password {
+            Some(Ok(v)) => Ok(v.as_str()),
+            Some(Err(e)) => Err(e.clone()),
+            None => Err("MC_GUEST_PASSWORD is not set (nor MC_GUEST_PASSWORD_FILE). It is the root password of every VM this harness \
+                 installs, so it has no default and is never written down here. Export it for the \
+                 run, e.g. `read -rs MC_GUEST_PASSWORD; export MC_GUEST_PASSWORD`."
+                .to_string()),
+        }
     }
 
     /// Path of the lab keypair. Key-only auth is the whole story: the
@@ -410,7 +417,7 @@ mod tests {
         c.guest_password = None;
         let e = c.guest_password().unwrap_err();
         assert!(e.contains("MC_GUEST_PASSWORD"));
-        c.guest_password = Some("x".into());
+        c.guest_password = Some(Ok("x".into()));
         assert_eq!(c.guest_password().unwrap(), "x");
     }
 }

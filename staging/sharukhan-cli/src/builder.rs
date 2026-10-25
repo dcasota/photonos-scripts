@@ -84,8 +84,10 @@ pub fn mode() -> Result<Mode, String> {
     parse_mode(std::env::var("MC_BUILDER").ok().as_deref())
 }
 
+pub const DEFAULT_SHARED_ROOT: &str = "/root/photon-mc/gate";
+
 pub fn shared_root() -> PathBuf {
-    PathBuf::from(std::env::var("MC_BUILDER_SHARED_ROOT").unwrap_or_else(|_| "/root/photon-mc/gate".into()))
+    PathBuf::from(std::env::var("MC_BUILDER_SHARED_ROOT").unwrap_or_else(|_| DEFAULT_SHARED_ROOT.into()))
 }
 
 pub fn context_dir() -> PathBuf {

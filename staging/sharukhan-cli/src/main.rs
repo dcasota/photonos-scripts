@@ -20,6 +20,8 @@ mod console;
 mod des;
 mod disk;
 mod escalate;
+mod secret;
+mod service;
 mod evidence;
 mod guest;
 mod health;
@@ -132,6 +134,7 @@ PHASES (the same code `run` calls, one step at a time)
     canister-equivalent regenerate the embedded canister-equivalent patch (--check | --out <file>)
     db render           MEMORY.md as a view of the memory database ([<memory.db>] <out>)
     mcp                 stdio MCP server of one sync run and PR (--run --pr [--profile escalation|readonly])
+    service             install | status | remove the host services, their settings and secret files
     escalate            hand a refused PR to Claude under budgets (preflight | ledger | --run --pr)
     wrapper             derive, check and verify build wrappers for any kernel.org
                         release (sharukhan wrapper --help)
@@ -600,6 +603,15 @@ fn main() -> ExitCode {
     }
     if let Some(c @ ("watch" | "events")) = argv.first().map(String::as_str) {
         return ExitCode::from(watch::cli(c, &argv[1..]));
+    }
+    if argv.first().map(String::as_str) == Some("service") {
+        return match service::cli(&config::Config::load(), &argv[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("sharukhan service: {e}");
+                ExitCode::FAILURE
+            }
+        };
     }
     if argv.first().map(String::as_str) == Some("escalate") {
         return match escalate::cli(&config::Config::load(), &argv[1..]) {
