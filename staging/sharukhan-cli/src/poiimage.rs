@@ -114,11 +114,13 @@ fn fresh_dir(p: &Path) -> Result<(), String> {
 ///
 /// From `HEAD`, not the working tree: the working tree is whatever the last
 /// build left behind, which is the very thing the SPECS reset exists to undo.
+/// The tree's build-config.json comes with it, so the copy is a release tree
+/// whose dist tag is the build's.
 pub fn variant_spec_dir(release_tree: &Path, patch: &Path, work: &Path) -> Result<PathBuf, String> {
     let root = work.join("variant-spec");
     fresh_dir(&root)?;
     let archive = Command::new("git")
-        .args(["archive", "--format=tar", "HEAD", SPEC_DIR])
+        .args(["archive", "--format=tar", "HEAD", SPEC_DIR, "build-config.json"])
         .current_dir(release_tree)
         .stdout(Stdio::piped())
         .spawn()
@@ -131,7 +133,7 @@ pub fn variant_spec_dir(release_tree: &Path, patch: &Path, work: &Path) -> Resul
         .map_err(|e| format!("tar: {e}"))?;
     if !tar.success() {
         return Err(format!(
-            "could not extract {SPEC_DIR} from {} at HEAD",
+            "could not extract {SPEC_DIR} and build-config.json from {} at HEAD",
             release_tree.display()
         ));
     }
@@ -616,6 +618,31 @@ pub fn point_build_config(common_tree: &Path, tag: &str) -> Result<Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_variant_spec_copy_is_a_release_tree_with_the_builds_dist_tag() {
+        let tmp = std::env::temp_dir().join(format!("shk-poi-variant-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let tree = tmp.join("5.0");
+        fs::create_dir_all(tree.join(SPEC_DIR)).unwrap();
+        crate::specresolve::test_release_config(&tree, 92);
+        fs::write(tree.join(SPEC_DIR).join("photon-os-installer.spec"), "Name: photon-os-installer\nRelease: 1%{?dist}\n").unwrap();
+        let g = |a: &[&str]| assert!(Command::new("git").arg("-C").arg(&tree).args(a).output().unwrap().status.success(), "git {a:?}");
+        g(&["init", "-q"]);
+        g(&["add", "-A"]);
+        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "t"]);
+        let patch = tmp.join("v.patch");
+        fs::write(
+            &patch,
+            format!("--- a/{SPEC_DIR}/photon-os-installer.spec\n+++ b/{SPEC_DIR}/photon-os-installer.spec\n@@ -1,2 +1,2 @@\n Name: photon-os-installer\n-Release: 1%{{?dist}}\n+Release: 2%{{?dist}}\n"),
+        )
+        .unwrap();
+        let dir = variant_spec_dir(&tree, &patch, &tmp.join("work")).unwrap();
+        assert!(fs::read_to_string(dir.join("photon-os-installer.spec")).unwrap().contains("Release: 2"), "the variant patch is applied");
+        let staged = dir.parent().and_then(Path::parent).unwrap();
+        assert_eq!(crate::specresolve::dist_of(staged).unwrap(), ".ph5", "ensure() reads the dist tag two levels above the spec dir");
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn console_scripts_are_read_from_setup_py() {
