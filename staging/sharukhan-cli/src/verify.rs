@@ -21,6 +21,20 @@ use std::path::PathBuf;
 const SSH_READY_BUDGET_SECS: u64 = 120;
 const SSH_RETRY_INTERVAL_SECS: u64 = 5;
 
+/// systemd-networkd-wait-online's default --timeout (man page: 120 s); the
+/// image's unit passes none. sshd is ordered after cloud-init.service, which
+/// waits for network-online.target, so on a row whose stranded link makes
+/// wait-online fail (NetSpec::expects_wait_online_failure) sshd listens only
+/// after this timeout: n05 measured sshd at 2 min 11 s into userspace with
+/// wait-online at "2min 193ms" (2026-10-25), and failed the plain budget
+/// twice that day.
+const WAIT_ONLINE_DEFAULT_TIMEOUT_SECS: u64 = 120;
+
+/// How long to wait for sshd on this row.
+pub fn ssh_ready_budget(p: &Permutation) -> u64 {
+    SSH_READY_BUDGET_SECS + if p.net.expects_wait_online_failure() { WAIT_ONLINE_DEFAULT_TIMEOUT_SECS } else { 0 }
+}
+
 pub struct Verified {
     pub checks: Checks,
     pub harvest: PathBuf,
@@ -240,11 +254,12 @@ pub fn run(
     c.check("guest.ip", Status::Info, "", &ip, "");
     let g = Guest::new(&cfg.ssh_user, &ip, &cfg.ssh_key(), 10);
     let started = std::time::Instant::now();
+    let budget = ssh_ready_budget(p);
     let mut attempts = 1;
     let mut probe = g.reachable();
     while !probe.ok
         && guest::transport_not_ready(&probe.stderr)
-        && started.elapsed().as_secs() + SSH_RETRY_INTERVAL_SECS < SSH_READY_BUDGET_SECS
+        && started.elapsed().as_secs() + SSH_RETRY_INTERVAL_SECS < budget
     {
         log(&format!(
             "ssh to {ip} not ready {}s in (attempt {attempts}): {}; retrying in {SSH_RETRY_INTERVAL_SECS}s",
@@ -338,4 +353,19 @@ pub fn run(
 
     log(&c.summary());
     Ok(Verified { checks: c, harvest })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_row_with_a_stranded_link_waits_for_wait_online_too() {
+        let m = crate::matrix::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../mission-control/config/permutations.tsv")).unwrap();
+        let longer: Vec<&str> = m.iter().filter(|p| ssh_ready_budget(p) > SSH_READY_BUDGET_SECS).map(|p| p.id.as_str()).collect();
+        assert_eq!(longer, ["n05"], "the legacy VLAN row is the one whose wait-online cannot succeed here");
+        let n05 = m.iter().find(|p| p.id == "n05").unwrap();
+        assert_eq!(ssh_ready_budget(n05), 240);
+        assert!(m.iter().filter(|p| p.id != "n05").all(|p| ssh_ready_budget(p) == 120));
+    }
 }
