@@ -296,8 +296,12 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
         if todo.is_empty() {
             continue;
         }
-        // one transaction per run: its evidence is in the database whole or not at all
-        let tx = conn.unchecked_transaction().map_err(|e| format!("{e}"))?;
+        // one transaction per run: its evidence is in the database whole or not at all.
+        // IMMEDIATE takes the write lock first and waits for it (busy timeout): a
+        // deferred one that reads, then writes, is refused at once with "database is
+        // locked" if another writer committed in between.
+        let tx = rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| format!("{}: {e}", cfg.memory_db.display()))?;
         // One run per stamp, keyed by the stamp itself so re-ingest updates
         // rather than duplicates.
         let selector: Vec<&str> = perms.keys().map(|s| s.as_str()).collect();
