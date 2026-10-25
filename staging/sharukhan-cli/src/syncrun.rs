@@ -25,6 +25,13 @@
 //! * Nothing reaches GitHub before PUBLISH. Rebased heads live in the gate
 //!   repository as sync/<run>/<branch>; PREPARE points the gate's branches at
 //!   them so variant patches and builds use them, and records the old values.
+//! * A branch an upstream PR is opened from is shared by both PRs, so PUBLISH
+//!   pushes it, and every PR stacked on it, to staging/<branch> instead;
+//!   STAGEVM checks the staged code is the gated code and installs
+//!   MC_STAGED_ROWS from it; UPSTREAM checks both descriptions (the upstream
+//!   one never names the fork) and a clean merge onto upstream's base, waits
+//!   for `sync approve-upstream` whatever publish_dcasota says, then moves
+//!   the shared branch and edits both descriptions in place.
 //! * PUBLISH pushes with --force-with-lease against the PR heads ANALYZE saw,
 //!   then puts each PR's description, carried to the new head by `prbody`,
 //!   and checks GitHub shows both. With publish_dcasota=auto it goes ahead
@@ -34,13 +41,13 @@
 //!   says so: pushing code under a description that no longer matches it is
 //!   not publishing, so that PR stays a decision.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub const STAGES: &[&str] = &["ANALYZE", "REBASE", "VERIFY", "PREPARE", "FASTLOOP", "GATE", "PUBLISH", "DONE"];
+pub const STAGES: &[&str] = &["ANALYZE", "REBASE", "VERIFY", "PREPARE", "FASTLOOP", "GATE", "PUBLISH", "STAGEVM", "UPSTREAM", "DONE"];
 
 pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS sync_run (
@@ -77,7 +84,7 @@ CREATE TABLE IF NOT EXISTS sync_pr (
     gh_head     TEXT NOT NULL,     -- the lease: GitHub's head when ANALYZE ran
     action      TEXT NOT NULL,     -- keep | rebase
     new_head    TEXT,              -- sync/<run>/<branch> after REBASE
-    state       TEXT NOT NULL,     -- pending | rebased | refused | resolved (by `sync decide`) | verified | failed | pushed (description unfit) | published
+    state       TEXT NOT NULL,     -- pending | rebased | refused | resolved (by `sync decide`) | verified | failed | pushed (description unfit) | staged (on staging/<branch>, for the vmware stage) | published
     detail      TEXT,
     PRIMARY KEY (run_id, number)
 );
@@ -100,6 +107,16 @@ pub fn ensure_schema(c: &Connection) -> Result<(), String> {
         .map_err(sql)?;
     if !has {
         c.execute_batch("ALTER TABLE sync_pr ADD COLUMN base_to TEXT").map_err(sql)?;
+    }
+    // added with the vmware stage: the upstream PR opened from the branch, and its approval
+    for (table, col, decl) in [("sync_pr", "upstream_pr", "INTEGER"), ("sync_run", "upstream_approved", "INTEGER NOT NULL DEFAULT 0")] {
+        let has: bool = c
+            .prepare(&format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{col}'"))
+            .and_then(|mut s| s.exists([]))
+            .map_err(sql)?;
+        if !has {
+            c.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {decl}")).map_err(sql)?;
+        }
     }
     Ok(())
 }
@@ -266,6 +283,7 @@ struct Ctx<'a> {
     bases: BTreeMap<String, (String, String)>,
     dir: PathBuf,
     publish: String,
+    upstream: String,
 }
 
 enum Outcome {
@@ -796,6 +814,14 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
     }
     let bodies = ctx.dir.join("PUBLISH");
     fs::create_dir_all(&bodies).map_err(|e| format!("{}: {e}", bodies.display()))?;
+    // a branch an upstream PR is opened from moves only in the UPSTREAM stage
+    let pairs = upstream_pairs(&ctx.upstream, &ctx.fork)?;
+    let parents: Vec<(i64, String, Option<String>)> = ctx
+        .c
+        .prepare("SELECT number, branch, parent FROM sync_pr WHERE run_id = ?1 AND state IN ('verified', 'pushed')")
+        .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
+    let hold = held(&parents, &pairs);
     let mut table = Vec::new();
     let mut plan = Vec::new();
     let mut unfit = 0;
@@ -814,7 +840,15 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
             (false, _) => format!("DESCRIPTION UNFIT: {}", problems.join("; ")),
         };
         unfit += !problems.is_empty() as usize;
-        table.push(format!("#{n} {branch} {}..{} {note}", &lease[..9], &new[..9]));
+        let staged = if hold.contains(n) {
+            match pairs.get(branch) {
+                Some(u) => format!(" -> staging/{branch}, upstream #{u} waits for the UPSTREAM stage"),
+                None => format!(" -> staging/{branch}, stacked on a branch an upstream PR uses"),
+            }
+        } else {
+            String::new()
+        };
+        table.push(format!("#{n} {branch} {}..{} {note}{staged}", &lease[..9], &new[..9]));
         plan.push((*n, branch.clone(), lease.clone(), new.clone(), file, carried, changed && problems.is_empty(), problems));
     }
     fs::write(ctx.dir.join("PUBLISH.table"), table.join("\n") + "\n").map_err(|e| format!("{e}"))?;
@@ -834,6 +868,33 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
     let mut log = Vec::new();
     let mut left = Vec::new();
     for (n, branch, lease, new, file, carried, put, problems) in &plan {
+        if hold.contains(n) && !pushed.contains_key(n) {
+            // the code goes to a branch no PR uses; both PRs move after the staged VM and approval
+            let staging = format!("staging/{branch}");
+            let old = remote_head(&ctx.fork, &staging)?.unwrap_or_default();
+            let o = Command::new("git")
+                .arg("-C")
+                .arg(&ctx.repo)
+                .args(["push", &format!("--force-with-lease=refs/heads/{staging}:{old}"), &url, &format!("{new}:refs/heads/{staging}")])
+                .output()
+                .map_err(|e| format!("git push: {e}"))?;
+            if !o.status.success() {
+                fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
+                return Ok(Outcome::Failed(format!("push of #{n} to {staging} refused: {}", String::from_utf8_lossy(&o.stderr).trim())));
+            }
+            if remote_head(&ctx.fork, &staging)?.as_deref() != Some(new.as_str()) {
+                fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").ok();
+                return Ok(Outcome::Failed(format!("#{n}: GitHub does not show {staging} at {new} after the push")));
+            }
+            ctx.c
+                .execute(
+                    "UPDATE sync_pr SET state = 'staged', upstream_pr = ?1 WHERE run_id = ?2 AND number = ?3",
+                    rusqlite::params![pairs.get(branch).map(|u| *u as i64), ctx.run, n],
+                )
+                .map_err(sql)?;
+            log.push(format!("#{n} {branch} {}..{} staged on {staging}, verified on GitHub; the PR waits for the UPSTREAM stage", &lease[..9], &new[..9]));
+            continue;
+        }
         if pushed.contains_key(n) {
             if *put {
                 if let Err(e) = put_body(ctx, *n, file, carried) {
@@ -901,13 +962,409 @@ fn publish(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
         log.push(format!("#{n} {branch} {}..{} verified on GitHub, {desc}", &lease[..9], &new[..9]));
     }
     fs::write(ctx.dir.join("PUBLISH.log"), log.join("\n") + "\n").map_err(|e| format!("{e}"))?;
+    let staged = rows.iter().filter(|r| hold.contains(&r.0)).count();
     if left.is_empty() {
-        Ok(Outcome::Done(format!("{} PR(s) pushed and verified", rows.len())))
+        Ok(Outcome::Done(format!("{} PR(s) pushed and verified, {staged} staged for the UPSTREAM stage", rows.len() - staged)))
     } else {
         Ok(Outcome::NeedsDecision(format!(
             "the descriptions of {} fail the lint (PUBLISH.table); rewrite them on GitHub, then `sharukhan sync resume {}`",
             left.join(" "),
             ctx.run
+        )))
+    }
+}
+
+// --- the upstream stage --------------------------------------------------------
+//
+// An upstream PR opened from a fork branch shares that branch with the fork's
+// own PR: GitHub cannot give a PR another head, and its maintainers keep
+// their conversation on the PR they have. So the branch is not pushed in
+// PUBLISH. The code goes to staging/<branch>, a branch no PR uses; STAGEVM
+// proves it on the staged VM; UPSTREAM waits for `sync approve-upstream`,
+// then moves the shared branch - both PRs see the new code at that moment -
+// and edits both descriptions in place, no comment and no new PR.
+
+/// Open upstream PRs whose head is a branch of the fork: branch -> number.
+pub fn parse_pairs(tsv: &str, owner: &str) -> BTreeMap<String, u64> {
+    tsv.lines()
+        .filter_map(|l| {
+            let mut f = l.split('\t');
+            let (n, who, head) = (f.next()?.parse().ok()?, f.next()?, f.next()?);
+            (who.eq_ignore_ascii_case(owner) && !head.is_empty()).then(|| (head.to_string(), n))
+        })
+        .collect()
+}
+
+pub fn upstream_pairs(upstream: &str, fork: &str) -> Result<BTreeMap<String, u64>, String> {
+    let owner = fork.split('/').next().filter(|o| !o.is_empty()).ok_or_else(|| format!("{fork}: not owner/name"))?;
+    let o = Command::new("gh")
+        .args(["pr", "list", "-R", upstream, "--state", "open", "--limit", "300", "--json", "number,headRepositoryOwner,headRefName"])
+        .args(["--jq", ".[] | [.number, .headRepositoryOwner.login, .headRefName] | @tsv"])
+        .output()
+        .map_err(|e| format!("gh pr list -R {upstream}: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("gh pr list -R {upstream}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(parse_pairs(&String::from_utf8_lossy(&o.stdout), owner))
+}
+
+/// The PRs held for the upstream stage: those an upstream PR uses, and every
+/// PR stacked on a held one - pushed now, a child would show its parent's new
+/// commits on the fork before the parent itself moves.
+pub fn held(rows: &[(i64, String, Option<String>)], pairs: &BTreeMap<String, u64>) -> std::collections::BTreeSet<i64> {
+    let mut held: std::collections::BTreeSet<i64> = rows.iter().filter(|r| pairs.contains_key(&r.1)).map(|r| r.0).collect();
+    loop {
+        let before = held.len();
+        for (n, _, parent) in rows {
+            if let Some(p) = parent {
+                if rows.iter().any(|r| &r.1 == p && held.contains(&r.0)) {
+                    held.insert(*n);
+                }
+            }
+        }
+        if held.len() == before {
+            return held;
+        }
+    }
+}
+
+/// A branch's head on the fork, none when it does not exist.
+fn remote_head(fork: &str, branch: &str) -> Result<Option<String>, String> {
+    let o = Command::new("git")
+        .args(["ls-remote", &format!("https://github.com/{fork}.git"), &format!("refs/heads/{branch}")])
+        .output()
+        .map_err(|e| format!("git ls-remote: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("git ls-remote {fork} {branch}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).split_whitespace().next().filter(|h| h.len() == 40).map(str::to_string))
+}
+
+fn gh_pr_field(repo: &str, n: u64, field: &str) -> Result<String, String> {
+    let o = Command::new("gh")
+        .args(["pr", "view", &n.to_string(), "-R", repo, "--json", field, "--jq", &format!(".{field}")])
+        .output()
+        .map_err(|e| format!("gh pr view: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("gh pr view {n} -R {repo}: {}", String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n"))
+}
+
+/// What an upstream description may not say: the fork's owner, or a PR
+/// number that is neither one of the upstream PRs of this fork nor already in
+/// the description the maintainers have.
+pub fn cross_org(text: &str, current: &str, owner: &str, allowed: &std::collections::BTreeSet<u64>) -> Vec<String> {
+    let nums = |t: &str| -> Vec<u64> {
+        let b = t.as_bytes();
+        let mut v = Vec::new();
+        for (i, _) in t.match_indices('#') {
+            if i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'&') {
+                continue;
+            }
+            let d: String = t[i + 1..].chars().take_while(char::is_ascii_digit).collect();
+            if let Ok(n) = d.parse() {
+                v.push(n);
+            }
+        }
+        v
+    };
+    let mut p = Vec::new();
+    if text.to_lowercase().contains(&owner.to_lowercase()) {
+        p.push(format!("names {owner}: an upstream description does not refer to the fork"));
+    }
+    let had = nums(current);
+    let mut bad: Vec<u64> = nums(text).into_iter().filter(|n| !allowed.contains(n) && !had.contains(n)).collect();
+    bad.sort();
+    bad.dedup();
+    if !bad.is_empty() {
+        p.push(format!(
+            "names {}: not an upstream PR of this fork, nor in the description upstream has",
+            bad.iter().map(|n| format!("#{n}")).collect::<Vec<_>>().join(" ")
+        ));
+    }
+    p
+}
+
+/// The rows waiting for the upstream stage, parents first.
+fn staged_rows(ctx: &Ctx) -> Result<Vec<(i64, String, String, String, Option<u64>)>, String> {
+    let mut rows: Vec<(i64, String, String, String, Option<u64>)> = ctx
+        .c
+        .prepare("SELECT number, branch, gh_head, new_head, upstream_pr FROM sync_pr WHERE run_id = ?1 AND state = 'staged'")
+        .and_then(|mut s| {
+            s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, Option<i64>>(4)?.map(|u| u as u64))))
+                .map(|x| x.flatten().collect())
+        })
+        .map_err(sql)?;
+    let all: Vec<(i64, String, String, Option<String>)> = ctx
+        .c
+        .prepare("SELECT number, branch, root, parent FROM sync_pr WHERE run_id = ?1")
+        .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
+    rows.sort_by_key(|r| depth(&r.1, &all));
+    Ok(rows)
+}
+
+/// The staged code is the gated code, upstream's PR has not moved, and the
+/// staged VM rows pass on it.
+fn stagevm(ctx: &Ctx) -> Result<Outcome, String> {
+    let rows = staged_rows(ctx)?;
+    if rows.is_empty() {
+        return Ok(Outcome::Skipped("no PR waits for the UPSTREAM stage".into()));
+    }
+    let mut log = Vec::new();
+    for (n, branch, lease, new, up) in &rows {
+        let staging = format!("staging/{branch}");
+        if remote_head(&ctx.fork, &staging)?.as_deref() != Some(new.as_str()) {
+            return Ok(Outcome::NeedsDecision(format!("#{n}: {staging} on GitHub is not the gated candidate {}", &new[..12])));
+        }
+        if let Some(u) = up {
+            let head = gh_pr_field(&ctx.upstream, *u, "headRefOid")?;
+            if head.trim() != lease {
+                return Ok(Outcome::NeedsDecision(format!("{}#{u} moved to {} since ANALYZE: someone pushed to {branch}", ctx.upstream, head.trim())));
+            }
+        }
+        log.push(format!("#{n} {staging} = {} (gated), upstream {}", &new[..12], up.map(|u| format!("#{u} unmoved")).unwrap_or_else(|| "none (stacked)".into())));
+    }
+    fs::write(ctx.dir.join("STAGEVM.checked"), log.join("\n") + "\n").map_err(|e| format!("{e}"))?;
+    let cfg = crate::config::Config::load();
+    let matrix = crate::matrix::load(&cfg.matrix_tsv)?;
+    for id in &cfg.staged_rows {
+        if !matrix.iter().any(|p| &p.id == id) {
+            return Err(format!("MC_STAGED_ROWS: {id} is not a row of {}", cfg.matrix_tsv.display()));
+        }
+    }
+    if cfg.staged_rows.is_empty() {
+        return Err("MC_STAGED_ROWS names no row: the staged VM is how the UPSTREAM stage is earned".into());
+    }
+    let only = cfg.staged_rows.join(",");
+    if child(ctx, "STAGEVM", &["run", "--only", &only, "--allow-build"])? {
+        Ok(Outcome::Done(format!("{} staged PR(s) are the gated code; staged VM {only} passed", rows.len())))
+    } else {
+        Ok(Outcome::NeedsDecision(format!("the staged VM {only} failed, see STAGEVM.log")))
+    }
+}
+
+/// An upstream PR's description carried to the new head: (current, carried,
+/// problems). Facts of the whole change, as upstream sees it: no stack.
+fn upstream_body(ctx: &Ctx, n: i64, up: u64, allowed: &std::collections::BTreeSet<u64>) -> Result<(String, String, Vec<String>), String> {
+    let current = gh_pr_field(&ctx.upstream, up, "body")?.trim_end().to_string() + "\n";
+    let (root, old_head, new_head): (String, String, String) = ctx
+        .c
+        .query_row("SELECT root, gh_head, new_head FROM sync_pr WHERE run_id = ?1 AND number = ?2", rusqlite::params![ctx.run, n], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .map_err(sql)?;
+    let (old_base, _) = ctx.bases.get(&root).ok_or_else(|| format!("#{n}: root {root} is not a base of the run"))?;
+    let mut facts = crate::prbody::gather(&ctx.repo, old_base, &format!("refs/sync/base/{root}"), &old_head, &new_head, None, None)?;
+    let reviewed = ctx.dir.join("PUBLISH").join(format!("{n}.upstream.reviewed"));
+    let carried = match fs::read_to_string(&reviewed) {
+        Ok(text) => {
+            facts.change_differs.clear();
+            text
+        }
+        Err(_) => crate::prbody::rewrite(&current, &facts),
+    };
+    let owner = ctx.fork.split('/').next().unwrap_or(&ctx.fork);
+    let mut problems = crate::prbody::lint(&carried, &facts);
+    problems.extend(cross_org(&carried, &current, owner, allowed));
+    Ok((current, carried, problems))
+}
+
+fn put_upstream_body(ctx: &Ctx, up: u64, file: &Path, want: &str) -> Result<(), String> {
+    let o = Command::new("gh").args(["pr", "edit", &up.to_string(), "-R", &ctx.upstream, "--body-file"]).arg(file).output().map_err(|e| format!("gh pr edit: {e}"))?;
+    if !o.status.success() {
+        return Err(format!("gh pr edit {up} -R {}: {}", ctx.upstream, String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    if gh_pr_field(&ctx.upstream, up, "body")?.trim_end() != want.trim_end() {
+        return Err(format!("{}#{up}: GitHub shows a different description after the edit", ctx.upstream));
+    }
+    crate::watch::record(
+        ctx.c,
+        "sync-description-edited",
+        &format!("{}#{up}", ctx.upstream),
+        None,
+        None,
+        &format!("sync run {} updated the description in place; previous text in PUBLISH/<n>.upstream.orig", ctx.run),
+    )?;
+    Ok(())
+}
+
+/// Whether `head` merges cleanly onto the upstream PR's base: None when it
+/// does, else the conflicting paths. Asked before anything is pushed.
+fn upstream_conflicts(ctx: &Ctx, up: u64, head: &str) -> Result<Option<Vec<String>>, String> {
+    let base = gh_pr_field(&ctx.upstream, up, "baseRefName")?.trim().to_string();
+    let local = format!("refs/sync/upstream/{base}");
+    git(&ctx.repo, &["fetch", "-q", &format!("https://github.com/{}.git", ctx.upstream), &format!("+refs/heads/{base}:{local}")])?;
+    let o = Command::new("git")
+        .arg("-C")
+        .arg(&ctx.repo)
+        .args(["merge-tree", "--write-tree", "--name-only", "--no-messages", &local, head])
+        .output()
+        .map_err(|e| format!("git merge-tree: {e}"))?;
+    match o.status.code() {
+        Some(0) => Ok(None),
+        Some(1) => Ok(Some(String::from_utf8_lossy(&o.stdout).lines().skip(1).filter(|l| !l.is_empty()).map(str::to_string).collect())),
+        _ => Err(format!("git merge-tree {local} {head}: {}", String::from_utf8_lossy(&o.stderr).trim())),
+    }
+}
+
+/// GitHub's merge verdict for an upstream PR, once it has computed one.
+fn mergeable(ctx: &Ctx, up: u64) -> Result<String, String> {
+    let mut m = String::new();
+    for _ in 0..12 {
+        m = gh_pr_field(&ctx.upstream, up, "mergeable")?.trim().to_string();
+        if m != "UNKNOWN" {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(10));
+    }
+    Ok(m)
+}
+
+fn upstream_stage(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
+    let rows = staged_rows(ctx)?;
+    if rows.is_empty() {
+        return Ok(Outcome::Skipped("no PR waits for the UPSTREAM stage".into()));
+    }
+    let bodies = ctx.dir.join("PUBLISH");
+    fs::create_dir_all(&bodies).map_err(|e| format!("{}: {e}", bodies.display()))?;
+    let allowed: std::collections::BTreeSet<u64> = upstream_pairs(&ctx.upstream, &ctx.fork)?.into_values().collect();
+    let mut table = Vec::new();
+    let mut plan = Vec::new();
+    let mut unfit = Vec::new();
+    for (n, branch, lease, new, up) in &rows {
+        let (fork_now, fork_body, fork_problems) = carried_body(ctx, *n)?;
+        let ffile = bodies.join(format!("{n}.body"));
+        fs::write(&ffile, &fork_body).map_err(|e| format!("{}: {e}", ffile.display()))?;
+        let forig = bodies.join(format!("{n}.orig"));
+        if !forig.exists() {
+            fs::write(&forig, &fork_now).map_err(|e| format!("{e}"))?;
+        }
+        let mut line = format!("#{n} {branch} {}..{}: fork description {}", &lease[..9], &new[..9], if fork_problems.is_empty() { "fit" } else { "UNFIT" });
+        let mut problems: Vec<String> = fork_problems.iter().map(|p| format!("fork: {p}")).collect();
+        let up_plan = match up {
+            Some(u) => {
+                let (now, body, p) = upstream_body(ctx, *n, *u, &allowed)?;
+                let ufile = bodies.join(format!("{n}.upstream.body"));
+                fs::write(&ufile, &body).map_err(|e| format!("{}: {e}", ufile.display()))?;
+                let uorig = bodies.join(format!("{n}.upstream.orig"));
+                if !uorig.exists() {
+                    fs::write(&uorig, &now).map_err(|e| format!("{e}"))?;
+                }
+                line.push_str(&format!(
+                    "; {}#{u} description {}",
+                    ctx.upstream,
+                    if !p.is_empty() { "UNFIT" } else if body != now { "carried (changed)" } else { "unchanged" }
+                ));
+                problems.extend(p.iter().map(|x| format!("upstream: {x}")));
+                if let Some(paths) = upstream_conflicts(ctx, *u, new)? {
+                    problems.push(format!("upstream: conflicts with {}#{u}'s base in {}", ctx.upstream, paths.join(", ")));
+                }
+                Some((*u, ufile, body.clone(), body != now))
+            }
+            None => None,
+        };
+        if !problems.is_empty() {
+            line.push_str(&format!(" -- {}", problems.join("; ")));
+            unfit.push(format!("#{n}: {}", problems.join("; ")));
+        }
+        table.push(line);
+        plan.push((*n, branch.clone(), lease.clone(), new.clone(), ffile, fork_body.clone(), fork_body != fork_now, up_plan));
+    }
+    fs::write(ctx.dir.join("UPSTREAM.table"), table.join("\n") + "\n").map_err(|e| format!("{e}"))?;
+    if !unfit.is_empty() {
+        return Ok(Outcome::NeedsDecision(format!(
+            "nothing pushed; {} (UPSTREAM.table). A description: `sharukhan sync body --set {r} <pr> <file>` (fork) or \
+             `sharukhan sync body --set-upstream {r} <pr> <file>` (upstream); a conflict: `sharukhan sync decide`; then `sharukhan sync resume {r}`",
+            unfit.join(" | "),
+            r = ctx.run
+        )));
+    }
+    if !approved {
+        return Ok(Outcome::Waiting(format!(
+            "{} PR(s) staged and proven on the staged VM (UPSTREAM.table); `sharukhan sync approve-upstream {}` moves each shared \
+             branch and updates both descriptions in place",
+            rows.len(),
+            ctx.run
+        )));
+    }
+    let url = format!("https://github.com/{}.git", ctx.fork);
+    let mut log = Vec::new();
+    let mut conflicts = Vec::new();
+    let fail = |log: &Vec<String>, why: String| -> Result<Outcome, String> {
+        fs::write(ctx.dir.join("UPSTREAM.log"), log.join("\n") + "\n").ok();
+        Ok(Outcome::Failed(why))
+    };
+    for (n, branch, lease, new, ffile, fbody, fput, up) in &plan {
+        if let Some((u, ..)) = up {
+            let head = gh_pr_field(&ctx.upstream, *u, "headRefOid")?;
+            if head.trim() != lease {
+                return fail(&log, format!("{}#{u} moved to {} since ANALYZE; nothing pushed for #{n}", ctx.upstream, head.trim()));
+            }
+        }
+        let o = Command::new("git")
+            .arg("-C")
+            .arg(&ctx.repo)
+            .args(["push", &format!("--force-with-lease=refs/heads/{branch}:{lease}"), &url, &format!("{new}:refs/heads/{branch}")])
+            .output()
+            .map_err(|e| format!("git push: {e}"))?;
+        if !o.status.success() {
+            return fail(&log, format!("push of #{n} refused: {}", String::from_utf8_lossy(&o.stderr).trim()));
+        }
+        // both PRs must show the new head
+        let mut seen = (String::new(), String::new());
+        for _ in 0..6 {
+            seen.0 = gh_pr_field(&ctx.fork, *n as u64, "headRefOid")?.trim().to_string();
+            seen.1 = match up {
+                Some((u, ..)) => gh_pr_field(&ctx.upstream, *u, "headRefOid")?.trim().to_string(),
+                None => new.clone(),
+            };
+            if &seen.0 == new && &seen.1 == new {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+        if &seen.0 != new || &seen.1 != new {
+            return fail(&log, format!("#{n}: GitHub shows {} (fork) and {} (upstream) after the push, not {new}", seen.0, seen.1));
+        }
+        if let Err(e) = retarget(ctx, *n) {
+            return fail(&log, format!("#{n} pushed, base not moved: {e}"));
+        }
+        if *fput {
+            if let Err(e) = put_body(ctx, *n, ffile, fbody) {
+                return fail(&log, format!("#{n} pushed, fork description not updated: {e}"));
+            }
+        }
+        let mut line = format!("#{n} {branch} {}..{} verified on GitHub", &lease[..9], &new[..9]);
+        if let Some((u, ufile, ubody, uput)) = up {
+            if *uput {
+                if let Err(e) = put_upstream_body(ctx, *u, ufile, ubody) {
+                    return fail(&log, format!("#{n} pushed, {}#{u} description not updated: {e}", ctx.upstream));
+                }
+            }
+            let m = mergeable(ctx, *u)?;
+            if m == "CONFLICTING" {
+                conflicts.push(format!("{}#{u}", ctx.upstream));
+            }
+            line.push_str(&format!("; {}#{u} {}, {m}", ctx.upstream, if *uput { "description updated" } else { "description unchanged" }));
+        }
+        // the staging branch has done its job
+        let staging = format!("staging/{branch}");
+        let del = Command::new("git").arg("-C").arg(&ctx.repo).args(["push", &format!("--force-with-lease=refs/heads/{staging}:{new}"), &url, &format!(":refs/heads/{staging}")]).output();
+        if !del.map(|o| o.status.success()).unwrap_or(false) {
+            line.push_str(&format!("; {staging} not deleted"));
+        }
+        ctx.c.execute("UPDATE sync_pr SET state = 'published' WHERE run_id = ?1 AND number = ?2", rusqlite::params![ctx.run, n]).map_err(sql)?;
+        log.push(line);
+    }
+    fs::write(ctx.dir.join("UPSTREAM.log"), log.join("\n") + "\n").map_err(|e| format!("{e}"))?;
+    if conflicts.is_empty() {
+        Ok(Outcome::Done(format!("{} PR(s) moved; every upstream PR mergeable", plan.len())))
+    } else {
+        Ok(Outcome::NeedsDecision(format!(
+            "{} conflict with upstream's base: the code moved and the descriptions are updated, but upstream must rebase or the branch must be resolved",
+            conflicts.join(" ")
         )))
     }
 }
@@ -928,9 +1385,9 @@ fn done(ctx: &Ctx) -> Result<Outcome, String> {
 /// Run the remaining stages of `run` until it finishes or stops.
 pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> Result<String, String> {
     recover(c, run)?;
-    let (fork, repo, bases, approved, publish_mode): (String, String, String, i64, String) = c
-        .query_row("SELECT fork, repo, bases, approved, publish FROM sync_run WHERE id = ?1", [run], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+    let (fork, repo, bases, approved, publish_mode, upstream_approved): (String, String, String, i64, String, i64) = c
+        .query_row("SELECT fork, repo, bases, approved, publish, upstream_approved FROM sync_run WHERE id = ?1", [run], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
         })
         .map_err(sql)?;
     c.execute("UPDATE sync_run SET pid = ?1, state = 'running' WHERE id = ?2", rusqlite::params![std::process::id() as i64, run]).map_err(sql)?;
@@ -942,12 +1399,22 @@ pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> R
         bases: parse_bases(&bases)?,
         dir: results.join("sync").join(run.to_string()),
         publish: publish_mode,
+        upstream: crate::config::Config::load().upstream,
     };
     fs::create_dir_all(&ctx.dir).map_err(|e| format!("{}: {e}", ctx.dir.display()))?;
     for name in STAGES {
-        let state: String = c
+        // a run started before a stage existed gets it, pending
+        let state: String = match c
             .query_row("SELECT state FROM sync_stage WHERE run_id = ?1 AND name = ?2", rusqlite::params![run, name], |r| r.get(0))
-            .map_err(sql)?;
+            .optional()
+            .map_err(sql)?
+        {
+            Some(s) => s,
+            None => {
+                c.execute("INSERT INTO sync_stage (run_id, name, state) VALUES (?1, ?2, 'pending')", rusqlite::params![run, name]).map_err(sql)?;
+                "pending".to_string()
+            }
+        };
         if matches!(state.as_str(), "done" | "skipped") {
             continue;
         }
@@ -973,7 +1440,7 @@ pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> R
                 return Ok(format!("superseded: {why}"));
             }
         }
-        if matches!(*name, "FASTLOOP" | "GATE") && !in_host_namespace() {
+        if matches!(*name, "FASTLOOP" | "GATE" | "STAGEVM") && !in_host_namespace() {
             return Err(format!("{name} builds and installs: run sharukhan in the host mount namespace (nsenter --target 1 --mount)"));
         }
         set_stage(c, run, name, "running", Some(&ctx.dir.to_string_lossy()), "")?;
@@ -985,6 +1452,8 @@ pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> R
             "FASTLOOP" => fastloop(&ctx),
             "GATE" => gate(&ctx),
             "PUBLISH" => publish(&ctx, approved != 0),
+            "STAGEVM" => stagevm(&ctx),
+            "UPSTREAM" => upstream_stage(&ctx, upstream_approved != 0),
             _ => done(&ctx),
         };
         match out {
@@ -1166,7 +1635,7 @@ pub fn decide(c: &Connection, run: i64, n: i64, cand: &str, base_to: Option<&str
 
 pub fn cli(args: &[String]) -> Option<u8> {
     let sub = args.first().map(String::as_str)?;
-    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto" | "lint" | "body" | "decide" | "reset-trees") {
+    if !matches!(sub, "start" | "resume" | "status" | "approve" | "abort" | "baseline" | "auto" | "lint" | "body" | "decide" | "reset-trees" | "approve-upstream") {
         return None;
     }
     let cfg = crate::config::Config::load();
@@ -1247,6 +1716,7 @@ pub fn cli(args: &[String]) -> Option<u8> {
                     bases: parse_bases(&bases)?,
                     dir: results.join("sync").join(id.to_string()),
                     publish: String::new(),
+                    upstream: cfg.upstream.clone(),
                 };
                 let facts = row_facts(&ctx, n)?;
                 let p = crate::prbody::lint(&text, &crate::prbody::Facts { change_differs: Vec::new(), ..facts });
@@ -1257,6 +1727,46 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
                 fs::write(dir.join(format!("{n}.reviewed")), &text).map_err(|e| format!("{e}"))?;
                 Ok(format!("#{n}: reviewed description recorded for run {id}"))
+            }
+            "body" if args.get(1).map(String::as_str) == Some("--set-upstream") => {
+                // a description reviewed for the upstream PR; the lint and the cross-org rule hold
+                let id = num(2)?;
+                let n = num(3)?;
+                let file = args.get(4).ok_or("sync body --set-upstream <run> <pr> <file>")?;
+                let text = fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+                let (fork, repo, bases): (String, String, String) =
+                    c.query_row("SELECT fork, repo, bases FROM sync_run WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
+                let up: Option<i64> =
+                    c.query_row("SELECT upstream_pr FROM sync_pr WHERE run_id = ?1 AND number = ?2", rusqlite::params![id, n], |r| r.get(0)).map_err(sql)?;
+                let up = up.ok_or_else(|| format!("#{n} has no upstream PR in run {id}"))? as u64;
+                let ctx = Ctx {
+                    c: &c,
+                    run: id,
+                    fork,
+                    repo: PathBuf::from(repo),
+                    bases: parse_bases(&bases)?,
+                    dir: results.join("sync").join(id.to_string()),
+                    publish: String::new(),
+                    upstream: cfg.upstream.clone(),
+                };
+                let dir = ctx.dir.join("PUBLISH");
+                fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
+                let target = dir.join(format!("{n}.upstream.reviewed"));
+                let allowed = upstream_pairs(&ctx.upstream, &ctx.fork)?.into_values().collect();
+                // judged exactly as UPSTREAM will judge it
+                let tmp = dir.join(format!("{n}.upstream.candidate"));
+                fs::write(&tmp, &text).map_err(|e| format!("{e}"))?;
+                let prev = fs::read(&target).ok();
+                fs::rename(&tmp, &target).map_err(|e| format!("{e}"))?;
+                let (_, _, problems) = upstream_body(&ctx, n, up, &allowed)?;
+                if !problems.is_empty() {
+                    match prev {
+                        Some(b) => fs::write(&target, b).map_err(|e| format!("{e}"))?,
+                        None => fs::remove_file(&target).map_err(|e| format!("{e}"))?,
+                    }
+                    return Err(format!("#{n}: the upstream description fails: {}", problems.join("; ")));
+                }
+                Ok(format!("#{n}: reviewed upstream description recorded for {}#{up} in run {id}", ctx.upstream))
             }
             "body" if args.get(1).map(String::as_str) == Some("--restore") => {
                 // put back the description a sync replaced
@@ -1385,6 +1895,21 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 announce(&c, id, &out)?;
                 Ok(out)
             }
+            "approve-upstream" => {
+                // always a person's decision, whatever publish_dcasota says
+                let id = num(1)?;
+                let waiting: i64 = c
+                    .query_row("SELECT count(*) FROM sync_stage WHERE run_id = ?1 AND name = 'UPSTREAM' AND state = 'pending'", [id], |r| r.get(0))
+                    .map_err(sql)?;
+                let st: String = c.query_row("SELECT state FROM sync_run WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
+                if waiting == 0 || st != "awaiting-approval" {
+                    return Err(format!("run {id} is {st} and not waiting at UPSTREAM"));
+                }
+                c.execute("UPDATE sync_run SET upstream_approved = 1 WHERE id = ?1", [id]).map_err(sql)?;
+                let out = drive(&c, id, &results, until)?;
+                announce(&c, id, &out)?;
+                Ok(out)
+            }
             "abort" => {
                 let id = num(1)?;
                 c.execute("UPDATE sync_run SET abort = 1 WHERE id = ?1", [id]).map_err(sql)?;
@@ -1395,12 +1920,18 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 if publishing > 0 {
                     return Ok("abort recorded; PUBLISH is running and finishes first".into());
                 }
+                // staged code on the fork is not undone by an abort: say where it is
+                let staged: Vec<String> = c
+                    .prepare("SELECT branch FROM sync_pr WHERE run_id = ?1 AND state = 'staged'")
+                    .and_then(|mut s| s.query_map([id], |r| r.get::<_, String>(0)).map(|x| x.flatten().map(|b| format!("staging/{b}")).collect()))
+                    .map_err(sql)?;
+                let note = if staged.is_empty() { String::new() } else { format!("; on the fork, no PR uses: {}", staged.join(" ")) };
                 if state != "running" {
                     let repo: String = c.query_row("SELECT repo FROM sync_run WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
                     let n = restore_refs(&results, id, Path::new(&repo))?;
-                    set_run(&c, id, "aborted", &format!("aborted; {n} gate ref(s) restored"))?;
+                    set_run(&c, id, "aborted", &format!("aborted; {n} gate ref(s) restored{note}"))?;
                 }
-                Ok(format!("run {id}: abort recorded"))
+                Ok(format!("run {id}: abort recorded{note}"))
             }
             _ => {
                 let mut s = c
@@ -1542,6 +2073,87 @@ mod tests {
         assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200, &mut esc).unwrap(), "run 1 is needs-decision; escalation: #23 verified");
         drop(esc);
         assert_eq!(asked, vec![1]);
+    }
+
+    #[test]
+    fn upstream_prs_pair_with_the_forks_branches_only() {
+        let tsv = "1680\tdcasota\tfix/kernel-single-source\n1675\tDCASOTA\tfix/canister-build-against-current-kernel\n1500\tsomeone\tfix/kernel-single-source\nbad line\n";
+        let p = parse_pairs(tsv, "dcasota");
+        assert_eq!(p.len(), 2);
+        assert_eq!(p["fix/kernel-single-source"], 1680, "another owner's same-named branch is not ours");
+        assert_eq!(p["fix/canister-build-against-current-kernel"], 1675);
+    }
+
+    #[test]
+    fn a_paired_branch_and_everything_stacked_on_it_is_held() {
+        let rows = vec![
+            (24, "a".to_string(), None),
+            (29, "b".to_string(), Some("a".to_string())),
+            (36, "c".to_string(), Some("b".to_string())),
+            (54, "d".to_string(), Some("c".to_string())),
+            (23, "e".to_string(), None),
+            (92, "f".to_string(), Some("e".to_string())),
+        ];
+        let mut pairs = BTreeMap::new();
+        pairs.insert("c".to_string(), 1680u64);
+        let h: Vec<i64> = held(&rows, &pairs).into_iter().collect();
+        assert_eq!(h, vec![36, 54], "the paired PR and its descendants; its parents and other stacks move as usual");
+        assert!(held(&rows, &BTreeMap::new()).is_empty());
+    }
+
+    #[test]
+    fn an_upstream_description_never_points_at_the_fork() {
+        let allowed: std::collections::BTreeSet<u64> = [1675, 1680].into_iter().collect();
+        let current = "## Problem\nSee #1234 for the report.\n";
+        assert!(cross_org("Stacked on #1675; see #1234.", current, "dcasota", &allowed).is_empty(), "upstream PRs and numbers upstream already has");
+        let p = cross_org("Stacked on #36 (dcasota/photon#36), see https://github.com/DCASOTA/photon.", current, "dcasota", &allowed);
+        assert_eq!(p.len(), 2, "{p:?}");
+        assert!(p[0].contains("names dcasota") && p[1].contains("#36") && !p[1].contains("#1234"));
+        assert!(cross_org("issue&#35; and abc#12 are not references", "", "x", &allowed).is_empty());
+    }
+
+    #[test]
+    fn a_run_from_before_a_stage_existed_gets_it_pending() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        ensure_schema(&c).unwrap();
+        ensure_schema(&c).unwrap();
+        c.execute("INSERT INTO sync_run (id, started_at, state, fork, repo, bases, publish) VALUES (1, 't', 'done', 'f/p', '/r', 'x=a..b', 'auto')", []).unwrap();
+        let ok: i64 = c.query_row("SELECT upstream_approved FROM sync_run WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(ok, 0, "approval is never assumed");
+        assert_eq!(&STAGES[6..], ["PUBLISH", "STAGEVM", "UPSTREAM", "DONE"]);
+    }
+
+    /// Live and read-only: the real pairing, every upstream description
+    /// against the cross-org rule, every paired head against upstream's base.
+    /// SHARUKHAN_LIVE_REPO=<gate repository>; uses gh and the network.
+    #[test]
+    #[ignore]
+    fn live_upstream_pairs_descriptions_and_merges() {
+        let repo = std::env::var("SHARUKHAN_LIVE_REPO").expect("SHARUKHAN_LIVE_REPO=<gate repository>");
+        let cfg = crate::config::Config::defaults();
+        let c = Connection::open_in_memory().unwrap();
+        let ctx = Ctx {
+            c: &c,
+            run: 0,
+            fork: cfg.fork.clone(),
+            repo: PathBuf::from(&repo),
+            bases: BTreeMap::new(),
+            dir: std::env::temp_dir(),
+            publish: String::new(),
+            upstream: cfg.upstream.clone(),
+        };
+        let pairs = upstream_pairs(&ctx.upstream, &ctx.fork).unwrap();
+        assert!(!pairs.is_empty());
+        let allowed: std::collections::BTreeSet<u64> = pairs.values().copied().collect();
+        let owner = ctx.fork.split('/').next().unwrap();
+        for (branch, u) in &pairs {
+            let body = gh_pr_field(&ctx.upstream, *u, "body").unwrap();
+            let p = cross_org(&body, &body, owner, &allowed);
+            let head = gh_pr_field(&ctx.upstream, *u, "headRefOid").unwrap();
+            let m = upstream_conflicts(&ctx, *u, head.trim()).unwrap();
+            println!("#{u} {branch}: cross-org {} | merge onto base {}", if p.is_empty() { "clean".to_string() } else { p.join("; ") }, m.map(|x| format!("CONFLICTS {x:?}")).unwrap_or("clean".into()));
+        }
     }
 
     #[test]

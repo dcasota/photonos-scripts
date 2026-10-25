@@ -135,7 +135,8 @@ PHASES (the same code `run` calls, one step at a time)
     db render           MEMORY.md as a view of the memory database ([<memory.db>] <out>)
     mcp                 stdio MCP server of one sync run and PR (--run --pr [--profile escalation|readonly])
     sync                a fork sync as a resumable state machine (start | resume | status | approve | abort | auto |
-                        decide | body | lint | reset-trees: the build trees back to the gate repository's branches)
+                        decide | body | lint | approve-upstream | reset-trees: the build trees back to the
+                        gate repository's branches)
     service             install | status | remove the host services, their settings and secret files
     escalate            hand a refused PR to Claude under budgets (preflight | ledger | --run --pr)
     wrapper             derive, check and verify build wrappers for any kernel.org

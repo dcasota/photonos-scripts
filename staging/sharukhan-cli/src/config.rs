@@ -92,6 +92,9 @@ pub struct Config {
     /// policy choice (a STIG row on the prebuilt canister, a FIPS row on the
     /// equivalent kernel), checked against the matrix before use.
     pub fastloop_rows: Vec<String>,
+    /// The matrix rows installed from the staged code before an upstream PR
+    /// moves (MC_STAGED_ROWS): the staged-VM verification.
+    pub staged_rows: Vec<String>,
     /// Set by `--kernel <release>` on the test commands: the kernel profile
     /// whose media the rows are run against (see kbuild::apply).
     pub kernel: Option<KernelAxis>,
@@ -274,6 +277,7 @@ impl Config {
             installer_branch: s_or(get, "MC_INSTALLER_BRANCH", "master"),
             iso_store: get("MC_ISO_STORE").filter(|v| !v.is_empty()).map(PathBuf::from),
             fastloop_rows: s_or(get, "MC_FASTLOOP_ROWS", "k03 c03").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
+            staged_rows: s_or(get, "MC_STAGED_ROWS", "k11").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
             kernel: None,
 
             guest_vcpus: n_or(get, "GUEST_VCPUS", 2),

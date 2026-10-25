@@ -95,6 +95,7 @@ pub const SETTINGS: &[&str] = &[
     "MC_REMASTER_WORKDIR",
     "MC_RESULTS_DIR",
     "MC_RUN_LOG_DIR",
+    "MC_STAGED_ROWS",
     "MC_START_TIMEOUT",
     "MC_UPSTREAM",
     "MC_UPSTREAM_INSTALLER",
