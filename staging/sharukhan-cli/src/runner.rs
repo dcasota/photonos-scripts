@@ -260,6 +260,8 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
 
     let mut attempted = 0usize;
     let mut halted: Option<String> = None;
+    let mut failed: Vec<String> = Vec::new();
+    let refused: Vec<String> = groups.iter().filter_map(|g| g.refused.as_ref().map(|w| format!("{} ({w})", g.key))).collect();
     'outer: for g in &groups {
         if g.refused.is_some() {
             continue;
@@ -277,19 +279,24 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             say(&mut logf, &format!("--- {} ---", p.id));
             println!("  running {} ({})", p.id, g.key);
             let line = match run_row(cfg, p, &g.iso, o.keep, o.lifecycle.as_ref(), &mut logf) {
-                Ok(v) => format!("{}: {v}", p.id),
-                Err(e) => format!("{}: {e}", p.id),
+                Ok((v, passed)) => {
+                    if !passed {
+                        failed.push(format!("{} ({v})", p.id));
+                    }
+                    format!("{}: {v}", p.id)
+                }
+                Err(e) => {
+                    failed.push(format!("{} ({e})", p.id));
+                    format!("{}: {e}", p.id)
+                }
             };
             say(&mut logf, &line);
             println!("  {line}");
         }
     }
 
-    let state = if halted.is_some() {
-        job::FAILED
-    } else {
-        job::DONE
-    };
+    let outcome = run_outcome(&failed, &refused, halted.as_deref());
+    let state = if outcome.is_err() { job::FAILED } else { job::DONE };
     say(
         &mut logf,
         &format!("job {job_id} {state}: {attempted} row(s) attempted"),
@@ -320,10 +327,10 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     println!("\njob {job_id} {state}: {attempted} of {admissible} admissible row(s) attempted");
     println!("evidence: {}", log_path.display());
     println!("results:  sharukhan report --only {label}");
-    if let Some(h) = halted {
-        return Err(h);
+    if let Err(e) = &outcome {
+        say(&mut logf, &format!("job {job_id} did not pass: {e}"));
     }
-    Ok(())
+    outcome
 }
 
 /// Group rows by the ISO that serves them, keeping matrix order so the cheap
@@ -395,7 +402,7 @@ fn run_row(
     keep: bool,
     lifecycle: Option<&crate::pkglife::Opts>,
     logf: &mut File,
-) -> Result<String, String> {
+) -> Result<(String, bool), String> {
     let mut log = |m: &str| {
         say(logf, m);
         println!("    {m}");
@@ -447,6 +454,8 @@ fn run_row(
         v.checks.fail,
         facts.install_result
     );
+    // a row passes when nothing failed and the install completed
+    let passed = v.checks.fail == 0 && facts.install_result == install::INSTALLED;
 
     if keep && facts.install_result == install::INSTALLED {
         log("--keep: leaving the VM up");
@@ -465,7 +474,28 @@ fn run_row(
     } else {
         vm::teardown(cfg, &p.id, true, &mut log)?;
     }
-    Ok(verdict)
+    Ok((verdict, passed))
+}
+
+/// What a run comes to. A run with a failed row, or an admissible row whose
+/// ISO could not be had, did not pass - whatever else went well - and says
+/// which; a caller such as a sync's GATE stage reads only this.
+pub fn run_outcome(failed: &[String], refused: &[String], halted: Option<&str>) -> Result<(), String> {
+    let mut why = Vec::new();
+    if let Some(h) = halted {
+        why.push(h.to_string());
+    }
+    if !failed.is_empty() {
+        why.push(format!("{} row(s) failed: {}", failed.len(), failed.join(", ")));
+    }
+    if !refused.is_empty() {
+        why.push(format!("{} ISO group(s) refused, their rows not run: {}", refused.len(), refused.join("; ")));
+    }
+    if why.is_empty() {
+        Ok(())
+    } else {
+        Err(why.join("; "))
+    }
 }
 
 /// The media phase: one ISO per group, resolved - and with --allow-build,
@@ -943,4 +973,20 @@ fn drain(log: &Path, from: u64) -> u64 {
         println!("  {l}");
     }
     start + buf.len() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_passes_only_when_every_row_passed_and_every_iso_was_had() {
+        assert!(run_outcome(&[], &[], None).is_ok());
+        let e = run_outcome(&["n05 (19 checks, 8 pass, 1 fail (install installed))".into()], &[], None).unwrap_err();
+        assert!(e.starts_with("1 row(s) failed: n05"), "{e}");
+        let e = run_outcome(&[], &["full/2.8/equivalent (build failed)".into()], None).unwrap_err();
+        assert!(e.contains("1 ISO group(s) refused") && e.contains("full/2.8/equivalent"), "{e}");
+        let e = run_outcome(&["k03 (boom)".into()], &[], Some("stopped before k04: disk")).unwrap_err();
+        assert!(e.starts_with("stopped before k04") && e.contains("k03"), "{e}");
+    }
 }
