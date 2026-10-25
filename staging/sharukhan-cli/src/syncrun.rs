@@ -1056,13 +1056,27 @@ fn age_s(at: &str) -> Option<i64> {
     Some(crate::health::epoch(&now())? - crate::health::epoch(at)?)
 }
 
-/// `sync auto`: start a run when the fork's base moved and stayed quiet.
-pub fn auto(c: &Connection, fork: &str, repo: &Path, roots: &[&str], results: &Path, quiet_s: i64) -> Result<String, String> {
+/// `sync auto`: start a run when the fork's base moved and stayed quiet. A
+/// run that stops for a decision goes to `escalate` (the escalation queue),
+/// on this tick and on every later one while it waits, so a queue parked by
+/// a budget or a rate limit is admitted again.
+pub fn auto(
+    c: &Connection,
+    fork: &str,
+    repo: &Path,
+    roots: &[&str],
+    results: &Path,
+    quiet_s: i64,
+    escalate: &mut dyn FnMut(i64) -> Result<Vec<String>, String>,
+) -> Result<String, String> {
     if let Ok((id, state)) = c.query_row(
         "SELECT id, state FROM sync_run WHERE state IN ('running', 'paused', 'needs-decision', 'awaiting-approval') ORDER BY id DESC LIMIT 1",
         [],
         |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
     ) {
+        if state == "needs-decision" {
+            return Ok(format!("run {id} is needs-decision; escalation: {}", escalate(id)?.join("; ")));
+        }
         return Ok(format!("run {id} is {state}; nothing started"));
     }
     let subjects: Vec<String> = roots.iter().map(|r| format!("{fork}:{r}")).collect();
@@ -1090,6 +1104,9 @@ pub fn auto(c: &Connection, fork: &str, repo: &Path, roots: &[&str], results: &P
     crate::watch::record(c, "sync-started", &format!("sync run {id}"), None, None, &format!("{} fork move(s)", moves.len()))?;
     let out = drive(c, id, results, None)?;
     announce(c, id, &out)?;
+    if out.starts_with("needs a decision") {
+        return Ok(format!("run {id}: {out}; escalation: {}", escalate(id)?.join("; ")));
+    }
     Ok(format!("run {id}: {out}"))
 }
 
@@ -1178,8 +1195,28 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 // the change comparison, which the review answers
                 let id = num(2)?;
                 let n = num(3)?;
-                let file = args.get(4).ok_or("sync body --set <run> <pr> <file>")?;
-                let text = fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+                let file = args.get(4).ok_or("sync body --set <run> <pr> <file|proposed>")?;
+                let run_dir = results.join("sync").join(id.to_string());
+                let text = if file == "proposed" {
+                    // the escalation's description, only for the proposal that became the candidate
+                    let p = run_dir.join("PUBLISH").join(format!("{n}.proposed"));
+                    let text = fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+                    let for_head = fs::read_to_string(p.with_extension("proposed.head")).unwrap_or_default();
+                    let (state, head): (String, Option<String>) = c
+                        .query_row("SELECT state, new_head FROM sync_pr WHERE run_id = ?1 AND number = ?2", rusqlite::params![id, n], |r| Ok((r.get(0)?, r.get(1)?)))
+                        .map_err(|_| format!("PR #{n} is not part of run {id}"))?;
+                    if state != "resolved" || head.as_deref() != Some(for_head.trim()) {
+                        let of = |x: &str| if x.is_empty() { "no recorded proposal".to_string() } else { x.chars().take(12).collect() };
+                        return Err(format!(
+                            "#{n}: the proposed description was written for {}, the run's candidate is {} ({state}): decide that proposal first",
+                            of(for_head.trim()),
+                            of(head.as_deref().unwrap_or(""))
+                        ));
+                    }
+                    text
+                } else {
+                    fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?
+                };
                 let (fork, repo, bases): (String, String, String) =
                     c.query_row("SELECT fork, repo, bases FROM sync_run WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
                 let ctx = Ctx {
@@ -1314,7 +1351,9 @@ pub fn cli(args: &[String]) -> Option<u8> {
                     .and_then(|i| args.get(i + 1))
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(7200);
-                let r = auto(&c, &cfg.fork, &cfg.gate_repo, &[cfg.release.as_str(), cfg.build_common.as_str()], &results, quiet)?;
+                let r = auto(&c, &cfg.fork, &cfg.gate_repo, &[cfg.release.as_str(), cfg.build_common.as_str()], &results, quiet, &mut |run| {
+                    crate::escalate::queue(&cfg, run, &mut |l| eprintln!("{l}"))
+                })?;
                 let channels = crate::watch::parse_channels(std::env::var("MC_NOTIFY").ok().as_deref())?;
                 crate::watch::notify(&c, &channels)?;
                 Ok(r)
@@ -1466,11 +1505,23 @@ mod tests {
     fn auto_waits_for_a_fork_move_and_for_quiet() {
         let c = db();
         let r = Path::new("/nonexistent");
-        assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200).unwrap(), "the fork's bases did not move");
+        let mut asked = Vec::new();
+        let mut esc = |run: i64| -> Result<Vec<String>, String> {
+            asked.push(run);
+            Ok(vec!["#23 verified".into()])
+        };
+        assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200, &mut esc).unwrap(), "the fork's bases did not move");
         crate::watch::record(&c, "upstream-moved", "vmware/photon:5.0", None, None, "1 commit(s)").unwrap();
-        assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200).unwrap(), "the fork's bases did not move", "vmware moving is not a trigger");
+        assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200, &mut esc).unwrap(), "the fork's bases did not move", "vmware moving is not a trigger");
         crate::watch::record(&c, "upstream-moved", "dcasota/photon:5.0", None, None, "3 commit(s)").unwrap();
-        assert!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200).unwrap().contains("waiting for 7200s of quiet"));
+        assert!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200, &mut esc).unwrap().contains("waiting for 7200s of quiet"));
+        // a run waiting for a decision is handed to the escalation on every tick; other states are not
+        c.execute("INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'awaiting-approval', 'f', '/r', 'x=a..b', 'approve')", []).unwrap();
+        assert!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200, &mut esc).unwrap().contains("is awaiting-approval; nothing started"));
+        c.execute("UPDATE sync_run SET state = 'needs-decision'", []).unwrap();
+        assert_eq!(auto(&c, "dcasota/photon", r, &["5.0", "common"], r, 7200, &mut esc).unwrap(), "run 1 is needs-decision; escalation: #23 verified");
+        drop(esc);
+        assert_eq!(asked, vec![1]);
     }
 
     #[test]

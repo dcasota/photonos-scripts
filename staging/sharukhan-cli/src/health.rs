@@ -193,6 +193,26 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
             }
         }
     });
+    // the escalation a stopped sync is handed to: its key and today's budget
+    v.push(match crate::escalate::enabled() {
+        Err(e) => item("escalation", Level::Fail, e),
+        Ok(false) => item("escalation", Level::Warn, "off (MC_ESCALATE=off): a stopped sync waits for a person"),
+        Ok(true) => match crate::escalate::read_key().and_then(|k| crate::escalate::key_accepted(&k)) {
+            Err(e) => item("escalation", Level::Fail, format!("{e}: a stopped sync parks its escalation")),
+            Ok(()) => {
+                let b = crate::escalate::Budget::from_env();
+                let today: String = crate::job::now().chars().take(10).collect();
+                let used: i64 = crate::job::open_rw(memory_db)
+                    .ok()
+                    .and_then(|c| {
+                        crate::escalate::ensure_schema(&c).ok()?;
+                        c.query_row("SELECT coalesce(sum(weighted),0) FROM escalation WHERE substr(started_at,1,10) = ?1", [&today], |r| r.get(0)).ok()
+                    })
+                    .unwrap_or(0);
+                item("escalation", Level::Ok, format!("API key accepted; {used} of {} weighted tokens used today", b.per_day))
+            }
+        },
+    });
     v.push(match out("timeout", &["20", "gh", "api", "rate_limit", "--jq", ".rate.remaining"]) {
         Some(s) => item("gh", Level::Ok, format!("authenticated, {s} API calls left this hour")),
         None => item("gh", Level::Fail, "gh cannot reach the API or is not logged in"),

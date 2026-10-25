@@ -429,21 +429,44 @@ impl Server {
             "propose_description" => {
                 let text = arg_str(a, "text")?;
                 let head = rev_of(s, "proposal").or_else(|_| rev_of(s, "candidate"))?;
-                let facts = crate::prbody::gather(&s.repo, &s.old_base, &s.new_base, &s.old_head, &head, None, None)?;
-                // the change differs by construction: a reviewed description answers it
-                let facts = crate::prbody::Facts { change_differs: Vec::new(), ..facts };
-                let mut problems = crate::prbody::lint(text, &facts);
-                if s.parent.is_some() && !text.contains("## Dependencies") {
-                    problems.push("a stacked PR needs a Dependencies section".into());
-                }
+                let problems = description_problems(s, &head, text)?;
                 let dir = s.results.join("sync").join(s.run.to_string()).join("PUBLISH");
                 std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
                 std::fs::write(dir.join(format!("{}.proposed", s.pr)), text).map_err(|e| format!("{e}"))?;
+                std::fs::write(dir.join(format!("{}.proposed.head", s.pr)), format!("{head}\n")).map_err(|e| format!("{e}"))?;
                 Ok(if problems.is_empty() { "recorded; the lint passes".into() } else { format!("recorded; the lint finds: {}", problems.join("; ")) })
             }
             other => Err(format!("no tool {other}")),
         }
     }
+}
+
+/// The lint of a description for `head`, the proposal of `s`. The change
+/// differs by construction, so only the facts are checked.
+pub fn description_problems(s: &Subject, head: &str, text: &str) -> Result<Vec<String>, String> {
+    let facts = crate::prbody::gather(&s.repo, &s.old_base, &s.new_base, &s.old_head, head, None, None)?;
+    let facts = crate::prbody::Facts { change_differs: Vec::new(), ..facts };
+    let mut problems = crate::prbody::lint(text, &facts);
+    if s.parent.is_some() && !text.contains("## Dependencies") {
+        problems.push("a stacked PR needs a Dependencies section".into());
+    }
+    Ok(problems)
+}
+
+/// The description an escalation proposed for `head`, as sharukhan judges it.
+pub fn proposed_description(s: &Subject, head: &str) -> Result<String, String> {
+    let dir = s.results.join("sync").join(s.run.to_string()).join("PUBLISH");
+    let Ok(text) = std::fs::read_to_string(dir.join(format!("{}.proposed", s.pr))) else { return Ok("no description proposed".into()) };
+    let for_head = std::fs::read_to_string(dir.join(format!("{}.proposed.head", s.pr))).unwrap_or_default();
+    if for_head.trim() != head {
+        return Ok("the proposed description was written for an earlier proposal".into());
+    }
+    let p = description_problems(s, head, &text)?;
+    Ok(if p.is_empty() {
+        format!("its description passes the lint; `sharukhan sync body --set {} {} proposed` takes it after the decision", s.run, s.pr)
+    } else {
+        format!("its description fails the lint: {}", p.join("; "))
+    })
 }
 
 /// One JSON-RPC message in, at most one out.

@@ -14,6 +14,11 @@
 //!   per sync run and per day, checked before a start; the stream is read as
 //!   it comes and the run is stopped the moment the escalation's budget is
 //!   exceeded. Two failed attempts of one PR in one run, and it is parked.
+//! * `escalate queue --run R` (and `sync auto`, for a run that stopped for a
+//!   decision, on every tick while it waits) takes the run's refused and
+//!   failed PRs in turn, parents first; a run or day budget, a rate limit or
+//!   a missing key stops the queue until the next tick. MC_ESCALATE=off
+//!   leaves a stopped run to a person.
 //! * Whatever the model reports, sharukhan reruns `verify` on the proposal
 //!   itself. A proposal that passes becomes an event; it becomes a candidate
 //!   only through `sharukhan sync decide`.
@@ -41,8 +46,9 @@ CREATE TABLE IF NOT EXISTS escalation (
     cache_write   INTEGER NOT NULL DEFAULT 0,
     cost_usd      REAL,
     turns         INTEGER,
-    outcome       TEXT NOT NULL,               -- running | proposed | verified | no-proposal | budget | parked | failed | void (invalidated by a sharukhan defect; not an attempt)
-    detail        TEXT
+    outcome       TEXT NOT NULL,               -- running | proposed | verified | no-proposal | budget | parked | failed | interrupted | void (invalidated by a sharukhan defect; not an attempt)
+    detail        TEXT,
+    pid           INTEGER                      -- the sharukhan process of a running attempt
 );
 CREATE INDEX IF NOT EXISTS idx_escalation_run ON escalation(run_id, pr);
 ";
@@ -56,7 +62,112 @@ pub fn ensure_schema(c: &Connection) -> Result<(), String> {
     if !has {
         c.execute_batch("ALTER TABLE escalation ADD COLUMN weighted INTEGER NOT NULL DEFAULT 0").map_err(|e| format!("{e}"))?;
     }
+    let has_pid: bool = c
+        .prepare("SELECT 1 FROM pragma_table_info('escalation') WHERE name = 'pid'")
+        .and_then(|mut s| s.exists([]))
+        .map_err(|e| format!("{e}"))?;
+    if !has_pid {
+        c.execute_batch("ALTER TABLE escalation ADD COLUMN pid INTEGER").map_err(|e| format!("{e}"))?;
+    }
     Ok(())
+}
+
+/// Whether a stopped sync run is handed to the escalation by itself:
+/// MC_ESCALATE=auto (the default) or off. Anything else is an error, not off.
+pub fn enabled() -> Result<bool, String> {
+    match std::env::var("MC_ESCALATE").ok().as_deref().map(str::trim) {
+        None | Some("") | Some("auto") => Ok(true),
+        Some("off") => Ok(false),
+        Some(v) => Err(format!("MC_ESCALATE={v}: valid are auto and off")),
+    }
+}
+
+fn alive(pid: i64) -> bool {
+    pid > 0 && Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// An attempt left `running` by a process that is gone is `interrupted`; it
+/// counts as an attempt, so a crash cannot loop. Returns the live attempt, if any.
+pub fn recover(c: &Connection, run: i64, pr: i64) -> Result<Option<i64>, String> {
+    let rows: Vec<(i64, Option<i64>)> = c
+        .prepare("SELECT id, pid FROM escalation WHERE run_id = ?1 AND pr = ?2 AND outcome = 'running'")
+        .and_then(|mut s| s.query_map(rusqlite::params![run, pr], |r| Ok((r.get(0)?, r.get(1)?))).map(|x| x.flatten().collect()))
+        .map_err(|e| format!("{e}"))?;
+    let mut live = None;
+    for (id, pid) in rows {
+        match pid {
+            Some(p) if alive(p) => live = Some(id),
+            _ => {
+                c.execute(
+                    "UPDATE escalation SET outcome = 'interrupted', finished_at = ?1, detail = 'its process is gone' WHERE id = ?2",
+                    rusqlite::params![crate::job::now(), id],
+                )
+                .map_err(|e| format!("{e}"))?;
+            }
+        }
+    }
+    Ok(live)
+}
+
+/// An event, unless the same one is still open: a parked PR is one
+/// notification, not one per timer tick.
+pub fn record_once(c: &Connection, kind: &str, subject: &str, detail: &str) -> Result<bool, String> {
+    let open: bool = c
+        .prepare("SELECT 1 FROM event WHERE kind = ?1 AND subject = ?2 AND detail = ?3 AND state IN ('new', 'notified')")
+        .and_then(|mut s| s.exists(rusqlite::params![kind, subject, detail]))
+        .map_err(|e| format!("{e}"))?;
+    if open {
+        return Ok(false);
+    }
+    crate::watch::record(c, kind, subject, None, None, detail)?;
+    Ok(true)
+}
+
+/// The PRs of a stopped run the escalation takes, parents first: refused or
+/// failed, not waiting on a parent that is itself undecided, without a
+/// verified proposal yet, and with attempts left.
+pub fn candidates(c: &Connection, run: i64, attempts: i64) -> Result<Vec<i64>, String> {
+    let rows: Vec<(i64, String, Option<String>)> = c
+        .prepare(
+            "SELECT p.number, p.branch, p.parent FROM sync_pr p WHERE p.run_id = ?1 AND p.state IN ('refused', 'failed') \
+             AND NOT EXISTS (SELECT 1 FROM sync_pr q WHERE q.run_id = p.run_id AND q.branch = p.parent AND q.state IN ('refused', 'failed', 'pending')) \
+             AND NOT EXISTS (SELECT 1 FROM escalation e WHERE e.run_id = p.run_id AND e.pr = p.number AND e.outcome = 'verified') \
+             AND (SELECT count(*) FROM escalation e WHERE e.run_id = p.run_id AND e.pr = p.number AND e.outcome NOT IN ('running', 'verified', 'parked', 'void')) < ?2 \
+             ORDER BY p.number",
+        )
+        .and_then(|mut s| s.query_map(rusqlite::params![run, attempts], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map(|x| x.flatten().collect()))
+        .map_err(|e| format!("{e}"))?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+/// Hand every candidate of a stopped run to the escalation, one at a time.
+/// A run or day budget, or a missing key, stops the queue: the next tick of
+/// `sync auto` admits it again. A PR out of attempts is parked once.
+pub fn queue(cfg: &crate::config::Config, run: i64, log: &mut dyn FnMut(&str)) -> Result<Vec<String>, String> {
+    if !enabled()? {
+        return Ok(vec!["escalation is off (MC_ESCALATE=off)".into()]);
+    }
+    let b = Budget::from_env();
+    let c = crate::job::open_rw(&cfg.memory_db)?;
+    ensure_schema(&c)?;
+    crate::watch::ensure_schema(&c)?;
+    let mut out = Vec::new();
+    for pr in candidates(&c, run, b.attempts)? {
+        let r = escalate(cfg, run, pr, log)?;
+        let failed = used(&c, "SELECT count(*) FROM escalation WHERE run_id = ?1 AND pr = ?2 AND outcome NOT IN ('running','verified','parked','void')", rusqlite::params![run, pr]);
+        let stop = r.starts_with("parked:") && !r.contains("parked for a person");
+        if !stop && !r.starts_with("verified") && failed >= b.attempts {
+            record_once(&c, "escalation-parked", &format!("sync run {run} #{pr}"), &format!("{failed} attempt(s) without a verified proposal: parked for a person"))?;
+        }
+        out.push(format!("#{pr} {r}"));
+        if stop {
+            break;
+        }
+    }
+    if out.is_empty() {
+        out.push("nothing to escalate".into());
+    }
+    Ok(out)
 }
 
 /// The limits, from the environment, defaulting to the values agreed on
@@ -364,8 +475,11 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
     crate::watch::ensure_schema(&c)?;
     let b = Budget::from_env();
     let today = crate::job::now().chars().take(10).collect::<String>();
+    if let Some(id) = recover(&c, run, pr)? {
+        return Err(format!("escalation {id} of PR #{pr} in run {run} is still running"));
+    }
     if let Some(why) = admission(&c, &b, run, pr, &today) {
-        crate::watch::record(&c, "escalation-parked", &format!("sync run {run} #{pr}"), None, None, &why)?;
+        record_once(&c, "escalation-parked", &format!("sync run {run} #{pr}"), &why)?;
         return Ok(format!("parked: {why}"));
     }
     // the subject must exist and be one sharukhan can escalate
@@ -376,14 +490,14 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
     let key = match read_key().and_then(|k| key_accepted(&k).map(|_| k)) {
         Ok(k) => k,
         Err(e) => {
-            crate::watch::record(&c, "escalation-parked", &format!("sync run {run} #{pr}"), None, None, &format!("no usable API key: {e}"))?;
+            record_once(&c, "escalation-parked", &format!("sync run {run} #{pr}"), &format!("no usable API key: {e}"))?;
             return Ok(format!("parked: {e}"));
         }
     };
     let attempt = used(&c, "SELECT count(*) FROM escalation WHERE run_id = ?1 AND pr = ?2", rusqlite::params![run, pr]) + 1;
     c.execute(
-        "INSERT INTO escalation (run_id, pr, attempt, model, started_at, outcome) VALUES (?1, ?2, ?3, ?4, ?5, 'running')",
-        rusqlite::params![run, pr, attempt, b.model, crate::job::now()],
+        "INSERT INTO escalation (run_id, pr, attempt, model, started_at, outcome, pid) VALUES (?1, ?2, ?3, ?4, ?5, 'running', ?6)",
+        rusqlite::params![run, pr, attempt, b.model, crate::job::now(), std::process::id() as i64],
     )
     .map_err(|e| format!("{e}"))?;
     let id = c.last_insert_rowid();
@@ -465,7 +579,8 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
         let _ = std::fs::remove_dir_all(&vwork);
         let failed = checks.iter().filter(|c| !c.ok).count();
         if failed == 0 {
-            ("verified", format!("proposal {} passes {} check(s); `sharukhan sync decide {run} {pr} candidate {}` takes it. Model: {said}: {summary}", &head[..12], checks.len(), subject.proposal_ref()))
+            let desc = crate::mcp::proposed_description(&subject, head)?;
+            ("verified", format!("proposal {} passes {} check(s); `sharukhan sync decide {run} {pr} candidate {}` takes it; {desc}. Model: {said}: {summary}", &head[..12], checks.len(), subject.proposal_ref()))
         } else {
             ("proposed", format!("proposal {} fails {failed} of {} check(s). Model: {said}: {summary}", &head[..12], checks.len()))
         }
@@ -489,7 +604,7 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
 }
 
 pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
-    let usage = "sharukhan escalate preflight | escalate --run <id> --pr <n> | escalate ledger";
+    let usage = "sharukhan escalate preflight | escalate --run <id> --pr <n> | escalate queue --run <id> | escalate ledger";
     match args.first().map(String::as_str) {
         Some("preflight") => {
             let k = read_key()?;
@@ -504,6 +619,16 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
                 "weights: input and output 1, cache read {}, cache write {} (5 min) / {} (1 h)",
                 b.weights.cache_read, b.weights.cache_write_5m, b.weights.cache_write_1h
             );
+            Ok(())
+        }
+        Some("queue") => {
+            let run = args.iter().position(|a| a == "--run").and_then(|i| args.get(i + 1)).and_then(|v| v.parse::<i64>().ok()).ok_or(usage)?;
+            if !crate::syncrun::in_host_namespace() {
+                return Err("verify builds in the builder container: run it in the host mount namespace".into());
+            }
+            for l in queue(cfg, run, &mut |l| eprintln!("{l}"))? {
+                println!("{l}");
+            }
             Ok(())
         }
         Some("ledger") => {
@@ -593,6 +718,69 @@ mod tests {
         ins(6, 1, 500_000, "verified", "2026-10-24");
         assert!(admission(&c, &b, 7, 1, "2026-10-24").unwrap().contains("waits for tomorrow"));
         assert!(admission(&c, &b, 7, 1, "2026-10-25").is_none());
+    }
+
+    fn run_db() -> Connection {
+        let c = db();
+        crate::syncrun::ensure_schema(&c).unwrap();
+        crate::watch::ensure_schema(&c).unwrap();
+        c.execute("INSERT INTO sync_run (id, started_at, state, fork, repo, bases, publish) VALUES (6, 't', 'needs-decision', 'f', '/r', '5.0=a..b', 'auto')", []).unwrap();
+        c
+    }
+
+    #[test]
+    fn the_queue_takes_parents_first_and_skips_what_is_settled() {
+        let c = run_db();
+        let pr = |n: i64, branch: &str, parent: Option<&str>, state: &str| {
+            c.execute(
+                "INSERT INTO sync_pr (run_id, number, branch, root, parent, gh_head, action, state) VALUES (6, ?1, ?2, '5.0', ?3, 'h', 'rebase', ?4)",
+                rusqlite::params![n, branch, parent, state],
+            )
+            .unwrap();
+        };
+        pr(23, "a", None, "refused");
+        pr(24, "b", Some("a"), "refused");
+        pr(29, "c", None, "failed");
+        pr(36, "d", None, "verified");
+        pr(54, "e", None, "refused");
+        assert_eq!(candidates(&c, 6, 2).unwrap(), vec![23, 29, 54], "#24 waits for its parent; #36 is fine");
+        let esc = |n: i64, outcome: &str| {
+            c.execute(
+                "INSERT INTO escalation (run_id, pr, attempt, model, started_at, outcome) VALUES (6, ?1, 1, 'opus', 't', ?2)",
+                rusqlite::params![n, outcome],
+            )
+            .unwrap();
+        };
+        esc(23, "verified");
+        esc(29, "no-proposal");
+        esc(29, "budget");
+        esc(54, "void");
+        esc(54, "parked");
+        assert_eq!(candidates(&c, 6, 2).unwrap(), vec![54], "verified and out of attempts are settled; void and parked are not attempts");
+        c.execute("UPDATE sync_pr SET state = 'resolved' WHERE number = 23", []).unwrap();
+        assert_eq!(candidates(&c, 6, 2).unwrap(), vec![24, 54], "a decided parent releases its child");
+    }
+
+    #[test]
+    fn a_dead_attempt_is_interrupted_and_counts() {
+        let c = run_db();
+        c.execute("INSERT INTO escalation (run_id, pr, attempt, model, started_at, outcome, pid) VALUES (6, 23, 1, 'opus', 't', 'running', ?1)", [std::process::id() as i64]).unwrap();
+        assert!(recover(&c, 6, 23).unwrap().is_some(), "a live attempt blocks a second one");
+        c.execute("UPDATE escalation SET pid = 999999999", []).unwrap();
+        assert!(recover(&c, 6, 23).unwrap().is_none());
+        let o: String = c.query_row("SELECT outcome FROM escalation", [], |r| r.get(0)).unwrap();
+        assert_eq!(o, "interrupted");
+        assert!(admission(&c, &Budget { attempts: 1, ..budget() }, 6, 23, "2026-10-25").unwrap().contains("parked for a person"));
+    }
+
+    #[test]
+    fn a_parked_pr_is_one_notification() {
+        let c = run_db();
+        assert!(record_once(&c, "escalation-parked", "sync run 6 #23", "no usable API key").unwrap());
+        assert!(!record_once(&c, "escalation-parked", "sync run 6 #23", "no usable API key").unwrap());
+        assert!(record_once(&c, "escalation-parked", "sync run 6 #29", "no usable API key").unwrap());
+        c.execute("UPDATE event SET state = 'handled'", []).unwrap();
+        assert!(record_once(&c, "escalation-parked", "sync run 6 #23", "no usable API key").unwrap(), "after it is handled it may come again");
     }
 
     #[test]
