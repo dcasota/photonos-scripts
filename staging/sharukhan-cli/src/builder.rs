@@ -340,7 +340,7 @@ pub fn ensure(log: &mut dyn FnMut(&str)) -> Result<String, String> {
         let _ = run("docker", &["rmi", &tag]);
         return Err(format!("{tag} was built but fails its proof, removed: {e}"));
     }
-    log(&format!("  {tag}: every tool present, every pinned module at its version"));
+    log(&format!("  {tag}: every tool present, C compiles against glibc and the kernel headers, every pinned module at its version"));
     *IMAGE.lock().map_err(|_| "builder image lock poisoned")? = Some(tag.clone());
     Ok(tag)
 }
@@ -368,17 +368,30 @@ fn normalize(name: &str) -> String {
     name.to_lowercase().replace(['_', '.'], "-")
 }
 
-/// A new image is used only if every tool is there and pip reports every
-/// pinned module at exactly its pinned version.
+/// A C program the image must compile: what build.py does before every build
+/// whose common tree has no `tools/bin/contain_unpriv` yet (a fresh build
+/// root). glibc's `<errno.h>` includes the kernel's `<linux/errno.h>`.
+const COMPILE_PROBE: &str = "#include <errno.h>\n#include <limits.h>\nint main(void) { return EINVAL == 0 || PATH_MAX == 0; }\n";
+
+/// A new image is used only if every tool is there, it compiles C against
+/// glibc and the kernel API headers, and pip reports every pinned module at
+/// exactly its pinned version.
 fn prove(tag: &str) -> Result<(), String> {
     let script = format!(
-        "for t in {}; do command -v $t >/dev/null || echo MISSING $t; done; python3 -m pip list --format=freeze 2>/dev/null",
-        TOOLS.join(" ")
+        "for t in {}; do command -v $t >/dev/null || echo MISSING $t; done; \
+         printf '{}' | gcc -x c -o /tmp/probe - 2>&1 | sed 's/^/COMPILE /'; /tmp/probe 2>/dev/null || echo 'COMPILE probe does not run'; \
+         python3 -m pip list --format=freeze 2>/dev/null",
+        TOOLS.join(" "),
+        COMPILE_PROBE.replace('\n', "\\n")
     );
     let out = run("docker", &["run", "--rm", "--network", "none", tag, "sh", "-c", &script])?;
     let missing: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("MISSING ")).collect();
     if !missing.is_empty() {
         return Err(format!("missing tools: {}", missing.join(" ")));
+    }
+    let compile: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("COMPILE ")).collect();
+    if !compile.is_empty() {
+        return Err(format!("does not compile C against glibc and the kernel headers: {}", compile.join(" | ")));
     }
     let installed: Vec<(String, String)> = out
         .lines()
@@ -858,6 +871,24 @@ pub fn cli(args: &[String]) -> u8 {
 
 #[cfg(test)]
 mod tests {
+
+    /// The probe is a printf format: no `%`, no quote may reach the shell.
+    #[test]
+    fn the_compile_probe_survives_the_shell() {
+        assert!(!COMPILE_PROBE.contains('%') && !COMPILE_PROBE.contains('\''));
+    }
+
+    /// glibc's headers include the kernel's (<errno.h> -> <linux/errno.h>):
+    /// an image with glibc-devel and without linux-api-headers compiles nothing
+    /// that includes errno.h - contain_unpriv in a fresh build root.
+    #[test]
+    fn the_image_carries_the_kernel_headers_glibcs_need() {
+        let pkgs: Vec<&str> = PACKAGES.lines().map(str::trim).collect();
+        assert!(pkgs.contains(&"glibc-devel") && pkgs.contains(&"gcc"));
+        assert!(pkgs.contains(&"linux-api-headers"), "glibc-devel without linux-api-headers");
+        assert!(COMPILE_PROBE.contains("#include <errno.h>"));
+    }
+
     /// Live: a container labelled with a job is found and stopped by its
     /// label. Uses the docker daemon and the builder image.
     #[test]

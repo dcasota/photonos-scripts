@@ -18,6 +18,7 @@ grep
 gzip
 jq
 libcap
+linux-api-headers
 make
 patch
 procps-ng
