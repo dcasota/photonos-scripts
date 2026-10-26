@@ -1137,13 +1137,39 @@ fn spec_blank_lines(c: &mut Ctx) -> Result<(), String> {
 ///    Downloads go to a temp file and are moved only once validated.
 ///  - a cached archive whose checksum no longer matches is often still correct
 ///    in the common tree's cache, so that is checked before re-downloading.
+///  - a fresh build root (a kernel-profile build) has no SOURCES at all, and an
+///    upstream that has gone away (rpcbind-1.3.1, pgbouncer-1.26.0) is not on
+///    the mirror either, while the configured build root holds verified copies.
+///    Every local cache (`local_source_caches`) is tried before the network,
+///    and a copy counts only when its sha512 is the declared one.
 /// Photon's source mirror: the second place an archive is fetched from when
 /// its declared upstream url fails.
 pub(crate) const SOURCES_MIRROR: &str = "https://packages.broadcom.com/photon/photon_sources/1.0";
 
+/// The SOURCES caches an archive may be restored from, other than `dest`:
+/// this build's common tree, then the configured build root's release and
+/// common trees (a kernel-profile build runs in its own root beside them).
+pub fn local_source_caches(dest: &Path, common: &Path, cfg: &crate::config::Config) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = vec![
+        common.join("stage/SOURCES"),
+        cfg.build_root.join(&cfg.release).join("stage/SOURCES"),
+        cfg.build_root.join(&cfg.build_common).join("stage/SOURCES"),
+    ];
+    let same = |a: &Path, b: &Path| a == b || matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(x), Ok(y)) if x == y);
+    let mut out: Vec<PathBuf> = Vec::new();
+    for p in v.drain(..) {
+        if !same(&p, dest) && !out.iter().any(|o| same(o, &p)) {
+            out.push(p);
+        }
+    }
+    out
+}
+
 pub fn sources(c: &mut Ctx) -> Result<(), String> {
     let dest = c.spec.tree(Tree::Release).join("stage/SOURCES");
     let backup = c.spec.tree(Tree::Common).join("stage/SOURCES");
+    // the configured build root as the environment gives it, not this build's own
+    let caches = local_source_caches(&dest, &c.spec.tree(Tree::Common), &crate::config::Config::load());
     let specs = c.spec.tree(Tree::Release).join("SPECS");
     if !specs.is_dir() {
         c.skip("sources", "no SPECS tree yet");
@@ -1177,6 +1203,19 @@ pub fn sources(c: &mut Ctx) -> Result<(), String> {
                     }
                 }
                 let _ = fs::remove_file(&target);
+            }
+            // a verified local copy before the network
+            if !sha.is_empty() {
+                if let Some(b) = caches.iter().map(|d| d.join(&archive)).find(|b| b.is_file() && sha512(b).as_deref() == Some(sha.as_str())) {
+                    let tmp = dest.join(format!("{archive}.tmp"));
+                    let _ = fs::remove_file(&tmp);
+                    if fs::copy(&b, &tmp).is_ok() && sha512(&tmp).as_deref() == Some(sha.as_str()) && fs::rename(&tmp, &target).is_ok() {
+                        c.say(&format!("  restored {archive} from {} (sha512 verified)", b.parent().map(|p| p.display().to_string()).unwrap_or_default()));
+                        restored += 1;
+                        continue;
+                    }
+                    let _ = fs::remove_file(&tmp);
+                }
             }
             let mirror = format!("{SOURCES_MIRROR}/{archive}");
             let mut got = false;
@@ -3803,6 +3842,29 @@ fn subrelease_enter(c: &mut Ctx, stage: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A kernel-profile build's own root restores from the configured build
+    /// root's caches; the build that IS the configured root does not list its
+    /// own SOURCES as a source of itself.
+    #[test]
+    fn local_source_caches_name_the_configured_root_and_never_dest() {
+        let mut cfg = crate::config::Config::defaults();
+        cfg.build_root = PathBuf::from("/b");
+        let kdest = Path::new("/w/kbuild/7.3/experimental/linux-7.3/stage/SOURCES");
+        let k = local_source_caches(kdest, Path::new("/w/kbuild/7.3/common"), &cfg);
+        assert_eq!(
+            k,
+            vec![
+                PathBuf::from("/w/kbuild/7.3/common/stage/SOURCES"),
+                PathBuf::from(format!("/b/{}/stage/SOURCES", cfg.release)),
+                PathBuf::from(format!("/b/{}/stage/SOURCES", cfg.build_common)),
+            ]
+        );
+        let own = PathBuf::from(format!("/b/{}/stage/SOURCES", cfg.release));
+        let g = local_source_caches(&own, &PathBuf::from(format!("/b/{}", cfg.build_common)), &cfg);
+        assert_eq!(g, vec![PathBuf::from(format!("/b/{}/stage/SOURCES", cfg.build_common))], "no duplicate, never dest");
+    }
+
     #[test]
     fn a_stored_iso_moves_and_its_cache_name_links_to_it() {
         let root = std::env::temp_dir().join(format!("shk-store-{}", std::process::id()));
