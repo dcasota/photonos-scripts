@@ -4,7 +4,7 @@
 
 `sharukhan` is a single standalone Rust CLI that plans, builds, executes and verifies every permutation of a Photon OS ISO install matrix on VMware Workstation, and records what it found in a queryable memory database.
 
-It replaces two shell toolkits — vm-lab (VM provisioning, archived here under `superseded-vm-lab/`) and mission-control (permutation harness, archived under `staging/mission-control/superseded-bash/`) — which between them work but cannot be trusted as a test oracle. Three defects motivate the rewrite, all observed rather than hypothesised:
+It replaces two shell toolkits — vm-lab (VM provisioning, archived here under `archive/superseded-vm-lab/`) and mission-control (permutation harness, archived under `staging/mission-control/superseded-bash/`) — which between them work but cannot be trusted as a test oracle. Three defects motivate the rewrite, all observed rather than hypothesised:
 
 - **Inputs resolve implicitly.** `runPh5_normal.sh` resolves its patch relative to its own location. The two copies on the host had drifted 78 lines and 8-vs-27 files apart, and the build silently used whichever sat beside the invoked script. The failure surfaced as `patch does not apply` against a spec — indistinguishable from a rebase problem, and it cost two builds and two wrong diagnoses.
 - **Checks cannot fail.** `vm-lab/scripts/40-check-staging.sh` never exits non-zero. Correct for an inspection tool; useless as a gate.

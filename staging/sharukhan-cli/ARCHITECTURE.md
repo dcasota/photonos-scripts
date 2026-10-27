@@ -1,6 +1,6 @@
 # sharukhan — Architecture
 
-`sharukhan` is a single standalone Rust CLI that replaces the shell tooling of vm-lab and mission-control, both archived rather than deleted — vm-lab here under `superseded-vm-lab/`, mission-control under `staging/mission-control/superseded-bash/`. It checks its own prerequisites, provisions VMware Workstation VMs, drives Photon OS installs both unattended and operator-assisted, verifies the result, and records every finding in a queryable memory database.
+`sharukhan` is a single standalone Rust CLI that replaces the shell tooling of vm-lab and mission-control, both archived rather than deleted — vm-lab here under `archive/superseded-vm-lab/`, mission-control under `staging/mission-control/superseded-bash/`. It checks its own prerequisites, provisions VMware Workstation VMs, drives Photon OS installs both unattended and operator-assisted, verifies the result, and records every finding in a queryable memory database.
 
 The name is the tool; the job is mission control for the ISO permutation matrix.
 

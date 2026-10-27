@@ -2,7 +2,7 @@
 
 The shell toolkit that provisioned Photon OS VMs on VMware Workstation before
 `sharukhan` existed. Archived rather than deleted, on the same reasoning as
-`../../mission-control/superseded-bash/`: the scripts record how this host was
+`../../../mission-control/superseded-bash/`: the scripts record how this host was
 driven, and that provenance is not recoverable from the Rust CLI.
 
 Everything they did is in `sharukhan`. Nothing here is invoked by the CLI, and

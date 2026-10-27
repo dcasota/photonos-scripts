@@ -1506,7 +1506,7 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
 /// Free space on the two filesystems this build actually writes to.
 ///
 /// This used to run `df -h /` and PRINT the answer. It was described as a
-/// check in the dry run and in BUILD-MODE-PLAN, and it never compared the
+/// check in the dry run and in the build-mode plan (specs/archive/build-mode-plan-2026-09.md), and it never compared the
 /// number to anything, so it could not fail - and it looked at the wrong
 /// filesystem anyway. The stage is on `/`; the ISO is delivered to
 /// `output_dir`, which on this host is `/mnt/c/photon-mc/iso-cache` - a
