@@ -405,6 +405,48 @@ pub fn moved_changelog(path: &str, added: &str, specs: &[(String, String, String
     }
 }
 
+/// A changelog include the PR edits: like a spec's %changelog, the PR's top
+/// entry goes on top of the base's, redated. Only the amend of a stack's shared
+/// entry is done here (same Release, the PR's lines replace the parent's); a new
+/// entry would need a Release bump in another file, which needs a person.
+pub fn rebase_changelog_include(prev: &str, pr_head: &str, base: &str, date: &str, stacked: bool, author: &str) -> Result<String, String> {
+    let entry = |text: &str| -> Option<(String, Vec<String>)> {
+        let mut lines = changelog_section(text).lines().skip(1);
+        let header = lines.next().filter(|l| l.starts_with("* "))?.to_string();
+        Some((header, lines.take_while(|l| !l.starts_with("* ")).map(str::to_string).collect()))
+    };
+    let head = |text: &str| text[..text.len() - changelog_section(text).len()].to_string();
+    if head(prev) != head(pr_head) {
+        return Err("the PR changed more than the %changelog of a changelog include: needs a person".into());
+    }
+    let (pr_header, pr_lines) = entry(pr_head).ok_or("the PR's changelog include has no entry")?;
+    if !pr_header.contains(author) {
+        return Err(format!("the top changelog entry of the PR is not its own: {pr_header}"));
+    }
+    let (base_header, base_lines) = entry(base).ok_or("the base's changelog include has no entry")?;
+    if !(stacked && base_header.contains(author)) {
+        return Err("a new changelog entry in an include needs a Release bump elsewhere: needs a person".into());
+    }
+    // `* <Day Mon DD YYYY> <author> <version-release>`: keep the base's version-release
+    let vr = base_header.rsplit(' ').next().ok_or("no version-release in the base entry")?;
+    let section = changelog_section(base);
+    let rest: Vec<&str> = section.lines().skip(2 + base_lines.len()).collect();
+    let mut out = format!("{}%changelog\n* {date} {author} {vr}\n", head(base));
+    for l in pr_lines {
+        out.push_str(&l);
+        out.push('\n');
+    }
+    for l in rest {
+        out.push_str(l);
+        out.push('\n');
+    }
+    // the file ends as the base's does, with or without a final newline
+    if !base.ends_with('\n') {
+        out.pop();
+    }
+    Ok(out)
+}
+
 /// Renames the base made between `old` and `new`: old path -> new path.
 pub fn base_renames(repo: &Path, old: &str, new: &str) -> Result<BTreeMap<String, String>, String> {
     let out = git_in(repo, &["diff", "--name-status", "-M", "--diff-filter=R", old, new])?;
@@ -575,7 +617,9 @@ fn replay(
                         }
                         text
                     } else if target.ends_with(".inc") && target.contains("changelog") {
-                        return Err(format!("{target}: a changelog include needs a person (its entries are not a spec's %changelog)"));
+                        let base_inc = show(repo, new_base, &target).ok_or_else(|| format!("{target}: not in the base"))?;
+                        let pr_head = show(repo, src, path).unwrap_or_else(|| pr.clone());
+                        rebase_changelog_include(&prev, &pr_head, &base_inc, date, stacked, &author.line()).map_err(|e| format!("{target}: {e}"))?
                     } else {
                         merge3(&prev, &cur, &pr).map_err(|_| format!("{target}: conflict"))?
                     };
@@ -1074,6 +1118,26 @@ mod tests {
         assert_eq!(g(&["show", &format!("{}:SPECS/k/k-changelog.inc", r.head)]) + "\n", changelog_section(SPEC_REBASED));
         assert_eq!(g(&["show", &format!("{}:SPECS/k/k.spec", r.head)]) + "\n", pr_spec);
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_stacked_pr_amends_the_shared_entry_of_a_changelog_include() {
+        let inc = |date: &str, line: &str| {
+            format!("%changelog\n* {date} A B <a@b> 6.12-6\n- {line}\n* Fri Oct 23 2026 C D <c@d> 6.12-5\n- CVE fixes\n")
+        };
+        let prev = inc("Fri Oct 23 2026", "Share the config");
+        let pr = inc("Fri Oct 23 2026", "Share the config; ghost depmod files");
+        let base = inc("Tue Oct 27 2026", "Share the config");
+        let out = rebase_changelog_include(&prev, &pr, &base, "Wed Oct 28 2026", true, "A B <a@b>").unwrap();
+        assert_eq!(out, inc("Wed Oct 28 2026", "Share the config; ghost depmod files"));
+        let unterminated = base.trim_end_matches('\n');
+        let out = rebase_changelog_include(&prev, &pr, unterminated, "Wed Oct 28 2026", true, "A B <a@b>").unwrap();
+        assert_eq!(out, inc("Wed Oct 28 2026", "Share the config; ghost depmod files").trim_end_matches('\n'));
+        // not stacked on its own entry, or not the author's entry: a person decides
+        assert!(rebase_changelog_include(&prev, &pr, &base, "Wed Oct 28 2026", false, "A B <a@b>").unwrap_err().contains("needs a person"));
+        assert!(rebase_changelog_include(&prev, &pr, &base, "Wed Oct 28 2026", true, "X Y <x@y>").unwrap_err().contains("not its own"));
+        let edits_head = format!("# note\n{pr}");
+        assert!(rebase_changelog_include(&prev, &edits_head, &base, "Wed Oct 28 2026", true, "A B <a@b>").unwrap_err().contains("more than"));
     }
 
     #[test]
