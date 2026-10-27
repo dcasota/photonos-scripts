@@ -1,4 +1,4 @@
-//! ISO builds with a kernel from a wrapper profile (`--kernel 7.3-rc4`).
+//! ISO builds with a kernel from a wrapper profile (`--kernel 7.3`).
 //!
 //! A derived wrapper (`sharukhan wrapper derive`) turns Photon 5.0 into a tree
 //! for another kernel: its pin script rewrites the kernel specs, enables the
@@ -25,7 +25,7 @@ use crate::wrapper::profile::Profile;
 /// Everything a kernel-profile build needs, resolved from the profile.
 #[derive(Debug, Clone)]
 pub struct KernelBuild {
-    /// The profile's release, e.g. `7.3-rc4`.
+    /// The profile's release, e.g. `7.3`.
     pub name: String,
     pub profile_path: PathBuf,
     pub profile: Profile,

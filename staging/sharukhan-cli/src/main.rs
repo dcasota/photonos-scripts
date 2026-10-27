@@ -190,7 +190,7 @@ OPTIONS:
     --poi <v>           a variant of config/variants.conf (build-iso); default: its first
     --canister <c>      prebuilt | build | acvp | kat | equivalent (build-iso)
     --kernel <release>  build-iso, variant-patches: a kernel wrapper profile
-                        (profiles/kernel/<release>.json, e.g. 7.3-rc4). The build
+                        (profiles/kernel/<release>.json, e.g. 7.3). The build
                         runs in its own root under $MC_WORK/kbuild/<release>;
                         canister equivalent or build only
                         equivalent = build a canister from the kernel under

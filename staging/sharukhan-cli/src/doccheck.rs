@@ -212,6 +212,49 @@ mod tests {
         assert!(unknown.is_empty(), "{} unknown subcommand(s):\n{}", unknown.len(), unknown.join("\n"));
     }
 
+    /// Every kernel profile a help text or a document names by value
+    /// (`--kernel 7.3`, `--from 7.3-rc4`, "e.g. 7.3" beside profiles/kernel)
+    /// is a file under profiles/kernel/.
+    #[test]
+    fn every_profile_named_exists() {
+        let dir = root().join("profiles/kernel");
+        // `profile-new --kernel <new>` names the profile it creates; its --from must exist
+        fn values(origin: &str, text: &str) -> Vec<(String, String)> {
+            let mut out = Vec::new();
+            for line in text.lines() {
+                let creates = line.contains("profile-new");
+                let words: Vec<&str> = line.split_whitespace().collect();
+                for p in words.windows(2) {
+                    let flag_names_existing = p[0] == "--from" || (p[0] == "--kernel" && !creates);
+                    let v = p[1].trim_end_matches(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'));
+                    if flag_names_existing && v.starts_with(|c: char| c.is_ascii_digit()) {
+                        out.push((origin.to_string(), v.to_string()));
+                    }
+                }
+            }
+            out
+        }
+        let mut named: Vec<(String, String)> = Vec::new();
+        for l in crate::USAGE.lines().filter(|l| l.contains("profiles/kernel")) {
+            if let Some(i) = l.find("e.g. ") {
+                let v: String = l[i + 5..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-').collect();
+                named.push(("usage".into(), v.trim_end_matches('.').to_string()));
+            }
+        }
+        named.extend(values("usage", crate::USAGE));
+        for doc in documents() {
+            let (_, code) = split(&fs::read_to_string(&doc).unwrap());
+            named.extend(values(&doc.strip_prefix(root()).unwrap().display().to_string(), &code.join("\n")));
+        }
+        assert!(!named.is_empty());
+        let missing: Vec<String> = named
+            .iter()
+            .filter(|(_, v)| !dir.join(format!("{v}.json")).is_file())
+            .map(|(o, v)| format!("{o}: {v}"))
+            .collect();
+        assert!(missing.is_empty(), "no profiles/kernel/<name>.json for: {missing:?}");
+    }
+
     #[test]
     fn no_document_is_too_long_to_read() {
         let long: Vec<String> = documents()
