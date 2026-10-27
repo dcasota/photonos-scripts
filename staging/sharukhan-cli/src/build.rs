@@ -2312,7 +2312,7 @@ pub struct Mirror {
     pub poi_remote_branch: &'static str,
 }
 
-pub const MIRRORS: [Mirror; 5] = [
+pub const MIRRORS: [Mirror; 6] = [
     Mirror {
         spec_patch: "0006-stig-drop-redundant-packages.patch",
         poi_remote_branch: "dcasota/fix/stig-drop-redundant-packages",
@@ -2339,6 +2339,12 @@ pub const MIRRORS: [Mirror; 5] = [
     Mirror {
         spec_patch: "0011-installer-ISO-installs-follow-the-boot-firmware-and-.patch",
         poi_remote_branch: "dcasota/fix/release-dhcp-leases-before-reboot",
+    },
+    // Both series: the installer initrd writes KEYMAP=@kernel, since it ships
+    // no keymaps for systemd-vconsole-setup to load.
+    Mirror {
+        spec_patch: "0012-installer-initrd-keep-the-kernel-keymap.patch",
+        poi_remote_branch: "dcasota/fix/initrd-vconsole-kernel-keymap",
     },
 ];
 
