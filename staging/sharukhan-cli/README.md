@@ -62,14 +62,12 @@ reports a wrong answer is worse than one that reports nothing.
 - [Kernel-profile builds and runs: `--kernel`](#kernel-profile-builds-and-runs---kernel)
   - [Linux 7.3-rc4 (2026-09-29)](#linux-73-rc4-2026-09-29)
 - [Real-world example: a full ISO with kernel 7.3, the latest installer and the equivalent canister](#real-world-example-a-full-iso-with-kernel-73-the-latest-installer-and-the-equivalent-canister)
-  - [The goal and the result](#the-goal-and-the-result)
-  - [Step 1: which 7.3, verified](#step-1-which-73-verified)
-  - [Step 2: the release branch on today's 5.0](#step-2-the-release-branch-on-todays-50)
-  - [Step 3: the profile and the derived wrapper](#step-3-the-profile-and-the-derived-wrapper)
-  - [Step 4: prove every patch before building](#step-4-prove-every-patch-before-building)
-  - [Step 5: variant patches with every PR](#step-5-variant-patches-with-every-pr)
-  - [Step 6: build the ISO](#step-6-build-the-iso)
-  - [Step 7: install and verify](#step-7-install-and-verify)
+  - [Step 1: from scratch - a host that can run sharukhan](#step-1-from-scratch---a-host-that-can-run-sharukhan)
+  - [The directory layout](#the-directory-layout)
+  - [Why a kernel branch, and how it is named](#why-a-kernel-branch-and-how-it-is-named)
+  - [The script and its variables](#the-script-and-its-variables)
+  - [The script, function by function](#the-script-function-by-function)
+  - [The 2026-10 run: result](#the-2026-10-run-result)
   - [Culprits and how each was solved](#culprits-and-how-each-was-solved)
   - [Timings](#timings)
 - [Keeping the fork's PRs current: `sharukhan sync`](#keeping-the-forks-prs-current-sharukhan-sync)
@@ -1463,160 +1461,796 @@ series is published; the port's per-patch decisions are in
 
 ## Real-world example: a full ISO with kernel 7.3, the latest installer and the equivalent canister
 
-This chapter is a record of one real run (2026-10-25 to 2026-10-27), from the
-request to the verified ISO, with every command and every problem met on the
-way. Host-specific paths are shown as they were on that host; no value here is
-secret.
+This chapter takes one request from nothing to a tested ISO: *one full ISO
+with Linux 7.3, the latest photon-os-installer variant, the canister built from
+that kernel (`--canister equivalent`), and every fork PR applied*. The script
+[`examples/kernel-iso.sh`](examples/kernel-iso.sh) performs it; this chapter
+explains how to get to the point where the script can run, what the script
+does line by line, and what went wrong on the first real run (2026-10-25 to
+2026-10-27) and how each problem was solved.
 
-### The goal and the result
+Nothing in the script names a host path, a branch or a matrix row. The kernel,
+installer variant, canister mode and ISO type are variables; every path comes
+from sharukhan's own settings (`sharukhan settings`); the kernel branch, the
+derived wrapper and the RPM version come from `sharukhan wrapper kernel`; the
+rows to boot come from the permutation matrix. Values from the 2026-10 run
+appear only as *example output*, marked as such.
 
-**Goal:** one full ISO with Linux 7.3, the latest photon-os-installer variant,
-the canister built from that kernel (`--canister equivalent`), and every fork
-PR applied.
+### Step 1: from scratch - a host that can run sharukhan
 
-**Result:**
+**Host requirements**
 
-| | |
-|---|---|
-| ISO | `C:\Users\dcaso\Downloads\Ph-Builds\full-poilatest-equivalent__photon-5.0-cb2b916647.x86_64.iso` |
-| Kernel on the media | `linux` / `linux-esx` `7.3.0-1.ph5` (guest `uname -r`: `7.3.0-1.ph5-esx`) |
-| Installer | `photon-os-installer-2.9-1.ph5` - the same as the regular latest-variant ISO |
-| Canister | `linux-fips-canister-7.3.0-1.ph5`, built from this kernel in phase A, relinked into both flavours in phase B - **not CMVP validated** |
-| PRs | every branch of `[variant latest]` and `[common]` except the kernel stack (see step 5) |
-| Rows | k13 (full, latest, ext4): 44 checks, 0 fail; k15 (full, latest, STIG, `fips=1`): 46 checks, 0 fail, canister 7.3 based on `7.3.0-1.ph5` |
+| What | Why | Check |
+|---|---|---|
+| A Linux host with systemd, as root; on Windows a WSL2 distribution (the 2026-10 run: Photon OS 5.0 under WSL2) | the build and the services run there | `systemctl is-system-running` |
+| VMware Workstation on the Windows side (`vmrun.exe`, `vmware-vdiskmanager.exe`) | every boot test installs a VM | `"$VMRUN" -T ws list` (sharukhan's `VMRUN`) |
+| docker | the builder container runs Photon's build tools | `docker version` |
+| git, gh logged in (`gh auth login`), Rust (`cargo`), python3, sqlite3, bsdtar | clones and PRs, building sharukhan, the script's checks | `gh auth status` |
+| About 40 GB free on the disk of the work root for one kernel build, 4 GB for each VM in the VM store | measured: the 7.3 build used about 30 GB | `sharukhan status` |
 
-### Step 1: which 7.3, verified
+**Get and build sharukhan**
 
 ```sh
-sharukhan wrapper kernel 7.3          # identity: Version 7.3.0, Release 1, tarball, branch name
-sharukhan wrapper kernel stable       # kernel.org: 7.3 is mainline and latest_stable, no 7.3.x yet
-sharukhan wrapper verify 7.3          # downloads linux-7.3.tar.xz and checks its .tar.sign
+git clone https://github.com/dcasota/photonos-scripts.git
+cd photonos-scripts/staging/sharukhan-cli
+cargo build --release
+./target/release/sharukhan doctor          # what is still missing on this host
 ```
 
-`verify` accepted the tarball only with the signature of a reviewed kernel.org
-signer (`647F28654894E3BD457199BE38DBBDC86092693E`, Greg Kroah-Hartman) and
-printed its sha512; that sha512 is what every later step compares against.
-
-### Step 2: the release branch on today's 5.0
-
-A kernel build takes its variants as `origin/<kernel branch>..origin/<PR>`, so
-the kernel branch must sit on the same 5.0 the PRs are rebased on; the rc4
-branch was 100 commits behind. `experimental/linux-7.3` was therefore built in
-the **local gate repository only** (never pushed), on 5.0 `727909c4b8`:
+**Install the services and the settings.** `sharukhan service install` writes
+the settings file `/etc/sharukhan/sharukhan.env` from the settings exported in
+the invoking shell, the unit files, and the secret files; it installs the
+binary to `/usr/local/libexec/sharukhan/sharukhan`. Export what differs from
+the defaults first - at least where the work, the gate repository and the ISO
+store live, and the guest password (it never goes into the settings file, only
+into a root-only secret file):
 
 ```sh
-git -C /root/photon-mc/gate/photon.git worktree add --detach /root/photon-mc/gate/work/k73-branch 727909c4b8
-# kernel files of experimental/linux-7.3-rc4: SPECS/linux/... -> SPECS/92/linux/...
-#   secure/0001-gcc-rap-plugin-with-kcfi-7.3.patch, vmw/*-7.3.patch, fips-7.3/ (43 files)
-# SPECS/92/linux/config.yaml: the linux-7.3.tar.xz entry (url, sha512, commit c03c1a14,
-#   license-review hashes computed from the 7.3 tarball); version quoted: '7.3'
-# SPECS/92/linux/kernel_cve_patches.inc: empty (6.12-stable backports do not apply to 7.3)
-# SPECS/92/linux/EXPERIMENTAL-7.3.md: the rows the branch check verifies
-git -C /root/photon-mc/gate/work/k73-branch branch experimental/linux-7.3
+export MC_WORK=<work root>/gate/work MC_BUILD_ROOT=<work root>/gate/build-root \
+       MC_GATE_REPO=<work root>/gate/photon.git MC_VARIANT_PATCH_DIR=<work root>/gate/variant-patches \
+       MC_ISO_STORE=<a folder for finished ISOs> MC_BUILDER=container MC_AUTHOR='Name <mail>'
+read -rs MC_GUEST_PASSWORD; export MC_GUEST_PASSWORD     # the root password of every test VM
+nsenter --target 1 --mount -- ./target/release/sharukhan service install --guest-password-from-env
+/usr/local/libexec/sharukhan/sharukhan service status     # every file "current"
+/usr/local/libexec/sharukhan/sharukhan doctor             # every line ok
 ```
 
-Only the kernel moves to the branch. The rc4 branch also carried userland fixes
-(cloud-init, dbus, sudo, two installer patches); the PRs bring cloud-init, and
-the others are not PRs, so they are not part of this ISO.
+Add `--sync --escalation-key-from-env` only if the fork-sync automation should
+run too; this example does not need it. On WSL2 run sharukhan in the host mount
+namespace (`nsenter --target 1 --mount -- ...`): the builder's overlay mounts
+must be visible to dockerd.
 
-### Step 3: the profile and the derived wrapper
+**Clone the gate repository.** The gate repository is a bare clone of the
+Photon fork that the builds read their branches from; the release branch and
+every PR branch the variants name must be in it:
 
 ```sh
-sharukhan wrapper profile-new --kernel 7.3 --from 7.3-rc4    # verifies the source again, lists what to review
-# review profiles/kernel/7.3.json: comments, the FIPS manifest (relative to the kernel
-# directory: fips-7.3/manifest.json), no installer patches, no userland pre-build
-git clone -q --no-checkout -b experimental/linux-7.3 /root/photon-mc/gate/photon.git /root/photon-mc/gate/work/k73-repo
-sharukhan wrapper derive --profile 7.3 --repo /root/photon-mc/gate/work/k73-repo
-sharukhan wrapper check --repo /root/photon-mc/gate/work/k73-repo   # both profiles, each in its own layout
+git clone --bare "$MC_PHOTON_REMOTE" "$MC_GATE_REPO"      # see `sharukhan settings`
+sharukhan variants                                       # every branch of variants.conf is an open PR
 ```
 
-`derive` wrote `runPh7-3.sh` and its branch check passed: kernel spec directory
-`SPECS/92/linux` (subrelease 92), tarball and sha512, `Version: 7.3.0`,
-`Release: 1`, the three patch files, and the FIPS manifest (55 files present
-once, 40 patches in range, 13 dropped).
+### The directory layout
 
-### Step 4: prove every patch before building
+Each directory belongs to one setting; `sharukhan settings` prints the values
+on a host (`eval "$(sharukhan settings)"` sets them in a shell). With the
+layout the 2026-10 host used (`<work root>` = `/root/photon-mc`):
 
-The pin script was run on a scratch checkout of the branch in a container with
-nothing else mounted, then `rpmbuild -bp` replayed `%prep` of the pinned specs
-with each canister phase's macros (`canister_build 1`, `canister_stamp_real 1`,
-`fips_certified_override 7.3.0-1.ph5` for phase A):
+| Directory (2026-10 example) | Setting | Holds | Safe to delete? |
+|---|---|---|---|
+| `<work root>/gate/photon.git` | `MC_GATE_REPO` | the bare gate repository: release branch, PR branches, local kernel branches | no - the source of every build |
+| `<work root>/gate/build-root/{5.0,common}` | `MC_BUILD_ROOT`, `MC_RELEASE`, `MC_BUILD_COMMON` | the build trees of the regular ISOs, reset to the gate branches before each gate (`sharukhan sync reset-trees`) | no while a build runs; rebuilt otherwise |
+| `<work root>/gate/work` | `MC_WORK` | sharukhan's work: `kbuild/<kernel>` (a kernel profile's own build root), `scriptdir/` (staged build directories), `photon-variants/` (the clone variant patches are made in), `common-check/` (the checker tree), `poi-image/` | `kbuild/<kernel>` once its ISO is stored and tested; the rest is recreated |
+| `<work root>/gate/variant-patches` | `MC_VARIANT_PATCH_DIR` | `poi-<variant>.patch`, `common-fixes.patch`; `k<kernel>/` for a kernel profile | regenerated by `variant-patches` |
+| `<work root>/gate` | `MC_BUILDER_SHARED_ROOT` | the shared bind mount the builder container sees; everything a build touches lives under it | no |
+| `<work root>/results/<row>` | `MC_RESULTS_DIR` | each row's checks (`checks-<stamp>.jsonl`), harvested logs, serial logs - the evidence | no, it is indexed into memory.db |
+| `<work root>/run-logs` | `MC_RUN_LOG_DIR` | one log per `run` job; the script's own logs (`kernel-iso-<kernel>-<step>-<stamp>.log`) | old ones, yes |
+| `<work root>/build-logs` | `MC_BUILD_LOG_DIR` | one log per ISO build; `failed-attempts/` keeps the package logs of failed `make` attempts | old ones, yes |
+| `<work root>/memory.db` | `SHARUKHAN_DB` | jobs, runs, findings, sync runs, escalations | no |
+| an ISO cache, e.g. `C:\photon-mc\iso-cache-gate` | `MC_ISO_CACHE` | per build tuple `<type>-poi<variant>-<canister>/`: `photon.iso` (a link), `photon.iso.sha256`, `poi-nevr.txt`, `inputs.txt`; `k<kernel>/` for a kernel profile | links only; the ISO is in the store |
+| an ISO store, e.g. `C:\Users\<user>\Downloads\Ph-Builds` | `MC_ISO_STORE` | the ISOs themselves, `<tuple>__<file>.iso` | an ISO nothing links to; renaming one breaks its cache link (`verify_media` then needs `ISO=`) |
+| a VM store, e.g. `C:\photon-mc\vm` | `MC_VM_ROOT_WSL` | `mc-<row>/`: one VM per matrix row, recreated for every run | not while a run uses it |
+
+### Why a kernel branch, and how it is named
+
+A kernel profile builds Photon's userland with a different kernel. The new
+kernel's spec files, patch sets and FIPS canister series live on a branch of
+the gate repository, the **kernel branch**, named by sharukhan from the release:
+`sharukhan wrapper kernel <release>` prints it (`experimental/linux-7.3` for
+7.3, `experimental/linux-7.3-rc4` for 7.3-rc4).
+
+- It is **local to the gate repository** and never pushed: it carries a kernel
+  port for testing, not a PR.
+- It must **contain today's release branch** (`$MC_RELEASE`): a kernel build
+  assembles each installer variant as `origin/<kernel branch>..origin/<PR>`, so
+  every commit of the release that the kernel branch lacks would be carried
+  into every PR's range. The 7.3-rc4 branch sat on a release from 2026-09-19,
+  100 commits behind - one of the culprits below. `prepare_branch` refuses a
+  branch that does not contain the release.
+- The kernel goes into **the tree's kernel directory**, the one the release
+  uses (`SPECS/<subrelease>/linux` on 5.0 since 2026-10, `SPECS/linux`
+  before); sharukhan reads it from the tree, never assumes it.
+
+### The script and its variables
 
 ```sh
-# pins: KDIR resolved by the script itself -> SPECS/92/linux; FIPS series enabled
+nsenter --target 1 --mount -- env KERNEL=7.3 POI=latest CANISTER=equivalent ISO_TYPE=full \
+    examples/kernel-iso.sh --dry-run          # every command it would run
+nsenter --target 1 --mount -- env KERNEL=7.3 examples/kernel-iso.sh            # the whole example
+nsenter --target 1 --mount -- env KERNEL=7.3 examples/kernel-iso.sh --step verify_media
+nsenter --target 1 --mount -- env KERNEL=7.3 examples/kernel-iso.sh --from variant_patches
+```
+
+| Variable | Default | Meaning, and where the value comes from |
+|---|---|---|
+| `KERNEL` | none (required) | the kernel.org release: `7.3`, `7.3-rc4`, `7.2.5` ... |
+| `POI` | `latest` | the installer variant; must be a `[variant <name>]` of `variants.conf` (`sharukhan variants`) |
+| `CANISTER` | `equivalent` | `equivalent`: a canister built from this kernel (phase A) and linked into both flavours (phase B), **never CMVP validated**; `prebuilt`: a published canister, if one exists for the kernel |
+| `ISO_TYPE` | `full` | `full` or `minimal` |
+| `ROWS` | derived | the matrix rows to boot; derived from the matrix: the first `ISO_TYPE`/`POI` kickstart row on ext4 and the default network without STIG, and the first with STIG |
+| `FROM_PROFILE` | none | `write_profile`: the existing profile a new one starts from (`profiles/kernel/<release>.json`) |
+| `DISK_MIN_GB` | `40` | free space under `MC_WORK` the build needs (the 7.3 build used about 30 GB) |
+| `WAIT` | `1` | `1`: wait for a detached build or boot test; `0`: start it and return |
+| `ISO` | none | `verify_media`: verify this file instead of the cache's `photon.iso` (for an ISO moved or renamed in the store) |
+| `SHARUKHAN` | `sharukhan` on `PATH`, else the installed `/usr/local/libexec/sharukhan/sharukhan` | the binary |
+| `SHARUKHAN_CLI_DIR` | the `sharukhan-cli` directory the script is in | where the kernel profiles are |
+| `SETTINGS_FILE` | `/etc/sharukhan/sharukhan.env` | the settings `sharukhan service install` wrote |
+| `MC_*`, `SHARUKHAN_*` | from `sharukhan settings` | every path; see "The directory layout" |
+
+The steps, in order (`--list`): `preflight`, `settings`,
+`verify_kernel_release`, `prepare_branch`, `write_profile`, `prove_patches`,
+`variant_patches`, `build_iso`, `boot_test`, `verify_media`, `report`. Three of
+them may stop for a person - `prepare_branch` (porting the kernel to the
+branch), `write_profile` (reviewing a new profile) and `prove_patches` (the
+`%prep` replay, and porting a rejected hunk): they print what to do and the
+command that proves it was done, exit with status 10, and the script continues
+with `--from <step>`.
+
+### The script, function by function
+
+#### Header and variables
+
+```bash
+#!/bin/bash
+# kernel-iso.sh - one Photon ISO with another kernel.org kernel, built,
+# boot-tested and verified through sharukhan.
+#
+# The README chapter "Real-world example: a full ISO with kernel 7.3, the
+# latest installer and the equivalent canister" explains every function of
+# this script line by line. Every value is a variable below or is read from
+# sharukhan itself (`sharukhan settings`, `sharukhan wrapper kernel`); the
+# script never names a host path, a branch or a row of its own.
+#
+#   KERNEL=7.3 POI=latest CANISTER=equivalent ISO_TYPE=full examples/kernel-iso.sh
+#   examples/kernel-iso.sh --dry-run            print every command, run nothing
+#   examples/kernel-iso.sh --step verify_media  run one step
+#   examples/kernel-iso.sh --from variant_patches  run from a step to the end
+#   examples/kernel-iso.sh --list               the steps, in order
+#
+# Steps that need a person (porting the kernel's patches to a new release,
+# reviewing a new profile) stop with what to do and the command that proves
+# it was done; run the script again, or that step with --step, afterwards.
+set -euo pipefail
+
+# --- what to build: from the environment, defaults for the documented case ---
+KERNEL=${KERNEL:-}                    # kernel.org release: 7.3, 7.3-rc4, 7.2.5 ...
+POI=${POI:-latest}                    # installer variant: a [variant <name>] of variants.conf
+CANISTER=${CANISTER:-equivalent}      # equivalent (built from this kernel) | prebuilt
+ISO_TYPE=${ISO_TYPE:-full}            # full | minimal
+ROWS=${ROWS:-}                        # matrix rows to boot-test; empty: derived (see derive_rows)
+FROM_PROFILE=${FROM_PROFILE:-}        # write_profile: the profile a new one starts from
+DISK_MIN_GB=${DISK_MIN_GB:-40}        # free space a kernel build needs (the 7.3 build used about 30 GB)
+WAIT=${WAIT:-1}                       # 1: wait for a detached build or run; 0: return at once
+ISO=${ISO:-}                          # verify_media: this file instead of the cache's photon.iso
+
+# --- where sharukhan and its settings are -----------------------------------
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+export SHARUKHAN_CLI_DIR=${SHARUKHAN_CLI_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}
+SHARUKHAN=${SHARUKHAN:-$(command -v sharukhan || echo /usr/local/libexec/sharukhan/sharukhan)}
+SETTINGS_FILE=${SETTINGS_FILE:-/etc/sharukhan/sharukhan.env}
+
+STEPS=(preflight settings verify_kernel_release prepare_branch write_profile prove_patches
+       variant_patches build_iso boot_test verify_media report)
+```
+
+- `set -euo pipefail`: a failing command, an unset variable or a failing part
+  of a pipeline stops the script. Because of `pipefail`, the script never pipes
+  into a reader that stops early (`grep -q`, `head`): the producer would die of
+  a closed pipe and fail the pipeline; it reads into a variable or a here-string
+  first.
+- Every `X=${X:-default}` line takes the value from the environment if set -
+  `KERNEL=7.3 POI=2.8 examples/kernel-iso.sh` - and documents its default.
+- `SHARUKHAN_CLI_DIR` is exported: sharukhan reads the kernel profiles of the
+  checkout the script belongs to.
+- `STEPS` is the order of the steps; `--step` and `--from` accept only these.
+
+#### `say`, `die`, `human`, `run`
+
+```bash
+say() { printf '[kernel-iso] %s\n' "$*"; }
+die() { printf '[kernel-iso] REFUSED: %s\n' "$*" >&2; exit 2; }
+
+# A step a person must finish: what to do, and how to prove it was done.
+human() {
+    local step=$1; shift
+    printf '[kernel-iso] STOP at %s - a person must do this:\n' "$step" >&2
+    printf '  %s\n' "$@" >&2
+    if [ "$DRY" = 1 ]; then
+        printf '[kernel-iso] (dry run: a real run stops here)\n' >&2
+        return 0
+    fi
+    printf '[kernel-iso] then: %s --from %s\n' "$0" "$step" >&2
+    exit 10
+}
+```
+```bash
+die() { printf '[kernel-iso] REFUSED: %s\n' "$*" >&2; exit 2; }
+
+# A step a person must finish: what to do, and how to prove it was done.
+human() {
+    local step=$1; shift
+    printf '[kernel-iso] STOP at %s - a person must do this:\n' "$step" >&2
+    printf '  %s\n' "$@" >&2
+    if [ "$DRY" = 1 ]; then
+        printf '[kernel-iso] (dry run: a real run stops here)\n' >&2
+        return 0
+    fi
+    printf '[kernel-iso] then: %s --from %s\n' "$0" "$step" >&2
+    exit 10
+}
+```
+```bash
+# A step a person must finish: what to do, and how to prove it was done.
+human() {
+    local step=$1; shift
+    printf '[kernel-iso] STOP at %s - a person must do this:\n' "$step" >&2
+    printf '  %s\n' "$@" >&2
+    if [ "$DRY" = 1 ]; then
+        printf '[kernel-iso] (dry run: a real run stops here)\n' >&2
+        return 0
+    fi
+    printf '[kernel-iso] then: %s --from %s\n' "$0" "$step" >&2
+    exit 10
+}
+```
+```bash
+# Every command that changes something goes through run(): --dry-run prints it.
+run() {
+    if [ "$DRY" = 1 ]; then
+        printf '+ %s\n' "$*"
+    else
+        "$@"
+    fi
+}
+```
+
+- `say` prints a progress line; `die` prints a refusal to stderr and exits 2.
+- `human` stops at a step a person must finish: it prints the instructions and
+  the command that resumes (`--from <step>`), and exits 10. In `--dry-run` it
+  prints the stop and continues, so a dry run shows every command.
+- `run` is the only way the script changes anything: with `--dry-run` it prints
+  the command (`+ ...`) instead of running it. Read-only commands (identity,
+  checks) run even in a dry run.
+
+#### `detach`
+
+```bash
+# Long work runs detached in its own session with a log, so a closed terminal
+# does not end it; the exit status is the log's last line.
+detach() {
+    local name=$1; shift
+    local log="$MC_RUN_LOG_DIR/kernel-iso-$KERNEL-$name-$(date -u +%Y%m%dT%H%M%SZ).log"
+    if [ "$DRY" = 1 ]; then
+        printf '+ setsid nohup %s > %s 2>&1 &\n' "$*" "$log"
+        return 0
+    fi
+    mkdir -p "$MC_RUN_LOG_DIR"
+    setsid nohup bash -c '"$@"; echo "=== exit $? $(date -u +%FT%TZ)"' _ "$@" > "$log" 2>&1 < /dev/null &
+    say "$name detached (pid $!), log $log"
+    if [ "$WAIT" = 1 ]; then
+        until grep -q '^=== exit ' "$log"; do sleep 60; done
+        local rc
+        rc=$(grep '^=== exit ' "$log" | tail -1 | awk '{print $3}')
+        say "$name ended with exit $rc"
+        [ "$rc" = 0 ] || die "$name failed, see $log"
+    else
+        say "not waiting (WAIT=0): follow $log, then continue with --step after $name"
+    fi
+}
+```
+
+- The log goes to `$MC_RUN_LOG_DIR/kernel-iso-<kernel>-<step>-<stamp>.log`.
+- `setsid nohup bash -c '"$@"; echo "=== exit $?..."'` starts the command in
+  its own session, immune to a closed terminal, with stdin from `/dev/null`;
+  its last log line is `=== exit <status> <time>`.
+- With `WAIT=1` the script polls the log every minute for that line and refuses
+  to continue on a non-zero status; with `WAIT=0` it returns and says which
+  step comes next.
+
+#### `in_host_namespace`, `live_jobs`, `free_gb`
+
+```bash
+in_host_namespace() {
+    [ "$(readlink /proc/self/ns/mnt)" = "$(readlink /proc/1/ns/mnt)" ]
+}
+```
+```bash
+# Jobs whose row says running and whose process is a live sharukhan.
+live_jobs() {
+    [ -f "$SHARUKHAN_DB" ] || return 0
+    sqlite3 -cmd ".timeout 10000" "$SHARUKHAN_DB" \
+        "SELECT id || ' ' || coalesce(pid,0) FROM job WHERE state = 'running'" 2>/dev/null |
+    while read -r id pid; do
+        [ "$pid" -gt 0 ] && [ -r "/proc/$pid/cmdline" ] &&
+            grep -qa 'sharukhan' "/proc/$pid/cmdline" && echo "job $id (pid $pid)"
+    done
+}
+```
+```bash
+free_gb() { df -BG --output=avail "$1" | tail -1 | tr -dc '0-9'; }
+
+# --- derived values ----------------------------------------------------------
+
+# The kernel's identity as sharukhan derives it: branch, wrapper, rpm version.
+# Output lines look like "  branch       experimental/linux-7.3"; the key may hold a space.
+identity() {
+    "$SHARUKHAN" wrapper kernel "$KERNEL" --offline | sed -n "s/^  $1  *//p" | sed -n 1p
+}
+```
+
+- `in_host_namespace` compares this process's mount namespace with PID 1's: on
+  WSL2 the builder's overlay mounts are only visible to dockerd from there.
+- `live_jobs` lists jobs whose row in memory.db says `running` **and** whose
+  process is alive and is sharukhan - a row left by a crashed run does not
+  count, a real run does.
+- `free_gb` is the free space of the filesystem holding a path, in GB.
+
+#### `identity`, `derive_rows`
+
+```bash
+# The kernel's identity as sharukhan derives it: branch, wrapper, rpm version.
+# Output lines look like "  branch       experimental/linux-7.3"; the key may hold a space.
+identity() {
+    "$SHARUKHAN" wrapper kernel "$KERNEL" --offline | sed -n "s/^  $1  *//p" | sed -n 1p
+}
+```
+```bash
+# Rows for the boot test: one without and one with STIG, autonomous (kickstart),
+# default network, ext4, of the requested ISO type and installer variant.
+derive_rows() {
+    awk -v t="$ISO_TYPE" -v p="$POI" '
+        /^#/ || NF < 10 { next }
+        { net = (NF >= 11 ? $11 : "-") }    # an empty net column is the default network
+        $2 == t && $3 == p && $6 == "ks" && $5 == "ext4" && net == "-" {
+            if ($4 == "no"  && !no)  no = $1
+            if ($4 == "yes" && !yes) yes = $1
+        }
+        END { if (no && yes) print no "," yes; else if (no) print no; else if (yes) print yes }
+    ' "$SHARUKHAN_MATRIX"
+}
+```
+
+- `identity` asks sharukhan for one line of the kernel's identity (offline, no
+  network): `branch` (`experimental/linux-7.3`), `wrapper` (`runPh7-3.sh`),
+  `rpm Version` (`7.3.0`), `rpm Release` (`1`). The kernel branch is therefore
+  never written by hand.
+- `derive_rows` reads the matrix (`$SHARUKHAN_MATRIX`): skips comments and short
+  lines; an empty last column is the default network; it keeps rows of the
+  requested ISO type and variant, kickstart mode, ext4, default network, and
+  prints the first without STIG and the first with STIG - one plain install
+  and one STIG/FIPS install. For `full`/`latest` these are k13 and k15 in the
+  2026-10 matrix.
+
+#### Step `preflight`
+
+```bash
+preflight() {
+    in_host_namespace || die "run it in the host mount namespace: nsenter --target 1 --mount -- $0"
+    [ -x "$SHARUKHAN" ] || die "no sharukhan at $SHARUKHAN (set SHARUKHAN)"
+    "$SHARUKHAN" service status > /dev/null || die "the installed services differ from what 'sharukhan service install' writes ('sharukhan service status')"
+    local jobs
+    jobs=$(live_jobs)
+    [ -z "$jobs" ] || die "a sharukhan job is running: $jobs"
+    local free
+    free=$(free_gb "$MC_WORK")
+    [ "$free" -ge "$DISK_MIN_GB" ] || die "$free GB free under $MC_WORK, $DISK_MIN_GB GB needed (DISK_MIN_GB)"
+    say "host namespace, sharukhan $("$SHARUKHAN" service status | grep -c current) current service file(s), no live job, $free GB free"
+}
+```
+
+Refuses unless: the script runs in the host mount namespace; the sharukhan
+binary exists; `sharukhan service status` reports the installed services and
+settings unchanged; no sharukhan job runs (a build would compete for the
+builder and the disk); and `DISK_MIN_GB` are free under `$MC_WORK`.
+
+#### Step `settings`
+
+```bash
+settings() {
+    say "KERNEL=$KERNEL POI=$POI CANISTER=$CANISTER ISO_TYPE=$ISO_TYPE ROWS=$ROWS"
+    say "kernel branch $KBRANCH (local to $MC_GATE_REPO), wrapper $KWRAPPER, rpm $KVERSION-$KRELEASE"
+    say "release $MC_RELEASE, work $MC_WORK, build root of this kernel $MC_WORK/kbuild/$KERNEL"
+    say "ISO cache $MC_ISO_CACHE/k$KERNEL/$ISO_TYPE-poi$POI-$CANISTER, store ${MC_ISO_STORE:-none}"
+    say "results $MC_RESULTS_DIR, run logs $MC_RUN_LOG_DIR, build logs $MC_BUILD_LOG_DIR"
+}
+```
+
+Prints what the run will use - the variables, the kernel branch and wrapper,
+the release, the kernel's build root `$MC_WORK/kbuild/<kernel>`, its ISO cache
+directory `$MC_ISO_CACHE/k<kernel>/<type>-poi<variant>-<canister>` and the
+store, the results and log directories. Nothing here is typed in; all of it
+comes from `sharukhan settings` and `sharukhan wrapper kernel`.
+
+#### Step `verify_kernel_release`
+
+```bash
+verify_kernel_release() {
+    "$SHARUKHAN" wrapper kernel "$KERNEL"          # identity, and what kernel.org lists now
+    "$SHARUKHAN" wrapper kernel stable              # the newest stable, to compare with
+    # download and verify the signed tarball against the reviewed signers of the profiles
+    run "$SHARUKHAN" wrapper verify "$KERNEL" --profiles "$SHARUKHAN_CLI_DIR/profiles/kernel"
+}
+```
+
+- `wrapper kernel <release>` (online): the identity, and how kernel.org lists
+  the release now (mainline, stable, longterm).
+- `wrapper kernel stable`: the newest stable release, to see whether a newer
+  point release exists.
+- `wrapper verify <release>` downloads `linux-<release>.tar.xz` into the kernel
+  cache and accepts it only with the `.tar.sign` of a reviewed kernel.org signer
+  (`profiles/kernel/kernel-org-signers.json`), printing its sha512 - the value
+  every later step compares against. *Example output (2026-10):* `verified
+  .../linux-7.3.tar.xz (pgp-signature)`, `sha512 14b99ea7...e590`, `signer
+  647F28654894E3BD457199BE38DBBDC86092693E (Greg Kroah-Hartman)`.
+
+#### Step `prepare_branch`
+
+```bash
+prepare_branch() {
+    local base worktree="$MC_WORK/kernel-branch-$KERNEL"
+    base=$(git -C "$MC_GATE_REPO" rev-parse "refs/heads/$MC_RELEASE")
+    if git -C "$MC_GATE_REPO" rev-parse -q --verify "refs/heads/$KBRANCH" > /dev/null; then
+        # the branch must contain today's release: PR ranges are origin/<branch>..origin/<PR>
+        git -C "$MC_GATE_REPO" merge-base --is-ancestor "$base" "refs/heads/$KBRANCH" ||
+            human prepare_branch \
+                "$KBRANCH does not contain $MC_RELEASE ${base:0:10}: every PR range would carry the difference." \
+                "Rebuild it on $MC_RELEASE (see 'prepare_branch' in the README) or rebase its kernel commits onto ${base:0:10}."
+        say "$KBRANCH $(git -C "$MC_GATE_REPO" rev-parse --short=10 "refs/heads/$KBRANCH") contains $MC_RELEASE ${base:0:10}"
+        return 0
+    fi
+    run git -C "$MC_GATE_REPO" worktree add --detach "$worktree" "$base"
+    human prepare_branch \
+        "In $worktree (on $MC_RELEASE ${base:0:10}): put the $KERNEL kernel into the tree's kernel directory," \
+        "  the one 'sharukhan wrapper check' names (SPECS/<subrelease>/linux on 5.0): its patch sets," \
+        "  config.yaml entry for linux-$KERNEL.tar.xz (sha512 from verify_kernel_release, version quoted)," \
+        "  and for a FIPS profile the canister series with its manifest; commit." \
+        "git -C $worktree branch $KBRANCH      # local to the gate repository, never pushed" \
+        "Proof: write_profile's 'sharukhan wrapper check' passes the branch check."
+}
+```
+
+- `base` is the head of the release branch in the gate repository.
+- If the kernel branch exists, it must contain that head (`merge-base
+  --is-ancestor`); otherwise the step stops - see "Why a kernel branch".
+- If it does not exist, a detached worktree is created on the release head
+  under `$MC_WORK/kernel-branch-<kernel>`, and the step stops for the port:
+  the new kernel into the tree's kernel directory, its patch sets, its
+  `config.yaml` entry (URL, sha512 from `verify_kernel_release`, the version
+  quoted so YAML keeps it a string), the FIPS canister series and manifest for
+  a FIPS profile; then `git branch <kernel branch>` in the worktree. The proof
+  is `write_profile`'s branch check.
+
+#### Step `write_profile`
+
+```bash
+write_profile() {
+    local profiles="$SHARUKHAN_CLI_DIR/profiles/kernel" repo="$MC_WORK/kernel-repo-$KERNEL"
+    if [ ! -f "$profiles/$KERNEL.json" ]; then
+        [ -n "$FROM_PROFILE" ] || die "no profile $profiles/$KERNEL.json: set FROM_PROFILE to the profile it starts from"
+        run "$SHARUKHAN" wrapper profile-new --kernel "$KERNEL" --from "$FROM_PROFILE" --profiles "$profiles"
+        human write_profile \
+            "Review $profiles/$KERNEL.json: every line profile-new listed, the FIPS manifest path," \
+            "  installer patches and userland pre-builds; commit it to photonos-scripts."
+    fi
+    # a clone whose origin is the gate repository: the branch check reads origin/<branch>
+    if [ -d "$repo/.git" ]; then
+        run git -C "$repo" fetch -q origin "$KBRANCH"
+    else
+        run git clone -q --no-checkout -b "$KBRANCH" "$MC_GATE_REPO" "$repo"
+    fi
+    if [ -f "$SHARUKHAN_CLI_DIR/../$KWRAPPER" ]; then
+        run "$SHARUKHAN" wrapper derive --profile "$KERNEL" --profiles "$profiles" --repo "$repo" --check
+    else
+        run "$SHARUKHAN" wrapper derive --profile "$KERNEL" --profiles "$profiles" --repo "$repo"
+        say "derived $KWRAPPER: commit it to photonos-scripts"
+    fi
+    run "$SHARUKHAN" wrapper check --profiles "$profiles" --repo "$repo"
+}
+```
+
+- A missing profile is started from `FROM_PROFILE` with `wrapper profile-new`
+  (which verifies the source again and lists every text naming a release); the
+  step then stops for the review.
+- A clone of the gate repository at the kernel branch
+  (`$MC_WORK/kernel-repo-<kernel>`, created or fetched): the branch check reads
+  `origin/<kernel branch>` of it.
+- `wrapper derive --check` compares the derived wrapper with the committed one;
+  without one, `derive` writes it (commit it to photonos-scripts).
+- `wrapper check` derives every profile and verifies each branch: the kernel
+  directory, tarball and sha512, `Version`/`Release`, every patch file and the
+  FIPS manifest.
+
+#### Step `prove_patches`
+
+```bash
+prove_patches() {
+    human prove_patches \
+        "Replay %prep of the pinned kernel specs before hours are spent: run the pin script of $KWRAPPER" \
+        "  (its EMBEDPIN heredoc) on a scratch checkout of $KBRANCH in the builder image, then" \
+        "  rpmbuild -bp --nodeps -D '_sourcedir <dir>' -D 'photon_subrelease <n>' -D 'dist <tag>' \\" \
+        "    -D 'canister_build 1' -D 'canister_stamp_real 1' -D 'fips_certified_override $KVERSION-$KRELEASE<dist>' linux.spec" \
+        "  for each flavour (see 'prove_patches' in the README for the exact container command)." \
+        "Proof: every patch applies at --fuzz=0 - 0 failed hunks, 0 rejects. A rejected hunk is" \
+        "  ported on the branch by hand, committed, and the replay repeated." \
+        "Done already? Continue with: $0 --from variant_patches"
+}
+```
+
+This step is a person's: before hours of build, the pin script of the derived
+wrapper (the heredoc between `EMBEDPIN` markers) is run on a scratch checkout
+of the kernel branch in the builder image, and `rpmbuild -bp` replays `%prep`
+of the pinned specs with each canister phase's macros. Every patch must apply
+at `--fuzz=0`. In the 2026-10 run one hunk of the FIPS canister-creation patch
+did not (culprit 5); it was ported by hand on the branch and the replay
+repeated. The 2026-10 commands, for reference:
+
+```sh
 docker run --rm --network none -v <scratch tree>:<scratch tree> -w <scratch tree> \
   -e CANISTER_MODE=equivalent-a ... sharukhan/photon-builder:<tag> sh -c 'set -eu; . /pins.sh'
-# %prep replay: every patch at --fuzz=0 on pristine linux-7.3
 rpmbuild -bp --nodeps -D "_sourcedir /src" -D "photon_subrelease 92" -D "dist .ph5" \
   -D "canister_build 1" -D "canister_stamp_real 1" -D "fips_certified_override 7.3.0-1.ph5" linux.spec
 ```
 
-Result after one port (see the culprits): 44 patch runs, 0 failed hunks, 0
-rejects. Phase B's `%prep` cannot run standalone - it unpacks the canister phase
-A installs - and was proven by the build itself.
+#### Step `variant_patches`
 
-### Step 5: variant patches with every PR
-
-```sh
-sharukhan variant-patches --kernel 7.3
+```bash
+variant_patches() {
+    run "$SHARUKHAN" variant-patches --kernel "$KERNEL"
+}
 ```
 
-Both variants assembled on `experimental/linux-7.3` and apply to it. One branch
-was left out, `fix/linux-esx-depmod-ghost`: the tip of the kernel PR stack
-(#24, #29, #36, #54), whose range changes 638 files, all in kernel spec
-directories. Those PRs rework the 6.12 kernel spec; under a 7.3 profile they do
-not apply, and nothing outside the kernel is lost with them.
+Assembles each installer variant's PR branches on the kernel branch and writes
+the patches to `$MC_VARIANT_PATCH_DIR/k<kernel>/`. A PR whose range changes
+only kernel spec directories is left out and named: under a kernel profile the
+profile owns those files. *Example output (2026-10):*
+`fix/linux-esx-depmod-ghost: left out - it changes 638 kernel file(s)`, the
+tip of the kernel PR stack.
 
-### Step 6: build the ISO
+#### Step `build_iso`
 
-```sh
-sharukhan build-iso --kernel 7.3 --iso-type full --poi latest --canister equivalent --allow-build
+```bash
+build_iso() {
+    detach build_iso "$SHARUKHAN" build-iso --kernel "$KERNEL" --iso-type "$ISO_TYPE" \
+        --poi "$POI" --canister "$CANISTER" --allow-build
+}
 ```
 
-run detached in the host mount namespace with a log. The build runs in its own
-root (`$MC_WORK/kbuild/7.3`): phase A builds `linux` with the canister
-(`linux-fips-canister-7.3.0-1.ph5`), phase B relinks both flavours against it
-and builds the full image. The ISO went to the ISO store (`MC_ISO_STORE`) and is
-linked from `$MC_ISO_CACHE/k7.3/full-poilatest-equivalent/`.
+Runs `sharukhan build-iso --kernel <release> --iso-type <type> --poi
+<variant> --canister <mode> --allow-build` detached. The build runs in the
+kernel's own root `$MC_WORK/kbuild/<kernel>`: for `equivalent`, phase A builds
+the toolchain and `linux` with its canister, phase B relinks both flavours
+against it and builds the image. The ISO goes to the store and is linked from
+the kernel's ISO cache.
 
-### Step 7: install and verify
+#### Step `boot_test`
 
-```sh
-sharukhan run --kernel 7.3 --only k13,k15 --allow-build
+```bash
+boot_test() {
+    detach boot_test "$SHARUKHAN" run --kernel "$KERNEL" --only "$ROWS" --allow-build
+}
 ```
 
-`--kernel` makes every row expect the profile's NEVR: `meta.kernel 7.3
-(7.3.0-1.ph5)`, `guest.kernel_release 7.3.0-1.ph5-esx` (PASS on both rows), and
-on the STIG row k15 `guest.fips_canister 1`, `guest.canister_version 7.3`,
-`guest.canister_based_on 7.3.0-1.ph5` (PASS). 0 failing checks.
+`sharukhan run --kernel <release> --only <rows> --allow-build`, detached: each
+row is installed into a fresh VM and verified, against the profile's kernel
+(`meta.kernel`, `guest.kernel_release`) and, on a STIG row, its canister
+(`guest.fips_canister`, `guest.canister_based_on`).
+
+#### Step `verify_media`
+
+```bash
+verify_media() {
+    local dir="$MC_ISO_CACHE/k$KERNEL/$ISO_TYPE-poi$POI-$CANISTER" iso want got
+    [ -f "$dir/photon.iso.sha256" ] || die "no build recorded in $dir (build_iso first)"
+    if [ -n "$ISO" ]; then
+        iso=$ISO                                  # e.g. a copy moved or renamed in the store
+    else
+        [ -e "$dir/photon.iso" ] ||
+            die "$dir/photon.iso -> $(readlink -f "$dir/photon.iso"): the file is gone (moved or renamed? set ISO=<file>)"
+        iso=$(readlink -f "$dir/photon.iso")
+    fi
+    [ -f "$iso" ] || die "$iso: no such file"
+    want=$(cut -d' ' -f1 "$dir/photon.iso.sha256")
+    got=$(sha256sum "$iso" | cut -d' ' -f1)
+    [ "$want" = "$got" ] || die "$iso: sha256 $got, the build recorded $want"
+    say "ISO $iso, sha256 as recorded"
+    say "installer on the media: $(cat "$dir/poi-nevr.txt")"
+    local rpms
+    rpms=$(bsdtar -tf "$iso" | grep -E '/(linux|linux-esx|linux-fips-canister)-[0-9][^/]*\.rpm$' | sed 's#.*/##' | sort)
+    printf '  %s\n' $rpms
+    grep -q "^linux-$KVERSION-$KRELEASE\." <<< "$rpms" || die "linux $KVERSION-$KRELEASE is not on the media"
+    grep -q "^linux-esx-$KVERSION-$KRELEASE\." <<< "$rpms" || die "linux-esx $KVERSION-$KRELEASE is not on the media"
+    say "kernel $KVERSION-$KRELEASE is on the media"
+    if [ "$CANISTER" = equivalent ]; then
+        # the canister is linked into the kernel, not shipped: its package is in this
+        # kernel's build root, from phase A; boot_test's guest.canister_based_on shows it running
+        local rpmdir="$MC_WORK/kbuild/$KERNEL/$KBRANCH/stage/RPMS/x86_64" can
+        can=$(ls "$rpmdir" 2>/dev/null | grep -E "^linux-fips-canister-$KVERSION-$KRELEASE\." || true)
+        [ -n "$can" ] || die "no linux-fips-canister-$KVERSION-$KRELEASE in $rpmdir: phase A did not build the equivalent canister"
+        say "equivalent canister built in phase A: $can (not CMVP validated)"
+    fi
+}
+```
+
+- The ISO is the cache's `photon.iso` link, or `ISO=<file>`; its sha256 must be
+  the one the build recorded in `photon.iso.sha256`.
+- `poi-nevr.txt` is the installer read off the media when it was built.
+- `bsdtar -tf` lists the media; `linux` and `linux-esx` of the profile's
+  `Version-Release` must be on it.
+- For `equivalent`, the canister package must exist in the kernel's build root:
+  it is linked into the kernel, not shipped on the media.
+
+#### Step `report`
+
+```bash
+report() {
+    local id f
+    for id in ${ROWS//,/ }; do
+        f=$(ls -t "$MC_RESULTS_DIR/$id"/checks-*.jsonl 2>/dev/null | sed -n 1p)
+        [ -n "$f" ] || { say "$id: no results yet"; continue; }
+        python3 -I - "$f" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+fail = [r["check"] for r in rows if r.get("status") == "fail"]
+keys = ("meta.kernel", "guest.kernel_release", "guest.fips_canister", "guest.canister_based_on")
+seen = {r["check"]: r.get("actual", "") for r in rows if r.get("check") in keys}
+print(f"  {sys.argv[1].split('/')[-2]}: {len(rows)} checks, {len(fail)} fail {fail or ''}")
+for k in keys:
+    if k in seen:
+        print(f"    {k} = {seen[k]}")
+PY
+    done
+}
+```
+
+For each row, the newest checks file: how many checks, which failed, and the
+kernel and canister checks. *Example output (2026-10):*
+
+```
+k13: 44 checks, 0 fail
+  meta.kernel = 7.3 (7.3.0-1.ph5)
+  guest.kernel_release = 7.3.0-1.ph5-esx
+  guest.fips_canister = 0
+k15: 46 checks, 0 fail
+  meta.kernel = 7.3 (7.3.0-1.ph5)
+  guest.kernel_release = 7.3.0-1.ph5-esx
+  guest.fips_canister = 1
+  guest.canister_based_on = 7.3.0-1.ph5
+```
+
+#### The command line
+
+```bash
+# --- command line ------------------------------------------------------------
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        --dry-run) DRY=1 ;;
+        --step) ONLY=${2:?--step needs a step name}; shift ;;
+        --from) FROM=${2:?--from needs a step name}; shift ;;
+        --list) printf '%s\n' "${STEPS[@]}"; exit 0 ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        *) die "unknown argument $1 (see --help)" ;;
+    esac
+    shift
+done
+
+[ -n "$KERNEL" ] || die "KERNEL is not set (e.g. KERNEL=7.3)"
+case $CANISTER in equivalent|prebuilt) ;; *) die "CANISTER=$CANISTER: equivalent or prebuilt" ;; esac
+case $ISO_TYPE in full|minimal) ;; *) die "ISO_TYPE=$ISO_TYPE: full or minimal" ;; esac
+for s in "$ONLY" "$FROM"; do
+    if [ -n "$s" ] && ! grep -qx -- "$s" <<< "$(printf '%s\n' "${STEPS[@]}")"; then
+        die "$s: not a step; one of ${STEPS[*]}"
+    fi
+done
+[ -z "$ONLY" ] || [ -z "$FROM" ] || die "--step and --from exclude each other"
+
+# sharukhan's settings: the file the services use, then every effective value
+[ -r "$SETTINGS_FILE" ] || die "$SETTINGS_FILE missing: run 'sharukhan service install' first"
+set -a
+# shellcheck disable=SC1090
+. "$SETTINGS_FILE"
+set +a
+eval "$("$SHARUKHAN" settings)"
+
+# the installer variant must be one variants.conf defines (captured first: with
+# pipefail, grep -q closing the pipe early would fail the producer)
+VARIANTS=$("$SHARUKHAN" variants | awk '/^variant /{sub(/:$/, "", $2); print $2}')
+grep -qx -- "$POI" <<< "$VARIANTS" ||
+    die "POI=$POI: not a variant of $SHARUKHAN_VARIANTS ($(echo $VARIANTS))"
+
+KBRANCH=$(identity branch)
+KWRAPPER=$(identity wrapper)
+KVERSION=$(identity "rpm Version")
+KRELEASE=$(identity "rpm Release" | awk '{print $1}')
+[ -n "$KBRANCH" ] && [ -n "$KVERSION" ] && [ -n "$KRELEASE" ] || die "sharukhan could not derive the identity of $KERNEL"
+[ -n "$ROWS" ] || ROWS=$(derive_rows)
+[ -n "$ROWS" ] || die "no $ISO_TYPE/$POI kickstart row in $SHARUKHAN_MATRIX (set ROWS)"
+
+started=0
+for step in "${STEPS[@]}"; do
+    if [ -n "$ONLY" ] && [ "$step" != "$ONLY" ]; then
+        continue
+    fi
+    # --from: skip the steps before it; preflight and settings always run
+    [ "$step" = "$FROM" ] && started=1
+    if [ -n "$FROM" ] && [ "$started" = 0 ] && [ "$step" != preflight ] && [ "$step" != settings ]; then
+        continue
+    fi
+    say "--- $step"
+    "$step"
+done
+```
+
+- Options: `--dry-run`, `--step <name>` (one step), `--from <name>` (from a
+  step to the end; `preflight` and `settings` always run), `--list`, `--help`.
+- `KERNEL`, `CANISTER`, `ISO_TYPE` and the step names are checked before
+  anything runs.
+- The settings file is sourced with `set -a` (every assignment exported), then
+  `eval "$(sharukhan settings)"` sets every effective value - including
+  defaults the file does not repeat.
+- `POI` must be a variant `sharukhan variants` knows.
+- The kernel's branch, wrapper and RPM version come from `identity`; `ROWS`
+  from `derive_rows` when not given.
+
+### The 2026-10 run: result
+
+*Example output; host-specific values as they were on that host.*
+
+| | |
+|---|---|
+| ISO | `full-poilatest-equivalent__photon-5.0-cb2b916647.x86_64.iso` in the ISO store |
+| Kernel on the media | `linux` / `linux-esx` `7.3.0-1.ph5` (guest `uname -r`: `7.3.0-1.ph5-esx`) |
+| Installer | `photon-os-installer-2.9-1.ph5`, the same as the regular latest-variant ISO |
+| Canister | `linux-fips-canister-7.3.0-1.ph5`, built in phase A, relinked into both flavours in phase B - **not CMVP validated** |
+| PRs | every branch of `[variant latest]` and `[common]` except the kernel PR stack (see `variant_patches`) |
+| Rows | k13 (full, latest, ext4): 44 checks, 0 fail; k15 (full, latest, STIG, `fips=1`): 46 checks, 0 fail, canister 7.3 based on `7.3.0-1.ph5` |
 
 ### Culprits and how each was solved
 
 | # | Symptom | Root cause | Fix |
 |---|---|---|---|
-| 1 | The kernel-profile tooling could not build against today's 5.0 | 5.0 keeps its kernel per subrelease (`SPECS/92/linux`); the base wrapper, the branch check, the profile and `spec_canister_pin` assumed `SPECS/linux` | the kernel directory is read from the tree everywhere; base wrapper v15 (`5088b218`) |
-| 2 | "All PRs" would have dragged 100 upstream commits into every variant | the rc4 branch sat on a 5.0 from 2026-09-19 | `experimental/linux-7.3` on today's 5.0 (local gate repo, step 2) |
+| 1 | The kernel-profile tooling could not build against the release of 2026-10 | 5.0 keeps its kernel per subrelease (`SPECS/92/linux`); the base wrapper, the branch check, the profile and `spec_canister_pin` assumed `SPECS/linux` | the kernel directory is read from the tree everywhere; base wrapper v15 (`5088b218`) |
+| 2 | "All PRs" would have dragged 100 upstream commits into every variant | the rc4 kernel branch sat on a release from 2026-09-19 | a kernel branch on today's release; `prepare_branch` refuses one that lacks it |
 | 3 | rc4's `config.yaml` license-review hashes did not belong to its tarball | copied from the 6.12 entry | the 7.3 hashes computed from `linux-7.3.tar.xz` |
 | 4 | `version: 7.3` in `config.yaml` read as the float `7.3` | YAML typing | quoted `'7.3'`, confirmed with `yaml.safe_load` in the builder |
-| 5 | `1000-FIPS-canister-creation-7.3.patch`: 1 of 23 hunks FAILED at `--fuzz=0` | 7.3 moved `assoclen -= orig_len_this_step;` in `gcm_process_assoc()`; the hunk's context still expected it after the `need_resched()` block | the same change on 7.3's context, proven by the `%prep` replay (branch commit `cb2b916647`) |
-| 6 | Phase A stopped after 1 h 48 min: `failed to build contain_unpriv`, `linux/errno.h: No such file or directory` | build.py compiles `contain_unpriv` in a fresh build root; the builder image had gcc and glibc-devel but no `linux-api-headers` (the gate's root still had a binary compiled on the host in September) | `linux-api-headers` in the image, and every new image must compile a C program that includes `<errno.h>` (`fe532e0a`); the old image fails that proof, the new one differs by that package only |
-| 7 | `could not obtain rpcbind-1.3.1.tar.bz2 / pgbouncer-1.26.0.tar.gz from any source` | both upstreams are gone and not on Photon's mirror; the fetcher never looked at the verified copies in the configured build root | a missing archive is restored from the local caches first, only when its sha512 is the declared one (`1204fe90`) |
-| 8 | Phase B needed 6 `make` attempts: `linux` failed once, `linux-esx` three times, `kafka` once; attempt 6 passed | the one failure whose log was read while the build ran: `cc1: internal compiler error: Bus error` compiling `fs/jbd2/recovery.o` (linux-esx, 2026-10-26 17:20Z). The kernel log shows no OOM kill, no SIGBUS record and no I/O error on the build disk, only order-7 page allocation failures in the Hyper-V vmbus driver (fragmented memory); the same sources built cleanly on the next attempts - environmental, not reproducible | the retries carried the build; the logs of the other failures were overwritten by the next attempt, so the cascade now keeps every failed attempt's package logs under `<build-log dir>/failed-attempts/` (`a04b4a6d`) |
-| 9 | `Debug symbols found in following rpms: subversion-1.14.5-2.ph5` (non-fatal) | open: the base wrapper's `pin_svn_nodebug` (`%exclude /usr/lib/debug` after every `%files`) is the only difference to the gate's subversion RPM, which has no debug paths; not yet proven | recorded as finding 124 (`wrapper-svn-nodebug-ships-debug-files`) |
+| 5 | `1000-FIPS-canister-creation-7.3.patch`: 1 of 23 hunks failed at `--fuzz=0` | 7.3 moved `assoclen -= orig_len_this_step;` in `gcm_process_assoc()` | the same change on 7.3's context, proven by the `%prep` replay (kernel branch commit `cb2b916647`) |
+| 6 | Phase A stopped after 1 h 48 min: `failed to build contain_unpriv`, `linux/errno.h: No such file or directory` | build.py compiles `contain_unpriv` in a fresh build root; the builder image had gcc and glibc-devel but no `linux-api-headers` | `linux-api-headers` in the image, and every new image must compile a C program that includes `<errno.h>` (`fe532e0a`) |
+| 7 | `could not obtain rpcbind-1.3.1.tar.bz2 / pgbouncer-1.26.0.tar.gz from any source` | both upstreams are gone and not on Photon's mirror | a missing archive is restored from the local caches first, only when its sha512 is the declared one (`1204fe90`) |
+| 8 | Phase B needed 6 `make` attempts: `linux` failed once, `linux-esx` three times, `kafka` once; attempt 6 passed | the one failure whose log survived: `cc1: internal compiler error: Bus error` on `fs/jbd2/recovery.o` (linux-esx); the kernel log showed no OOM kill, no SIGBUS record, no I/O error, only Hyper-V order-7 page-allocation warnings; the same sources built cleanly later - environmental, not reproduced | the retries carried the build; failed attempts' package logs are now kept under `<build-log dir>/failed-attempts/` (`a04b4a6d`) |
+| 9 | `Debug symbols found in following rpms: subversion-1.14.5-2.ph5` (non-fatal) | open: the base wrapper's `pin_svn_nodebug` is the only difference to the regular subversion RPM; not proven | finding 124 (`wrapper-svn-nodebug-ships-debug-files`) |
 
 ### Timings
 
-All times UTC.
+*Example output: the 2026-10 run, all times UTC.*
 
 | Step | When | Took |
 |---|---|---|
-| Tooling port, branch, profile, `%prep` proof | 2026-10-25 20:34 - 21:06 | 32 min |
-| `variant-patches --kernel 7.3` | 21:06 | about 1 min |
+| Tooling port, kernel branch, profile, `%prep` proof | 2026-10-25 20:34 - 21:06 | 32 min |
+| `variant_patches` | 21:06 | about 1 min |
 | First build to the `contain_unpriv` stop (fetching 2 030 sources into the fresh root) | 21:07 - 22:55 | 1 h 48 min |
 | Idle until the stop was picked up, then the builder fix and a new image | 22:55 - 04:11 | 5 h 16 min |
 | Phase A (fresh toolchain bootstrap, then `linux` with the canister) | 2026-10-26 04:11 - 10:19 | 6 h 08 min |
 | Phase B (6 `make` attempts: 147, 165, 209, 27, 267 and 125 min) | 10:20 - 2026-10-27 03:28 | 17 h 08 min |
-| Rows k13 and k15 | 2026-10-27 07:47 - 08:03 | 16 min |
+| `boot_test` (k13, k15) | 2026-10-27 07:47 - 08:03 | 16 min |
 
 ## Keeping the fork's PRs current: `sharukhan sync`
 
