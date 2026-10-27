@@ -316,6 +316,47 @@ impl Config {
         }
     }
 
+    /// The effective path, repository and identity settings, by the
+    /// environment variable that sets each - what a script driving sharukhan
+    /// needs without repeating a default (`sharukhan settings`). Nothing
+    /// secret: the guest password is never a setting printed here.
+    pub fn effective(&self) -> Vec<(&'static str, String)> {
+        let p = |v: &PathBuf| v.to_string_lossy().into_owned();
+        vec![
+            ("MC_RELEASE", self.release.clone()),
+            ("MC_BUILD_COMMON", self.build_common.clone()),
+            ("MC_BUILD_ROOT", p(&self.build_root)),
+            ("PHOTON_TREE", p(&self.photon_tree)),
+            ("PHOTON_SCRIPTS", p(&self.photon_scripts)),
+            ("MC_WORK", p(&self.work)),
+            ("MC_GATE_REPO", p(&self.gate_repo)),
+            ("MC_PHOTON_REMOTE", self.photon_remote.clone()),
+            ("MC_FORK", self.fork.clone()),
+            ("MC_UPSTREAM", self.upstream.clone()),
+            ("MC_VARIANT_PATCH_DIR", p(&self.variant_patches)),
+            ("MC_ISO_CACHE", p(&self.iso_cache)),
+            ("MC_ISO_STORE", self.iso_store.as_ref().map(p).unwrap_or_default()),
+            ("MC_RESULTS_DIR", p(&self.results_dir)),
+            ("MC_RUN_LOG_DIR", p(&self.run_log_dir)),
+            ("MC_BUILD_LOG_DIR", p(&self.build_log_dir)),
+            ("MC_VM_ROOT_WSL", p(&self.vm_root)),
+            ("SHARUKHAN_DB", p(&self.memory_db)),
+            ("SHARUKHAN_MATRIX", p(&self.matrix_tsv)),
+            ("SHARUKHAN_VARIANTS", p(&self.variants_file)),
+            ("MC_FASTLOOP_ROWS", self.fastloop_rows.join(" ")),
+            ("MC_STAGED_ROWS", self.staged_rows.join(" ")),
+        ]
+    }
+
+    /// `effective()` as shell assignments, single-quoted so any value is
+    /// taken literally when sourced.
+    pub fn effective_shell(&self) -> String {
+        self.effective()
+            .into_iter()
+            .map(|(k, v)| format!("{k}='{}'\n", v.replace('\'', "'\\''")))
+            .collect()
+    }
+
     /// The root password baked into a generated kickstart, and the one an
     /// operator types at the curses configurator.
     ///
@@ -411,6 +452,27 @@ mod tests {
             name.contains("rsa") || name.contains("ecdsa"),
             "the default key must be an algorithm a FIPS sshd accepts: {name}"
         );
+    }
+
+    #[test]
+    fn the_effective_settings_are_the_configured_ones_and_never_a_secret() {
+        let c = Config::from(&|k: &str| match k {
+            "MC_WORK" => Some("/w/work".into()),
+            "MC_ISO_STORE" => Some("/iso/it's".into()),
+            "MC_GUEST_PASSWORD" => Some("secret-value".into()),
+            _ => None,
+        });
+        let e = c.effective();
+        let get = |k: &str| e.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone()).unwrap();
+        assert_eq!(get("MC_WORK"), "/w/work");
+        assert_eq!(get("MC_RELEASE"), "5.0", "a default, as Config uses it");
+        let sh = c.effective_shell();
+        assert!(sh.contains("MC_ISO_STORE='/iso/it'\\''s'\n"), "{sh}");
+        assert!(!sh.contains("secret-value") && !sh.contains("PASSWORD"));
+        // every name is a setting the services carry, so service install and this agree
+        for (k, _) in &e {
+            assert!(crate::service::SETTINGS.contains(k), "{k} is not a service setting");
+        }
     }
 
     /// The password has no default. This test is the guard against someone

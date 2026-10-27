@@ -138,6 +138,8 @@ PHASES (the same code `run` calls, one step at a time)
                         decide | body | lint | approve-upstream | reset-trees: the build trees back to the
                         gate repository's branches)
     service             install | status | remove the host services, their settings and secret files
+    settings            the effective path and repository settings as shell assignments
+                        for a script to eval; never a secret
     escalate            hand a refused PR to Claude under budgets (preflight | queue | ledger | --run --pr)
     wrapper             derive, check and verify build wrappers for any kernel.org
                         release (sharukhan wrapper --help)
@@ -608,6 +610,11 @@ fn main() -> ExitCode {
     let follows_job = argv.first().map(String::as_str) == Some("watch") && argv.iter().any(|a| a == "--job");
     if let Some(c @ ("watch" | "events")) = argv.first().map(String::as_str).filter(|_| !follows_job) {
         return ExitCode::from(watch::cli(c, &argv[1..]));
+    }
+    if argv.first().map(String::as_str) == Some("settings") {
+        // the effective settings, sourceable: `eval "$(sharukhan settings)"`
+        print!("{}", config::Config::load().effective_shell());
+        return ExitCode::SUCCESS;
     }
     if argv.first().map(String::as_str) == Some("service") {
         return match service::cli(&config::Config::load(), &argv[1..]) {
