@@ -61,6 +61,17 @@ reports a wrong answer is worse than one that reports nothing.
   - [A FIPS canister series for a profile kernel](#a-fips-canister-series-for-a-profile-kernel)
 - [Kernel-profile builds and runs: `--kernel`](#kernel-profile-builds-and-runs---kernel)
   - [Linux 7.3-rc4 (2026-09-29)](#linux-73-rc4-2026-09-29)
+- [Real-world example: a full ISO with kernel 7.3, the latest installer and the equivalent canister](#real-world-example-a-full-iso-with-kernel-73-the-latest-installer-and-the-equivalent-canister)
+  - [The goal and the result](#the-goal-and-the-result)
+  - [Step 1: which 7.3, verified](#step-1-which-73-verified)
+  - [Step 2: the release branch on today's 5.0](#step-2-the-release-branch-on-todays-50)
+  - [Step 3: the profile and the derived wrapper](#step-3-the-profile-and-the-derived-wrapper)
+  - [Step 4: prove every patch before building](#step-4-prove-every-patch-before-building)
+  - [Step 5: variant patches with every PR](#step-5-variant-patches-with-every-pr)
+  - [Step 6: build the ISO](#step-6-build-the-iso)
+  - [Step 7: install and verify](#step-7-install-and-verify)
+  - [Culprits and how each was solved](#culprits-and-how-each-was-solved)
+  - [Timings](#timings)
 - [Keeping the fork's PRs current: `sharukhan sync`](#keeping-the-forks-prs-current-sharukhan-sync)
   - [The stages](#the-stages)
   - [Starting, following and resuming a run](#starting-following-and-resuming-a-run)
@@ -1362,8 +1373,13 @@ How it is built, in short (the full contract is [FRD-001](specs/features/kernel-
   `.tar.sign`, git.kernel.org snapshots (release candidates) by the signed tag plus byte-identity
   with `git archive` of the tagged commit. Only the fingerprints in
   `profiles/kernel/kernel-org-signers.json` (from kernel.org/signature.html) are accepted, in a
-  keyring private to the run. `derive` also reads `SPECS/linux/EXPERIMENTAL-<release>.md` on
-  `origin/experimental/linux-<release>` and requires it to agree with the profile.
+  keyring private to the run. `derive` also reads `EXPERIMENTAL-<release>.md` in the kernel spec
+  directory of `origin/experimental/linux-<release>` and requires it to agree with the profile.
+- **The kernel spec directory is read from the tree, never assumed.** 5.0 keeps its kernel per
+  subrelease (`SPECS/90/linux`, `SPECS/91/linux`, `SPECS/92/linux`); the directory is the one
+  whose `linux.spec` `build_if` accepts the tree's `photon-subrelease`. The pin script works on
+  `$KDIR`: a build exports the directory sharukhan resolved (`specresolve::kernel_dir`), a run by
+  hand resolves it with the same rule (`pin_kernel_dir`), and a test keeps the two in agreement.
 - **Every derivation proves itself** before it writes: no target name already in the base, no base
   name in a rendered slot, every rename applied, no base name left anywhere, `sh -n` clean, every
   Python heredoc parses. The write is atomic; `--check` compares byte for byte instead.
@@ -1424,9 +1440,11 @@ sharukhan verify --kernel 7.3-rc4 --id k15
   checker runs per kernel spec and over both, exactly what it lists is pruned
   from the working tree (a `PatchN` only from the spec whose own run lists it,
   a `SourceN` only when unreferenced), and it must then pass.
-- **Kernel variants.** PR branches that touch `SPECS/linux` are left out (the
-  profile owns the kernel); a conflicting commit is skipped only when the
-  kernel branch already carries it (same subject, identical non-spec files).
+- **Kernel variants.** PR branches that touch a kernel spec directory
+  (`SPECS/linux` or `SPECS/<n>/linux`) are left out (the profile owns the
+  kernel) - a PR stacked on such a branch too, because its range carries the
+  parent's kernel files; a conflicting commit is skipped only when the kernel
+  branch already carries it (same subject, identical non-spec files).
 - **Runs.** Under `--kernel` every row takes the canister axis `equivalent`,
   `verify` expects the profile's NEVR, records `meta.kernel`, and
   `guest.kernel_release` requires `uname -r` to be that kernel; the media gate
@@ -1442,6 +1460,163 @@ boot with `fips=1`, "FIPS canister verification passed", canister version 7.3
 based on 7.3.0-0.rc4.1.ph5. **Not CMVP validated** - no canister of the 7.3
 series is published; the port's per-patch decisions are in
 `SPECS/linux/fips-7.3/README.md` on the release branch.
+
+## Real-world example: a full ISO with kernel 7.3, the latest installer and the equivalent canister
+
+This chapter is a record of one real run (2026-10-25 to 2026-10-27), from the
+request to the verified ISO, with every command and every problem met on the
+way. Host-specific paths are shown as they were on that host; no value here is
+secret.
+
+### The goal and the result
+
+**Goal:** one full ISO with Linux 7.3, the latest photon-os-installer variant,
+the canister built from that kernel (`--canister equivalent`), and every fork
+PR applied.
+
+**Result:**
+
+| | |
+|---|---|
+| ISO | `C:\Users\dcaso\Downloads\Ph-Builds\full-poilatest-equivalent__photon-5.0-cb2b916647.x86_64.iso` |
+| Kernel on the media | `linux` / `linux-esx` `7.3.0-1.ph5` (guest `uname -r`: `7.3.0-1.ph5-esx`) |
+| Installer | `photon-os-installer-2.9-1.ph5` - the same as the regular latest-variant ISO |
+| Canister | `linux-fips-canister-7.3.0-1.ph5`, built from this kernel in phase A, relinked into both flavours in phase B - **not CMVP validated** |
+| PRs | every branch of `[variant latest]` and `[common]` except the kernel stack (see step 5) |
+| Rows | k13 (full, latest, ext4): 44 checks, 0 fail; k15 (full, latest, STIG, `fips=1`): 46 checks, 0 fail, canister 7.3 based on `7.3.0-1.ph5` |
+
+### Step 1: which 7.3, verified
+
+```sh
+sharukhan wrapper kernel 7.3          # identity: Version 7.3.0, Release 1, tarball, branch name
+sharukhan wrapper kernel stable       # kernel.org: 7.3 is mainline and latest_stable, no 7.3.x yet
+sharukhan wrapper verify 7.3          # downloads linux-7.3.tar.xz and checks its .tar.sign
+```
+
+`verify` accepted the tarball only with the signature of a reviewed kernel.org
+signer (`647F28654894E3BD457199BE38DBBDC86092693E`, Greg Kroah-Hartman) and
+printed its sha512; that sha512 is what every later step compares against.
+
+### Step 2: the release branch on today's 5.0
+
+A kernel build takes its variants as `origin/<kernel branch>..origin/<PR>`, so
+the kernel branch must sit on the same 5.0 the PRs are rebased on; the rc4
+branch was 100 commits behind. `experimental/linux-7.3` was therefore built in
+the **local gate repository only** (never pushed), on 5.0 `727909c4b8`:
+
+```sh
+git -C /root/photon-mc/gate/photon.git worktree add --detach /root/photon-mc/gate/work/k73-branch 727909c4b8
+# kernel files of experimental/linux-7.3-rc4: SPECS/linux/... -> SPECS/92/linux/...
+#   secure/0001-gcc-rap-plugin-with-kcfi-7.3.patch, vmw/*-7.3.patch, fips-7.3/ (43 files)
+# SPECS/92/linux/config.yaml: the linux-7.3.tar.xz entry (url, sha512, commit c03c1a14,
+#   license-review hashes computed from the 7.3 tarball); version quoted: '7.3'
+# SPECS/92/linux/kernel_cve_patches.inc: empty (6.12-stable backports do not apply to 7.3)
+# SPECS/92/linux/EXPERIMENTAL-7.3.md: the rows the branch check verifies
+git -C /root/photon-mc/gate/work/k73-branch branch experimental/linux-7.3
+```
+
+Only the kernel moves to the branch. The rc4 branch also carried userland fixes
+(cloud-init, dbus, sudo, two installer patches); the PRs bring cloud-init, and
+the others are not PRs, so they are not part of this ISO.
+
+### Step 3: the profile and the derived wrapper
+
+```sh
+sharukhan wrapper profile-new --kernel 7.3 --from 7.3-rc4    # verifies the source again, lists what to review
+# review profiles/kernel/7.3.json: comments, the FIPS manifest (relative to the kernel
+# directory: fips-7.3/manifest.json), no installer patches, no userland pre-build
+git clone -q --no-checkout -b experimental/linux-7.3 /root/photon-mc/gate/photon.git /root/photon-mc/gate/work/k73-repo
+sharukhan wrapper derive --profile 7.3 --repo /root/photon-mc/gate/work/k73-repo
+sharukhan wrapper check --repo /root/photon-mc/gate/work/k73-repo   # both profiles, each in its own layout
+```
+
+`derive` wrote `runPh7-3.sh` and its branch check passed: kernel spec directory
+`SPECS/92/linux` (subrelease 92), tarball and sha512, `Version: 7.3.0`,
+`Release: 1`, the three patch files, and the FIPS manifest (55 files present
+once, 40 patches in range, 13 dropped).
+
+### Step 4: prove every patch before building
+
+The pin script was run on a scratch checkout of the branch in a container with
+nothing else mounted, then `rpmbuild -bp` replayed `%prep` of the pinned specs
+with each canister phase's macros (`canister_build 1`, `canister_stamp_real 1`,
+`fips_certified_override 7.3.0-1.ph5` for phase A):
+
+```sh
+# pins: KDIR resolved by the script itself -> SPECS/92/linux; FIPS series enabled
+docker run --rm --network none -v <scratch tree>:<scratch tree> -w <scratch tree> \
+  -e CANISTER_MODE=equivalent-a ... sharukhan/photon-builder:<tag> sh -c 'set -eu; . /pins.sh'
+# %prep replay: every patch at --fuzz=0 on pristine linux-7.3
+rpmbuild -bp --nodeps -D "_sourcedir /src" -D "photon_subrelease 92" -D "dist .ph5" \
+  -D "canister_build 1" -D "canister_stamp_real 1" -D "fips_certified_override 7.3.0-1.ph5" linux.spec
+```
+
+Result after one port (see the culprits): 44 patch runs, 0 failed hunks, 0
+rejects. Phase B's `%prep` cannot run standalone - it unpacks the canister phase
+A installs - and was proven by the build itself.
+
+### Step 5: variant patches with every PR
+
+```sh
+sharukhan variant-patches --kernel 7.3
+```
+
+Both variants assembled on `experimental/linux-7.3` and apply to it. One branch
+was left out, `fix/linux-esx-depmod-ghost`: the tip of the kernel PR stack
+(#24, #29, #36, #54), whose range changes 638 files, all in kernel spec
+directories. Those PRs rework the 6.12 kernel spec; under a 7.3 profile they do
+not apply, and nothing outside the kernel is lost with them.
+
+### Step 6: build the ISO
+
+```sh
+sharukhan build-iso --kernel 7.3 --iso-type full --poi latest --canister equivalent --allow-build
+```
+
+run detached in the host mount namespace with a log. The build runs in its own
+root (`$MC_WORK/kbuild/7.3`): phase A builds `linux` with the canister
+(`linux-fips-canister-7.3.0-1.ph5`), phase B relinks both flavours against it
+and builds the full image. The ISO went to the ISO store (`MC_ISO_STORE`) and is
+linked from `$MC_ISO_CACHE/k7.3/full-poilatest-equivalent/`.
+
+### Step 7: install and verify
+
+```sh
+sharukhan run --kernel 7.3 --only k13,k15 --allow-build
+```
+
+`--kernel` makes every row expect the profile's NEVR: `meta.kernel 7.3
+(7.3.0-1.ph5)`, `guest.kernel_release 7.3.0-1.ph5-esx` (PASS on both rows), and
+on the STIG row k15 `guest.fips_canister 1`, `guest.canister_version 7.3`,
+`guest.canister_based_on 7.3.0-1.ph5` (PASS). 0 failing checks.
+
+### Culprits and how each was solved
+
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 1 | The kernel-profile tooling could not build against today's 5.0 | 5.0 keeps its kernel per subrelease (`SPECS/92/linux`); the base wrapper, the branch check, the profile and `spec_canister_pin` assumed `SPECS/linux` | the kernel directory is read from the tree everywhere; base wrapper v15 (`5088b218`) |
+| 2 | "All PRs" would have dragged 100 upstream commits into every variant | the rc4 branch sat on a 5.0 from 2026-09-19 | `experimental/linux-7.3` on today's 5.0 (local gate repo, step 2) |
+| 3 | rc4's `config.yaml` license-review hashes did not belong to its tarball | copied from the 6.12 entry | the 7.3 hashes computed from `linux-7.3.tar.xz` |
+| 4 | `version: 7.3` in `config.yaml` read as the float `7.3` | YAML typing | quoted `'7.3'`, confirmed with `yaml.safe_load` in the builder |
+| 5 | `1000-FIPS-canister-creation-7.3.patch`: 1 of 23 hunks FAILED at `--fuzz=0` | 7.3 moved `assoclen -= orig_len_this_step;` in `gcm_process_assoc()`; the hunk's context still expected it after the `need_resched()` block | the same change on 7.3's context, proven by the `%prep` replay (branch commit `cb2b916647`) |
+| 6 | Phase A stopped after 1 h 48 min: `failed to build contain_unpriv`, `linux/errno.h: No such file or directory` | build.py compiles `contain_unpriv` in a fresh build root; the builder image had gcc and glibc-devel but no `linux-api-headers` (the gate's root still had a binary compiled on the host in September) | `linux-api-headers` in the image, and every new image must compile a C program that includes `<errno.h>` (`fe532e0a`); the old image fails that proof, the new one differs by that package only |
+| 7 | `could not obtain rpcbind-1.3.1.tar.bz2 / pgbouncer-1.26.0.tar.gz from any source` | both upstreams are gone and not on Photon's mirror; the fetcher never looked at the verified copies in the configured build root | a missing archive is restored from the local caches first, only when its sha512 is the declared one (`1204fe90`) |
+| 8 | Phase B needed 6 `make` attempts: `linux` failed once, `linux-esx` three times, `kafka` once; attempt 6 passed | the one failure whose log was read while the build ran: `cc1: internal compiler error: Bus error` compiling `fs/jbd2/recovery.o` (linux-esx, 2026-10-26 17:20Z). The kernel log shows no OOM kill, no SIGBUS record and no I/O error on the build disk, only order-7 page allocation failures in the Hyper-V vmbus driver (fragmented memory); the same sources built cleanly on the next attempts - environmental, not reproducible | the retries carried the build; the logs of the other failures were overwritten by the next attempt, so the cascade now keeps every failed attempt's package logs under `<build-log dir>/failed-attempts/` (`a04b4a6d`) |
+| 9 | `Debug symbols found in following rpms: subversion-1.14.5-2.ph5` (non-fatal) | open: the base wrapper's `pin_svn_nodebug` (`%exclude /usr/lib/debug` after every `%files`) is the only difference to the gate's subversion RPM, which has no debug paths; not yet proven | recorded as finding 124 (`wrapper-svn-nodebug-ships-debug-files`) |
+
+### Timings
+
+All times UTC.
+
+| Step | When | Took |
+|---|---|---|
+| Tooling port, branch, profile, `%prep` proof | 2026-10-25 20:34 - 21:06 | 32 min |
+| `variant-patches --kernel 7.3` | 21:06 | about 1 min |
+| First build to the `contain_unpriv` stop (fetching 2 030 sources into the fresh root) | 21:07 - 22:55 | 1 h 48 min |
+| Idle until the stop was picked up, then the builder fix and a new image | 22:55 - 04:11 | 5 h 16 min |
+| Phase A (fresh toolchain bootstrap, then `linux` with the canister) | 2026-10-26 04:11 - 10:19 | 6 h 08 min |
+| Phase B (6 `make` attempts: 147, 165, 209, 27, 267 and 125 min) | 10:20 - 2026-10-27 03:28 | 17 h 08 min |
+| Rows k13 and k15 | 2026-10-27 07:47 - 08:03 | 16 min |
 
 ## Keeping the fork's PRs current: `sharukhan sync`
 
