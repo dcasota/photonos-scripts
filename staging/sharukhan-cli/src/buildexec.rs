@@ -2099,6 +2099,45 @@ fn kernel_flavour_nevrs(c: &mut Ctx) -> Vec<(String, String)> {
 /// The kernel spec directory of the release tree at this build's subrelease
 /// (`specresolve::kernel_dir`). Preflight requires it, so a build never runs
 /// on a tree where it cannot be told.
+/// Copy the logs of the packages an attempt failed (or left unfinished) out of
+/// `stage/LOGS` before the next attempt rewrites them: every
+/// `LOGS/<name>-<version>-<release>/` written since `since` whose package has
+/// no RPM in `stage/RPMS`. Returns the packages kept.
+pub fn preserve_failed_logs(stage: &Path, since: std::time::SystemTime, keep: &Path) -> Result<Vec<String>, String> {
+    let logs = stage.join("LOGS");
+    let Ok(rd) = fs::read_dir(&logs) else { return Ok(Vec::new()) };
+    let mut rpms: Vec<String> = Vec::new();
+    if let Ok(arches) = fs::read_dir(stage.join("RPMS")) {
+        for a in arches.flatten() {
+            if let Ok(files) = fs::read_dir(a.path()) {
+                rpms.extend(files.flatten().filter_map(|f| f.file_name().into_string().ok()));
+            }
+        }
+    }
+    let mut kept = Vec::new();
+    for e in rd.flatten() {
+        let dir = e.path();
+        let Some(name) = dir.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
+        if !dir.is_dir() || rpms.iter().any(|r| r.starts_with(&format!("{name}."))) {
+            continue;
+        }
+        let files: Vec<PathBuf> = fs::read_dir(&dir).map(|r| r.flatten().map(|f| f.path()).filter(|p| p.is_file()).collect()).unwrap_or_default();
+        let fresh = files.iter().any(|f| fs::metadata(f).and_then(|m| m.modified()).map(|m| m >= since).unwrap_or(false));
+        if !fresh {
+            continue;
+        }
+        let to = keep.join(&name);
+        fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+        for f in &files {
+            let dest = to.join(f.file_name().unwrap_or_default());
+            fs::copy(f, &dest).map_err(|e| format!("{} -> {}: {e}", f.display(), dest.display()))?;
+        }
+        kept.push(name);
+    }
+    kept.sort();
+    Ok(kept)
+}
+
 fn kernel_specs(c: &Ctx) -> Result<PathBuf, String> {
     let release = c.spec.tree(Tree::Release);
     Ok(release.join(crate::specresolve::kernel_dir(&release, build_subrelease(c, &release))?))
@@ -3095,14 +3134,28 @@ restored from the kernel store or left by an earlier phase A",
     let marker = stage.join(".sharukhan-iso-marker");
     let _ = fs::write(&marker, "");
     let (mut prev_rc, mut prev_progress) = (i32::MIN, u64::MAX);
+    let mut attempt_start = std::time::SystemTime::now();
 
     for attempt in 1..=MAKE_ATTEMPTS {
         if attempt > 1 {
+            // the next attempt rewrites stage/LOGS: keep what the last one failed with
+            let keep = crate::config::Config::load().build_log_dir.join("failed-attempts").join(format!(
+                "{}-{}-attempt{}",
+                release.file_name().and_then(|n| n.to_str()).unwrap_or("release"),
+                crate::job::stamp(),
+                attempt - 1
+            ));
+            match preserve_failed_logs(&stage, attempt_start, &keep) {
+                Ok(kept) if !kept.is_empty() => c.say(&format!("  attempt {}: kept the logs of {} in {}", attempt - 1, kept.join(", "), keep.display())),
+                Ok(_) => {}
+                Err(e) => c.say(&format!("  [warn] attempt {}: the failed packages' logs were not kept: {e}", attempt - 1)),
+            }
             c.say(&format!(
                 "  attempt {attempt}: cleaning sandboxes from the previous attempt"
             ));
             clean_sandboxes(c, &stage);
         }
+        attempt_start = std::time::SystemTime::now();
         // A kernel profile's pre-build: its own make run, part of the attempt,
         // so a failure is retried and judged like any other - never skipped.
         //
@@ -3842,6 +3895,38 @@ fn subrelease_enter(c: &mut Ctx, stage: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A retried make must not destroy the evidence of the attempt it retries:
+    /// the failed (and the unfinished) packages' logs are kept, the built ones
+    /// and the ones untouched by the attempt are not.
+    #[test]
+    fn a_failed_attempts_package_logs_are_kept() {
+        let d = std::env::temp_dir().join(format!("shk-keep-logs-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        let stage = d.join("stage");
+        let put = |rel: &str, text: &str| {
+            let p = stage.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, text).unwrap();
+        };
+        put("LOGS/old-1.0-1.ph5/old.log", "an earlier attempt");
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let since = std::time::SystemTime::now();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        put("LOGS/linux-esx-7.3.0-1.ph5/linux-esx.log", "cc1: internal compiler error: Bus error");
+        put("LOGS/linux-esx-7.3.0-1.ph5/build-linux-esx-7.3.0-1.ph5.log", "");
+        put("LOGS/linux-7.3.0-1.ph5/linux.log", "built");
+        put("RPMS/x86_64/linux-7.3.0-1.ph5.x86_64.rpm", "rpm");
+        put("RPMS/x86_64/linux-esx-devel-7.3.0-1.ph5.x86_64.rpm", "a subpackage name is not the package");
+        let keep = d.join("kept");
+        let k = preserve_failed_logs(&stage, since, &keep).unwrap();
+        assert_eq!(k, vec!["linux-esx-7.3.0-1.ph5".to_string()]);
+        assert_eq!(fs::read_to_string(keep.join("linux-esx-7.3.0-1.ph5/linux-esx.log")).unwrap(), "cc1: internal compiler error: Bus error");
+        assert!(!keep.join("old-1.0-1.ph5").exists() && !keep.join("linux-7.3.0-1.ph5").exists());
+        assert!(preserve_failed_logs(&d.join("none"), since, &keep).unwrap().is_empty());
+        let _ = fs::remove_dir_all(&d);
+    }
+
 
     /// A kernel-profile build's own root restores from the configured build
     /// root's caches; the build that IS the configured root does not list its
