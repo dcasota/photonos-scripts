@@ -14,6 +14,7 @@ mod buildmode;
 mod canister;
 mod caneq;
 mod dbrender;
+mod doccheck;
 mod card;
 mod config;
 mod console;
