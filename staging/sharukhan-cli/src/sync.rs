@@ -44,6 +44,30 @@ fn show(dir: &Path, rev: &str, path: &str) -> Option<String> {
     git_in(dir, &["show", &format!("{rev}:{path}")]).ok()
 }
 
+/// The git file mode of `path` at `rev`: 100644, 100755 or 120000 (a symlink).
+fn tree_mode(dir: &Path, rev: &str, path: &str) -> Option<String> {
+    let out = git_in(dir, &["ls-tree", rev, "--", path]).ok()?;
+    out.split_whitespace().next().map(str::to_string)
+}
+
+/// Write a file of the replay with the PR's mode: an executable stays
+/// executable and a symlink stays a link (its content is the link target).
+fn place(abs: &Path, content: &str, mode: Option<&str>) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    if let Some(d) = abs.parent() {
+        fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+    }
+    if mode == Some("120000") {
+        if fs::symlink_metadata(abs).is_ok() {
+            fs::remove_file(abs).map_err(|e| format!("{}: {e}", abs.display()))?;
+        }
+        return std::os::unix::fs::symlink(content, abs).map_err(|e| format!("{}: {e}", abs.display()));
+    }
+    fs::write(abs, content).map_err(|e| format!("{}: {e}", abs.display()))?;
+    let bits = if mode == Some("100755") { 0o755 } else { 0o644 };
+    fs::set_permissions(abs, fs::Permissions::from_mode(bits)).map_err(|e| format!("{}: {e}", abs.display()))
+}
+
 // --- analyze ----------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -246,6 +270,17 @@ pub fn mask(spec: &str) -> String {
     out
 }
 
+/// The `%changelog` section, its header line included; empty when there is none.
+fn changelog_section(text: &str) -> &str {
+    if text.starts_with("%changelog\n") {
+        return text;
+    }
+    match text.find("\n%changelog\n") {
+        Some(i) => &text[i + 1..],
+        None => "",
+    }
+}
+
 fn changelog_body(spec: &str) -> &str {
     match spec.find("\n%changelog\n") {
         Some(i) => &spec[i + "\n%changelog\n".len()..],
@@ -281,6 +316,15 @@ fn merge3(base: &str, ours: &str, theirs: &str) -> Result<String, ()> {
 /// `author` is `Name <email>` (crate::author): whose entries are the PR's own.
 pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, date: &str, stacked: bool, author: &str) -> Result<(String, String), String> {
     let merged = merge3(&mask(prev), &mask(cur), &mask(pr)).map_err(|_| "conflict beyond Release and %changelog".to_string())?;
+    if changelog_section(pr_head).is_empty() {
+        // the PR moved the changelog out of the spec into an included file,
+        // which the replay rebases (moved_changelog); a Release left here would
+        // have no entry to answer for it
+        if merged.contains(REL_MASK) {
+            return Err("Release: kept in a spec whose %changelog the PR moved out: needs a person".into());
+        }
+        return Ok((merged, String::new()));
+    }
     let base_rel = release_value(base).ok_or("no Release in the base")?;
     // A stacked PR amends its parent's entry: same Release, its line replaces
     // the parent's, so the stack still adds exactly one entry.
@@ -310,6 +354,55 @@ pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, d
     };
     let out = format!("{}* {date} {author} {version}-{next}\n{}\n{}", merged.replace(REL_MASK, &next), entry[1], rest);
     Ok((out, format!("{version}-{next}")))
+}
+
+/// A file the PR adds that carries what a spec of the same commit held before:
+/// its `%changelog` (an included changelog) or its Release values. The spec's
+/// section on the new base replaces the copy, so a parent's rebase (a new date,
+/// a new Release) reaches it. `specs` are (path before, spec before, spec on the
+/// new base) of every spec the commit changes or deletes.
+pub fn moved_changelog(path: &str, added: &str, specs: &[(String, String, String)]) -> Result<String, String> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if !(name.contains("changelog") && name.ends_with(".inc")) {
+        // a Release copied from a spec whose Release the rebase changed is stale
+        for (spec_path, before, after) in specs {
+            let (Some(b), Some(a)) = (release_value(before), release_value(after)) else { continue };
+            if b != a && added.lines().any(|l| l.strip_prefix("Release:").is_some_and(|r| r.trim().starts_with(&format!("{b}%")) || r.trim() == b)) {
+                return Err(format!("{path}: copies Release {b} of {spec_path}, which is {a} on the new base: needs a person"));
+            }
+        }
+        return Ok(added.to_string());
+    }
+    let section = changelog_section(added);
+    if section.is_empty() {
+        return Ok(added.to_string());
+    }
+    let head = &added[..added.len() - section.len()];
+    // the spec whose changelog this is: the same section before the commit
+    if let Some((_, _, after)) = specs.iter().find(|(_, before, _)| changelog_section(before) == section) {
+        let new = changelog_section(after);
+        if new.is_empty() {
+            return Err(format!("{path}: its spec has no %changelog on the new base: needs a person"));
+        }
+        return Ok(format!("{head}{new}"));
+    }
+    // edited after the move: three-way, against the spec sharing most entries;
+    // at least half of that spec's entry headers must be in the include
+    let headers = |a: &str| a.lines().filter(|l| l.starts_with("* ")).map(str::to_string).collect::<Vec<_>>();
+    let ours = headers(section);
+    let shared = |before: &str| headers(changelog_section(before)).iter().filter(|h| ours.contains(h)).count();
+    let best = specs
+        .iter()
+        .filter(|(_, before, _)| !changelog_section(before).is_empty())
+        .max_by_key(|(_, before, _)| shared(before));
+    match best {
+        Some((spec_path, before, after)) if shared(before) > 0 && shared(before) * 2 >= headers(changelog_section(before)).len() => {
+            let merged = merge3(changelog_section(before), changelog_section(after), section)
+                .map_err(|_| format!("{path}: the moved changelog of {spec_path} conflicts with its rebase: needs a person"))?;
+            Ok(format!("{head}{merged}"))
+        }
+        _ => Ok(added.to_string()),
+    }
 }
 
 /// Renames the base made between `old` and `new`: old path -> new path.
@@ -420,6 +513,20 @@ fn replay(
     let mut res = RebaseResult { head: String::new(), commits: vec![], dropped: vec![], releases: BTreeMap::new() };
     for c in &commits {
         let changes = git_in(repo, &["diff-tree", "--no-commit-id", "-r", "--name-status", "--no-renames", &format!("{c}^"), c])?;
+        // every spec this commit changes or deletes, before and on the new base,
+        // for the files it adds from them (moved_changelog)
+        let specs: Vec<(String, String, String)> = changes
+            .lines()
+            .filter_map(|st| {
+                let (kind, path) = st.split_once('\t')?;
+                (kind != "A" && path.ends_with(".spec")).then_some(path)
+            })
+            .filter_map(|path| {
+                let before = show(repo, &format!("{c}^"), path)?;
+                let after = show(repo, new_base, &map_path(path, renames, &dirs))?;
+                Some((path.to_string(), before, after))
+            })
+            .collect();
         for st in changes.lines() {
             let f: Vec<&str> = st.split('\t').collect();
             if f.len() != 2 {
@@ -448,13 +555,11 @@ fn replay(
                 }
                 "A" => {
                     let pr = pr.ok_or_else(|| format!("{path}: added but unreadable"))?;
+                    let pr = if cur.is_none() { moved_changelog(&target, &pr, &specs)? } else { pr };
                     if cur.is_some() && cur.as_deref() != Some(pr.as_str()) {
                         return Err(format!("{target}: added by the PR and differently upstream"));
                     }
-                    if let Some(d) = abs.parent() {
-                        fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
-                    }
-                    fs::write(&abs, &pr).map_err(|e| format!("{target}: {e}"))?;
+                    place(&abs, &pr, tree_mode(repo, c, path).as_deref()).map_err(|e| format!("{target}: {e}"))?;
                     git_in(w, &["add", &target])?;
                 }
                 _ => {
@@ -465,14 +570,19 @@ fn replay(
                         let pr_head = show(repo, src, path).unwrap_or_else(|| pr.clone());
                         let (text, vr) = rebase_spec(&prev, &cur, &pr, &pr_head, &base_spec, date, stacked, &author.line())
                             .map_err(|e| format!("{target}: {e}"))?;
-                        res.releases.insert(target.clone(), vr);
+                        if !vr.is_empty() {
+                            res.releases.insert(target.clone(), vr);
+                        }
                         text
                     } else if target.ends_with(".inc") && target.contains("changelog") {
                         return Err(format!("{target}: a changelog include needs a person (its entries are not a spec's %changelog)"));
                     } else {
                         merge3(&prev, &cur, &pr).map_err(|_| format!("{target}: conflict"))?
                     };
-                    fs::write(&abs, &out).map_err(|e| format!("{target}: {e}"))?;
+                    // the PR's mode when it changed it, else the one on the new base
+                    let (mode_before, mode_pr) = (tree_mode(repo, &format!("{c}^"), path), tree_mode(repo, c, path));
+                    let mode = if mode_before != mode_pr { mode_pr } else { tree_mode(w, "HEAD", &target) };
+                    place(&abs, &out, mode.as_deref()).map_err(|e| format!("{target}: {e}"))?;
                     git_in(w, &["add", &target])?;
                 }
             }
@@ -915,6 +1025,92 @@ pub fn cli(args: &[String]) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SPEC_BEFORE: &str = "Name: k\nVersion: 6.12\nRelease: 6%{?dist}\n%description\nk\n%changelog\n* Fri Oct 23 2026 A B <a@b> 6.12-6\n- Share the config\n* Fri Oct 23 2026 C D <c@d> 6.12-5\n- CVE fixes\n";
+    const SPEC_REBASED: &str = "Name: k\nVersion: 6.12\nRelease: 6%{?dist}\n%description\nk\n%changelog\n* Tue Oct 27 2026 A B <a@b> 6.12-6\n- Share the config\n* Fri Oct 23 2026 C D <c@d> 6.12-5\n- CVE fixes\n";
+
+    /// The kernel single-source case end to end: a stacked PR moves a spec's
+    /// changelog into an include and adds an executable and a symlink; its
+    /// parent was rebased (a new date). The replay keeps both modes, carries the
+    /// new date into the include and leaves the changelog-less spec alone.
+    #[test]
+    fn a_replay_keeps_modes_and_moves_the_parents_new_changelog_into_the_include() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = std::env::temp_dir().join(format!("shk-replay-{}-{}", std::process::id(), crate::job::stamp()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("SPECS/k")).unwrap();
+        let g = |a: &[&str]| -> String {
+            let o = Command::new("git").arg("-C").arg(&d).args(a).output().unwrap();
+            assert!(o.status.success(), "{a:?}: {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        g(&["init", "-q", "-b", "5.0"]);
+        g(&["config", "user.email", "a@b"]);
+        g(&["config", "user.name", "A B"]);
+        fs::write(d.join("SPECS/k/k.spec"), SPEC_BEFORE).unwrap();
+        g(&["add", "."]);
+        g(&["commit", "-qm", "parent"]);
+        let old_parent = g(&["rev-parse", "HEAD"]);
+        g(&["checkout", "-qb", "pr"]);
+        let pr_spec = "Name: k\nVersion: 6.12\n%include %{SOURCE990}\n%description\nk\n";
+        fs::write(d.join("SPECS/k/k.spec"), pr_spec).unwrap();
+        fs::write(d.join("SPECS/k/k-changelog.inc"), changelog_section(SPEC_BEFORE)).unwrap();
+        fs::write(d.join("SPECS/k/hmac.sh"), "#!/bin/sh\n").unwrap();
+        fs::set_permissions(d.join("SPECS/k/hmac.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink("hmac.sh", d.join("SPECS/k/hmac-6.1.sh")).unwrap();
+        g(&["add", "."]);
+        g(&["commit", "-qm", "single source"]);
+        g(&["checkout", "-q", "--detach", &old_parent]);
+        fs::write(d.join("SPECS/k/k.spec"), SPEC_REBASED).unwrap();
+        g(&["commit", "-qam", "parent rebased"]);
+        let new_parent = g(&["rev-parse", "HEAD"]);
+        let author = crate::author::parse("A B <a@b>").unwrap();
+        let work = d.join(".w");
+        let r = rebase(&d, "refs/heads/pr", &old_parent, &old_parent, &new_parent, "Tue Oct 27 2026", &work, true, &author).unwrap();
+        let mode = |p: &str| g(&["ls-tree", &r.head, "--", p]).split_whitespace().next().unwrap_or("").to_string();
+        assert_eq!(mode("SPECS/k/hmac.sh"), "100755");
+        assert_eq!(mode("SPECS/k/hmac-6.1.sh"), "120000");
+        assert_eq!(g(&["show", &format!("{}:SPECS/k/hmac-6.1.sh", r.head)]), "hmac.sh");
+        assert_eq!(g(&["show", &format!("{}:SPECS/k/k-changelog.inc", r.head)]) + "\n", changelog_section(SPEC_REBASED));
+        assert_eq!(g(&["show", &format!("{}:SPECS/k/k.spec", r.head)]) + "\n", pr_spec);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_changelog_the_pr_moved_into_an_include_follows_the_parents_rebase() {
+        let moved = changelog_section(SPEC_BEFORE).to_string();
+        let specs = vec![("SPECS/92/k/k.spec".to_string(), SPEC_BEFORE.to_string(), SPEC_REBASED.to_string())];
+        let out = moved_changelog("SPECS/92/k/k-6.12-changelog.inc", &moved, &specs).unwrap();
+        assert_eq!(out, changelog_section(SPEC_REBASED));
+        // edited after the move: the edit and the parent's new date both survive
+        let edited = moved.replace("- CVE fixes\n", "- CVE fixes\n- and one more line\n");
+        let out = moved_changelog("SPECS/92/k/k-6.12-changelog.inc", &edited, &specs).unwrap();
+        assert!(out.contains("* Tue Oct 27 2026 A B <a@b> 6.12-6") && out.contains("- and one more line"), "{out}");
+        // an include unrelated to any spec of the commit is the PR's own file
+        let own = "%changelog\n* Mon Oct 26 2026 A B <a@b> 1.0-1\n- New\n";
+        assert_eq!(moved_changelog("SPECS/x/x-changelog.inc", own, &specs).unwrap(), own);
+    }
+
+    #[test]
+    fn an_added_include_with_a_release_the_rebase_changed_needs_a_person() {
+        let bumped = SPEC_REBASED.replace("Release: 6%{?dist}", "Release: 7%{?dist}");
+        let specs = vec![("SPECS/92/k/k.spec".to_string(), SPEC_BEFORE.to_string(), bumped)];
+        let e = moved_changelog("SPECS/92/k/k-6.12.inc", "Version: 6.12\nRelease: 6%{?dist}\n", &specs).unwrap_err();
+        assert!(e.contains("copies Release 6") && e.contains("needs a person"), "{e}");
+        let same = vec![("SPECS/92/k/k.spec".to_string(), SPEC_BEFORE.to_string(), SPEC_REBASED.to_string())];
+        assert!(moved_changelog("SPECS/92/k/k-6.12.inc", "Release: 6%{?dist}\n", &same).is_ok());
+    }
+
+    #[test]
+    fn a_spec_whose_changelog_the_pr_moved_out_is_merged_without_an_entry() {
+        let pr = "Name: k\n%if 0%{?photon_subrelease} <= 90\nVersion: 6.1\n%else\nVersion: 6.12\n%endif\n%include %{SOURCE990}\n%description\nk\n";
+        let (out, vr) = rebase_spec(SPEC_BEFORE, SPEC_REBASED, pr, pr, SPEC_REBASED, "Tue Oct 27 2026", true, "A B <a@b>").unwrap();
+        assert_eq!(out, pr);
+        assert!(vr.is_empty());
+        let keeps_release = pr.replace("Name: k\n", "Name: k\nRelease: 6%{?dist}\n");
+        let e = rebase_spec(SPEC_BEFORE, SPEC_REBASED, &keeps_release, &keeps_release, SPEC_REBASED, "Tue Oct 27 2026", true, "A B <a@b>").unwrap_err();
+        assert!(e.contains("needs a person"), "{e}");
+    }
 
     #[test]
     fn bookkeeping_is_not_an_upstream_change() {

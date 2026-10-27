@@ -20,7 +20,7 @@ ANALYZE -> REBASE -> VERIFY -> PREPARE -> FASTLOOP -> GATE -> PUBLISH -> STAGEVM
 | Stage | What it does |
 |---|---|
 | `ANALYZE` | lists the fork's open PRs, checks each local head equals GitHub's, and decides per PR: keep, or rebase (a PR stacked on a rebased one is rebased too) |
-| `REBASE` | moves each PR onto its new base, parents first; a refused rebase stops the run as `needs-decision` |
+| `REBASE` | moves each PR onto its new base, parents first; a refused rebase stops the run as `needs-decision`. A changelog the PR moved from a spec into an included `*changelog*.inc` takes that spec's rebased changelog; files keep the PR's mode (executable, symlink) |
 | `VERIFY` | `rpmspec -P` per subrelease and arch, `check_spec`, and the one-changelog-entry rule against the new base |
 | `PREPARE` | points the gate repository at the candidates, resets the build trees and regenerates the variant patches |
 | `FASTLOOP` | builds the minimal ISO of the default variant and installs `MC_FASTLOOP_ROWS` (default `k03 c03`) |
