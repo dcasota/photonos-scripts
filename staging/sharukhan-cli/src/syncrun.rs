@@ -109,7 +109,12 @@ pub fn ensure_schema(c: &Connection) -> Result<(), String> {
         c.execute_batch("ALTER TABLE sync_pr ADD COLUMN base_to TEXT").map_err(sql)?;
     }
     // added with the vmware stage: the upstream PR opened from the branch, and its approval
-    for (table, col, decl) in [("sync_pr", "upstream_pr", "INTEGER"), ("sync_run", "upstream_approved", "INTEGER NOT NULL DEFAULT 0")] {
+    // and with `sync start --rebase-all`: every PR moves to the new base, not only the ones it must
+    for (table, col, decl) in [
+        ("sync_pr", "upstream_pr", "INTEGER"),
+        ("sync_run", "upstream_approved", "INTEGER NOT NULL DEFAULT 0"),
+        ("sync_run", "rebase_all", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
         let has: bool = c
             .prepare(&format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{col}'"))
             .and_then(|mut s| s.exists([]))
@@ -206,7 +211,7 @@ pub fn synced_base(c: &Connection, root: &str) -> Option<String> {
     c.query_row("SELECT value FROM upstream_head WHERE repo = 'synced' AND ref = ?1", [root], |r| r.get(0)).ok()
 }
 
-pub fn start(c: &Connection, fork: &str, repo: &Path, roots: &[&str], publish: &str, against: Option<&str>) -> Result<i64, String> {
+pub fn start(c: &Connection, fork: &str, repo: &Path, roots: &[&str], publish: &str, against: Option<&str>, rebase_all: bool) -> Result<i64, String> {
     if let Ok((id, state)) = c.query_row(
         "SELECT id, state FROM sync_run WHERE state IN ('running', 'paused', 'needs-decision', 'awaiting-approval') ORDER BY id DESC LIMIT 1",
         [],
@@ -229,8 +234,8 @@ pub fn start(c: &Connection, fork: &str, repo: &Path, roots: &[&str], publish: &
         parts.push(format!("{root}={old}..{new}"));
     }
     c.execute(
-        "INSERT INTO sync_run (started_at, state, fork, repo, bases, publish, pid, against) VALUES (?1, 'running', ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![now(), fork, repo.to_string_lossy(), parts.join(","), publish, std::process::id() as i64, source],
+        "INSERT INTO sync_run (started_at, state, fork, repo, bases, publish, pid, against, rebase_all) VALUES (?1, 'running', ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![now(), fork, repo.to_string_lossy(), parts.join(","), publish, std::process::id() as i64, source, rebase_all as i64],
     )
     .map_err(sql)?;
     let id = c.last_insert_rowid();
@@ -315,11 +320,21 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
     let res = crate::sync::analyze(&ctx.repo, &ctx.fork, &bases, &mut |l| lines.push(l.to_string()))?;
     let prs = crate::sync::open_prs(&ctx.fork)?;
     ctx.c.execute("DELETE FROM sync_pr WHERE run_id = ?1", [ctx.run]).map_err(sql)?;
+    let rebase_all: bool = ctx
+        .c
+        .query_row("SELECT rebase_all FROM sync_run WHERE id = ?1", [ctx.run], |r| r.get::<_, i64>(0))
+        .map_err(sql)?
+        != 0;
     let mut rebase = 0;
     for a in &res {
         let pr = prs.iter().find(|p| p.number == a.number).ok_or("PR vanished during analyze")?;
         let parent = crate::sync::root_base(pr, &prs, &bases.keys().map(String::as_str).collect::<Vec<_>>()).and_then(|x| x.1);
-        let needs = a.merge.is_err() || !a.touched.is_empty();
+        let needs = needs_rebase(a, rebase_all);
+        let verdict = if rebase_all && !needs_rebase(a, false) {
+            format!("{}; rebased on request (--rebase-all)", crate::sync::verdict(a))
+        } else {
+            crate::sync::verdict(a).to_string()
+        };
         if !a.in_sync {
             return Ok(Outcome::NeedsDecision(format!("PR #{} local head differs from GitHub: sync them first", a.number)));
         }
@@ -327,10 +342,10 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
         ctx.c
             .execute(
                 "INSERT INTO sync_pr (run_id, number, branch, root, parent, gh_head, action, state, detail) VALUES (?1,?2,?3,?4,?5,?6,?7,'pending',?8)",
-                rusqlite::params![ctx.run, a.number as i64, a.head_ref, a.root, parent, pr.gh_head, if needs { "rebase" } else { "keep" }, crate::sync::verdict(a)],
+                rusqlite::params![ctx.run, a.number as i64, a.head_ref, a.root, parent, pr.gh_head, if needs { "rebase" } else { "keep" }, verdict],
             )
             .map_err(sql)?;
-        lines.push(format!("#{} {} {}", a.number, a.head_ref, crate::sync::verdict(a)));
+        lines.push(format!("#{} {} {verdict}", a.number, a.head_ref));
     }
     // a PR stacked on one that is rebased must move with it
     loop {
@@ -349,6 +364,32 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
     }
     fs::write(ctx.dir.join("ANALYZE.log"), lines.join("\n") + "\n").map_err(|e| format!("{e}"))?;
     Ok(Outcome::Done(format!("{} PR(s), {rebase} to rebase", res.len())))
+}
+
+/// A PR must move when it no longer merges or upstream touched its files; with
+/// `--rebase-all` every PR moves, so each one sits on the new base.
+fn needs_rebase(a: &crate::sync::Analysis, rebase_all: bool) -> bool {
+    rebase_all || a.merge.is_err() || !a.touched.is_empty()
+}
+
+/// `sync start` takes these flags only: a typo or `--help` must not start a run.
+const START_USAGE: &str = "sync start [--fork <owner/repo>] [--repo <git dir>] [--against <owner/repo>] [--until <stage>] [--rebase-all]";
+
+fn check_start_args(args: &[String]) -> Result<(), String> {
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--fork" | "--repo" | "--against" | "--until" => {
+                if args.get(i + 1).is_none_or(|v| v.starts_with("--")) {
+                    return Err(format!("{} needs a value; usage: {START_USAGE}", args[i]));
+                }
+                i += 2;
+            }
+            "--rebase-all" => i += 1,
+            other => return Err(format!("{other}: not an option of sync start; usage: {START_USAGE}")),
+        }
+    }
+    Ok(())
 }
 
 /// Stack depth, so parents rebase before their children.
@@ -1616,7 +1657,7 @@ pub fn auto(
         return Err("sync auto builds and installs: run it in the host mount namespace".into());
     }
     let publish = std::env::var("MC_PUBLISH_DCASOTA").unwrap_or_else(|_| "auto".into());
-    let id = start(c, fork, repo, roots, &publish, None)?;
+    let id = start(c, fork, repo, roots, &publish, None, false)?;
     for (e, _) in &moves {
         c.execute("UPDATE event SET state = 'handled', handled_at = ?1 WHERE id = ?2", rusqlite::params![now(), e]).map_err(sql)?;
     }
@@ -1903,11 +1944,13 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 Ok(format!("synced base of {root} recorded as {sha}"))
             }
             "start" => {
+                check_start_args(&args[1..])?;
                 let fork = flag("--fork").unwrap_or(cfg.fork.as_str());
                 let repo = flag("--repo").map(PathBuf::from).unwrap_or_else(|| cfg.gate_repo.clone());
                 let publish = std::env::var("MC_PUBLISH_DCASOTA").unwrap_or_else(|_| "auto".into());
                 let against = args.iter().position(|a| a == "--against").and_then(|i| args.get(i + 1)).map(String::as_str);
-                let id = start(&c, fork, &repo, &[cfg.release.as_str(), cfg.build_common.as_str()], &publish, against)?;
+                let rebase_all = args.iter().any(|a| a == "--rebase-all");
+                let id = start(&c, fork, &repo, &[cfg.release.as_str(), cfg.build_common.as_str()], &publish, against, rebase_all)?;
                 println!("sync run {id} started");
                 let out = drive(&c, id, &results, until)?;
                 announce(&c, id, &out)?;
@@ -2066,18 +2109,62 @@ mod tests {
     }
 
     #[test]
+    fn sync_start_refuses_what_it_does_not_know_instead_of_starting_a_run() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        for bad in [&["--help"][..], &["-h"], &["--rebase"], &["--fork"], &["--until", "--rebase-all"], &["5.0"]] {
+            let e = check_start_args(&a(bad)).unwrap_err();
+            assert!(e.contains("usage: sync start"), "{bad:?}: {e}");
+        }
+        assert!(check_start_args(&a(&[])).is_ok());
+        assert!(check_start_args(&a(&["--rebase-all", "--until", "GATE", "--fork", "o/r", "--repo", "/g", "--against", "v/p"])).is_ok());
+    }
+
+    #[test]
+    fn rebase_all_moves_a_pr_that_merges_cleanly_and_says_why() {
+        let clean = crate::sync::Analysis {
+            number: 1,
+            head_ref: "fix/a".into(),
+            root: "5.0".into(),
+            local_head: "h".into(),
+            in_sync: true,
+            merge: Ok(true),
+            own_commits: 1,
+            equivalent: 0,
+            touched: vec![],
+        };
+        assert!(!needs_rebase(&clean, false));
+        assert!(needs_rebase(&clean, true));
+        let conflict = crate::sync::Analysis { merge: Err(vec!["SPECS/a/a.spec".into()]), ..clean.clone() };
+        assert!(needs_rebase(&conflict, false));
+        let touched = crate::sync::Analysis { touched: vec!["SPECS/a/a.spec".into()], ..clean };
+        assert!(needs_rebase(&touched, false));
+    }
+
+    #[test]
+    fn rebase_all_is_kept_with_the_run_and_defaults_to_off() {
+        let c = db();
+        c.execute(
+            "INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'failed', 'f', '/r', 'x=a..b', 'approve')",
+            [],
+        )
+        .unwrap();
+        let v: i64 = c.query_row("SELECT rebase_all FROM sync_run WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(v, 0);
+    }
+
+    #[test]
     fn only_one_run_at_a_time_and_a_base_must_be_recorded_first() {
         let c = db();
-        let e = start(&c, "dcasota/photon", Path::new("/nonexistent"), &["5.0"], "approve", None).unwrap_err();
+        let e = start(&c, "dcasota/photon", Path::new("/nonexistent"), &["5.0"], "approve", None, false).unwrap_err();
         assert!(e.contains("no synced base recorded for 5.0"), "{e}");
         c.execute(
             "INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'needs-decision', 'f', '/r', 'x=a..b', 'approve')",
             [],
         )
         .unwrap();
-        let e = start(&c, "dcasota/photon", Path::new("/nonexistent"), &["5.0"], "approve", None).unwrap_err();
+        let e = start(&c, "dcasota/photon", Path::new("/nonexistent"), &["5.0"], "approve", None, false).unwrap_err();
         assert!(e.contains("is needs-decision"), "{e}");
-        assert!(start(&c, "f", Path::new("/x"), &[], "sometimes", None).is_err());
+        assert!(start(&c, "f", Path::new("/x"), &[], "sometimes", None, false).is_err());
     }
 
     #[test]

@@ -46,6 +46,7 @@ Rules that hold throughout:
 ```bash
 sharukhan sync start                    # a run against the fork's current bases
 sharukhan sync start --until GATE       # stop before GATE (paused)
+sharukhan sync start --rebase-all      # move every PR to the new base, not only those that must
 sharukhan sync status                   # the last five runs and their stages
 sharukhan sync resume 7                 # continue run 7 from where it stopped
 sharukhan sync abort 7                  # between stages; restores the gate refs
@@ -53,6 +54,9 @@ sharukhan sync abort 7                  # between stages; restores the gate refs
 
 `start` also takes `--fork <owner/repo>`, `--repo <gate repository>` and
 `--against <repository>` (new bases from another repository, for a preview).
+Without `--rebase-all`, ANALYZE rebases a PR only when it no longer merges or
+upstream touched its files; the others keep their old base on GitHub. Any other
+argument, `--help` included, is refused before a run starts.
 Stage logs go to `$MC_RESULTS_DIR/sync/<run>/`.
 
 `MC_PUBLISH_DCASOTA` decides PUBLISH:
