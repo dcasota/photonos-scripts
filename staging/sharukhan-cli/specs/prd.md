@@ -139,8 +139,35 @@ Recorded here because they are requirements by implication, discovered while inv
 - Nine configuration variables are declared and never read, and `MC_MAC_PREFIX` contradicts the OUI actually used.
 - The serial-growth liveness instrument was lost in translation from `vm-lab`, and the serial log is truncated rather than offset-bounded, discarding prior-boot evidence.
 
+## 9. Amendments (October 2026)
+
+The scope above is the August 2026 initiative. Two of its exclusions no longer
+hold, and the fork-maintenance work added requirements; the decisions are
+recorded as ADRs.
+
+- **Building Photon packages** is in scope: `sharukhan build` / `build-iso`
+  run the build cascade natively (see `docs/builds/build-mode.md`).
+- **Background services** are in scope, limited to this host: the upstream
+  watcher, the timed sync and the builder's shared mount, installed by
+  `sharukhan service` (ADR-0012). Remote/multi-host execution and a web UI
+  remain out of scope.
+
+| ID | Requirement | Decided in |
+|---|---|---|
+| **REQ-17** | Keep the fork's PRs current with its bases as a resumable state machine: analyze, rebase, verify, build, gate, publish; nothing reaches GitHub before PUBLISH, and a published head is always the gated one | ADR-0009 |
+| **REQ-18** | Hand a PR the sync could not move to a model under token budgets, with sharukhan's tools only, and verify every proposal independently; a proposal becomes a candidate only by a person's decision | ADR-0010 |
+| **REQ-19** | Move an upstream PR opened from a fork branch only after the staged VM and a person's approval, in place, never opening, closing or commenting on an upstream PR | ADR-0011 |
+| **REQ-20** | Install, check and remove the host services from the binary; keep secrets in owner-only files the settings name, never in a unit, a setting, an argument or a log | ADR-0012 |
+
+| ID | Acceptance |
+|---|---|
+| **AC-17** | A sync run interrupted at any stage resumes from that stage; a run with a failed gate row does not publish (`run` exits non-zero) |
+| **AC-18** | An escalation never exceeds its budget; no proposal is published without `sync decide` |
+| **AC-19** | An upstream description never names the fork; an upstream PR's head moves only after `sync approve-upstream` |
+| **AC-20** | `sharukhan service status` reports any drift between the installed services and what `install` would write; no secret value appears in its output |
+
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2026-08-31
-**Status:** Draft — awaiting Dev Lead feasibility review (Phase 2)
+**Document Version:** 1.1
+**Last Updated:** 2026-10-27
+**Status:** 1.0 accepted and implemented; amendments of section 9 implemented (ADR-0009 to ADR-0012)
