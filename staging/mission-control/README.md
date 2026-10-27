@@ -10,7 +10,7 @@
 > below still describes what the harness DOES; the commands are now
 > `sharukhan <phase>`. Installing the services, the fork sync, the escalation
 > and the settings are documented in
-> [`../sharukhan-cli/README.md`](../sharukhan-cli/README.md#contents).
+> [`../sharukhan-cli/README.md`](../sharukhan-cli/README.md#documentation).
 
 `ISO-PERMUTATION-MATRIX.md` says of itself: **"No builds were run."** Fourteen
 of its sixteen rows are resolution predictions or code reading; only two were

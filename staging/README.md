@@ -261,7 +261,7 @@ result (`sh -n`, every Python heredoc) and writes it atomically. To change `runP
 the base or the profile and derive again; `sharukhan wrapper check` fails on any drift. A new
 release starts with `sharukhan wrapper profile-new --kernel <release> --from 7.3-rc4`, which first
 verifies the tarball against kernel.org's signatures. See
-[sharukhan-cli/README.md](sharukhan-cli/README.md#kernel-wrappers-sharukhan-wrapper) and
+[sharukhan-cli/docs/builds/kernel-wrappers.md](sharukhan-cli/docs/builds/kernel-wrappers.md#kernel-wrappers-sharukhan-wrapper) and
 `sharukhan-cli/specs/features/kernel-wrapper.md`.
 
 The base's own clean-up of older pins is version-neutral: it removes a `SpecData.py` compatibility
