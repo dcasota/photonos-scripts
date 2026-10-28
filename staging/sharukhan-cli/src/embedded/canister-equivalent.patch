@@ -2,7 +2,7 @@
 +++ b/SPECS/92/linux/linux-6.12-changelog.inc
 @@ -1,4 +1,22 @@
  %changelog
-+* Sat Oct 24 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-7
++* Wed Oct 28 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-7
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
@@ -20,7 +20,7 @@
 +  version cannot be tested by the conditional either: _isConditionTrue() runs
 +  eval() on the expanded text after lstrip("0"), which is a NameError for a
 +  version string. Hence a 0/1 flag plus a separate value macro.
- * Fri Oct 23 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-6
+ * Tue Oct 27 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-6
  - Share canister_config.inc; build the canister against the current kernel
  * Fri Oct 23 2026 Guruswamy Basavaiah <guruswamy.basavaiah@broadcom.com> 6.12.113-5
 --- a/SPECS/92/linux/linux-6.12.inc
@@ -83,11 +83,11 @@
 +++ b/SPECS/92/linux/linux-esx-6.12-changelog.inc
 @@ -1,4 +1,8 @@
  %changelog
-+* Sat Oct 24 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-7
++* Wed Oct 28 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-7
 +- Accept the same canister_equivalent / fips_canister_override pair as
 +  linux.spec, so this flavour - the one the ISO actually boots - can link a
 +  locally built canister too. It never builds one; it only links.
- * Fri Oct 23 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-6
+ * Tue Oct 27 2026 Daniel Casota <dcasota@gmail.com> 6.12.113-6
  - Share canister_config.inc; %%ghost the files depmod generates
  * Fri Oct 23 2026 Guruswamy Basavaiah <guruswamy.basavaiah@broadcom.com> 6.12.113-5
 --- a/SPECS/92/linux/linux-esx-6.12.inc
