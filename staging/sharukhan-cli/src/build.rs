@@ -1175,9 +1175,20 @@ fn kernel_nevr_from_index(
             run(&["apply", "--cached", &patch.to_string_lossy()])?;
         }
         if with_embedded {
+            // the index holds the variant's files: align the patch's changelog dates to them
+            let in_index = |f: &str| -> Option<String> {
+                let o = Command::new("git")
+                    .arg("-C")
+                    .arg(&cfg.photon_tree)
+                    .env("GIT_INDEX_FILE", &index)
+                    .args(["show", &format!(":{f}")])
+                    .output()
+                    .ok()?;
+                o.status.success().then(|| String::from_utf8_lossy(&o.stdout).into_owned())
+            };
             fs::write(
                 &embedded,
-                crate::buildmode::Embedded::CanisterEquivalent.patch(),
+                crate::caneq::align_changelog_context(crate::buildmode::Embedded::CanisterEquivalent.patch(), &in_index),
             )
             .map_err(|e| format!("{}: {e}", embedded.display()))?;
             run(&["apply", "--cached", &embedded.to_string_lossy()])?;
@@ -2499,7 +2510,10 @@ pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
     }
 
     let emb = tmp.join("canister-equivalent.patch");
-    if fs::write(&emb, crate::buildmode::Embedded::CanisterEquivalent.patch()).is_err() {
+    let aligned = crate::caneq::align_changelog_context(crate::buildmode::Embedded::CanisterEquivalent.patch(), &|f: &str| {
+        fs::read_to_string(tree.join(f)).ok()
+    });
+    if fs::write(&emb, aligned).is_err() {
         cleanup(&tree);
         return (false, "could not stage the embedded patch".into());
     }

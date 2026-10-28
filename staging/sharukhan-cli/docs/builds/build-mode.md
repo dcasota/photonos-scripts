@@ -165,6 +165,13 @@ variant patch       3         3      PR#24/#29 share one entry, #36 keeps it in 
 embedded patch      4         4      +1 each
 ```
 
+**Changelog dates do not make it stale.** A sync re-dates the kernel stack's own
+changelog entry on every rebase, and that header is context of the patch. Before
+each apply, `caneq::align_changelog_context` re-dates such context headers to the
+ones the target tree carries for the same author and version-release, and
+`--check` ignores those dates. A moved Release or a different entry still fails
+to apply, and needs a regeneration.
+
 **Regenerate it, never hand-edit it.** `sharukhan canister-equivalent --out
 src/embedded/canister-equivalent.patch` (`--repo <photon clone>`, default
 `$PHOTON_TREE`, so it need not touch a tree another build is using; `--check`

@@ -281,6 +281,66 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&o.stdout).to_string())
 }
 
+/// A `%changelog` entry header, `* Tue Oct 27 2026 <author> <version-release>`:
+/// (the date, the rest). None for any other line.
+fn changelog_header(line: &str) -> Option<(&str, &str)> {
+    let body = line.strip_prefix("* ")?;
+    // weekday, month, day, year: letters, letters, digits, digits
+    let shape: [(usize, fn(char) -> bool); 4] =
+        [(3, |c| c.is_ascii_alphabetic()), (3, |c| c.is_ascii_alphabetic()), (2, |c| c.is_ascii_digit()), (4, |c| c.is_ascii_digit())];
+    let mut end = 0;
+    for (len, ok) in shape {
+        let field = body.get(end..end + len)?;
+        if !field.chars().all(ok) || body.as_bytes().get(end + len) != Some(&b' ') {
+            return None;
+        }
+        end += len + 1;
+    }
+    Some((&body[..end - 1], &body[end..]))
+}
+
+/// The embedded patch with each changelog header in its context (and in its
+/// removed lines) re-dated to the header the target tree carries for the same
+/// author and version-release. A sync re-dates the kernel stack's own entry on
+/// every rebase, and the compiled-in patch kept the old date as context, so an
+/// equivalent build stopped at the inject stage after each sync. Only the date
+/// moves: a header whose author or version-release differs is left alone, so a
+/// kernel that really moved still makes the patch fail to apply, as it must.
+/// `read` returns a file of the target tree by its path in the patch.
+pub fn align_changelog_context(patch: &str, read: &dyn Fn(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(patch.len());
+    let mut target: Option<String> = None;
+    for line in patch.split_inclusive('\n') {
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            target = read(path.trim_end());
+            out.push_str(line);
+            continue;
+        }
+        let (Some(text), Some(prefix @ (' ' | '-'))) = (target.as_deref(), line.chars().next()) else {
+            out.push_str(line);
+            continue;
+        };
+        let content = line[1..].trim_end_matches('\n');
+        let Some((date, rest)) = changelog_header(content) else {
+            out.push_str(line);
+            continue;
+        };
+        let found: Vec<&str> = text
+            .lines()
+            .filter(|l| changelog_header(l).is_some_and(|(d, r)| r == rest && d != date))
+            .collect();
+        match found.as_slice() {
+            [one] if !text.lines().any(|l| l == content) => {
+                out.push(prefix);
+                out.push_str(one);
+                out.push('\n');
+            }
+            _ => out.push_str(line),
+        }
+    }
+    out
+}
+
 pub struct Request<'a> {
     pub repo: &'a Path,
     pub base: &'a str,
@@ -385,7 +445,17 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
     let patch = regenerate(&req, &mut |l| println!("{l}"))?;
     if check {
         // the embedded copy of this binary; context and numbers, not the date
-        let same = |a: &str| a.lines().filter(|l| !l.starts_with("+* ")).collect::<Vec<_>>().join("\n");
+        // nor the dates of context headers, which the build aligns (align_changelog_context)
+        let same = |a: &str| {
+            a.lines()
+                .filter(|l| !l.starts_with("+* "))
+                .map(|l| match (l.chars().next(), changelog_header(l.get(1..).unwrap_or(""))) {
+                    (Some(p @ (' ' | '-')), Some((_, rest))) => format!("{p}* {rest}"),
+                    _ => l.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
         if same(&patch) == same(crate::buildmode::Embedded::CanisterEquivalent.patch()) {
             println!("  up to date");
             return Ok(());
@@ -401,6 +471,51 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CLOG_OLD: &str = "%changelog\n* Fri Oct 23 2026 A B <a@b> 6.12.113-6\n- Share the config\n* Fri Oct 23 2026 C D <c@d> 6.12.113-5\n- CVE fixes\n";
+    const EMB: &str = "--- a/SPECS/92/linux/linux-6.12-changelog.inc\n+++ b/SPECS/92/linux/linux-6.12-changelog.inc\n@@ -1,4 +1,6 @@\n %changelog\n+* Wed Oct 28 2026 A B <a@b> 6.12.113-7\n+- Overridable canister\n * Fri Oct 23 2026 A B <a@b> 6.12.113-6\n - Share the config\n * Fri Oct 23 2026 C D <c@d> 6.12.113-5\n";
+
+    #[test]
+    fn a_changelog_header_is_read_and_anything_else_is_not() {
+        assert_eq!(changelog_header("* Tue Oct 27 2026 A B <a@b> 6.12.113-6"), Some(("Tue Oct 27 2026", "A B <a@b> 6.12.113-6")));
+        for no in ["- Share the config", "* Tue Oct 7 2026 A 1-1", "*Tue Oct 27 2026 A 1-1", "%changelog", "* Tue Oct 27 2026"] {
+            assert_eq!(changelog_header(no), None, "{no}");
+        }
+    }
+
+    #[test]
+    fn only_the_date_of_a_context_header_follows_the_target_tree() {
+        let rebased = CLOG_OLD.replace("* Fri Oct 23 2026 A B <a@b> 6.12.113-6", "* Tue Oct 27 2026 A B <a@b> 6.12.113-6");
+        let read = |_: &str| Some(rebased.clone());
+        let out = align_changelog_context(EMB, &read);
+        assert!(out.contains("\n * Tue Oct 27 2026 A B <a@b> 6.12.113-6\n"), "{out}");
+        // the added entry, the unchanged vmware header and the rest stay as they are
+        assert!(out.contains("+* Wed Oct 28 2026 A B <a@b> 6.12.113-7") && out.contains(" * Fri Oct 23 2026 C D <c@d> 6.12.113-5"), "{out}");
+        assert_eq!(out.lines().count(), EMB.lines().count());
+        // an exact match, a moved Release, or an unreadable file: untouched
+        assert_eq!(align_changelog_context(EMB, &|_: &str| Some(CLOG_OLD.to_string())), EMB);
+        let bumped = rebased.replace("6.12.113-6", "6.12.113-8");
+        assert_eq!(align_changelog_context(EMB, &|_: &str| Some(bumped.clone())), EMB);
+        assert_eq!(align_changelog_context(EMB, &|_: &str| None), EMB);
+    }
+
+    #[test]
+    fn the_aligned_patch_applies_where_the_compiled_one_does_not() {
+        let d = std::env::temp_dir().join(format!("shk-caneq-align-{}-{}", std::process::id(), crate::job::stamp()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("SPECS/92/linux")).unwrap();
+        let rebased = CLOG_OLD.replace("* Fri Oct 23 2026 A B <a@b> 6.12.113-6", "* Tue Oct 27 2026 A B <a@b> 6.12.113-6");
+        fs::write(d.join("SPECS/92/linux/linux-6.12-changelog.inc"), &rebased).unwrap();
+        let apply = |patch: &str| {
+            fs::write(d.join("p.patch"), patch).unwrap();
+            Command::new("git").arg("apply").arg("--check").arg(d.join("p.patch")).current_dir(&d).status().unwrap().success()
+        };
+        let _ = Command::new("git").args(["init", "-q"]).current_dir(&d).status();
+        assert!(!apply(EMB), "the compiled-in context must not apply to the re-dated tree");
+        let aligned = align_changelog_context(EMB, &|f: &str| fs::read_to_string(d.join(f)).ok());
+        assert!(apply(&aligned), "{aligned}");
+        let _ = fs::remove_dir_all(&d);
+    }
 
     const PRE: &str = "%if 0%{?photon_subrelease} == 91\nRelease:        4%{?dist}\n%else\nRelease:        6%{?dist}\n%endif\n\
 %global fips 1\n# This is the last certified canister version\n# Remove below line when building a new canister\n\
@@ -457,3 +572,4 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
     }
 }
+

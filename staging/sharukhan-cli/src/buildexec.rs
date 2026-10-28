@@ -724,7 +724,13 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
         e.as_str(),
         std::process::id()
     ));
-    fs::write(&tmp, e.patch()).map_err(|x| format!("{}: {x}", tmp.display()))?;
+    let text = match e {
+        Embedded::CanisterEquivalent => {
+            crate::caneq::align_changelog_context(e.patch(), &|f: &str| fs::read_to_string(dir.join(f)).ok())
+        }
+        _ => e.patch().to_string(),
+    };
+    fs::write(&tmp, text).map_err(|x| format!("{}: {x}", tmp.display()))?;
     let p = tmp.to_string_lossy().to_string();
 
     if let Ok(stat) = git(&dir, &["apply", "--numstat", &p]) {
