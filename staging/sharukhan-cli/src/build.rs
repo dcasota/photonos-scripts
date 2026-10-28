@@ -762,6 +762,8 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             &mut |l| log(l.trim()),
         );
 
+        // the specs runPh5_normal.sh builds before the image (MC_PREBUILD_SPECS)
+        let prebuild: Vec<String>;
         // RPMs at a patched NEVR that were built from other content (a branch
         // amended after a gate built it) are removed so they are rebuilt.
         // The tree is pristine here (runPh5_normal.sh applies the patch
@@ -785,8 +787,25 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
                 sub,
                 &mut |l| log(l.trim()),
             );
+            // The package builder skips an image package that is already built
+            // without looking at its Requires, so a runtime dependency the purge
+            // just removed (iptables, which minimal requires) is never built
+            // again and poi.py finds no provider. The script pre-builds them,
+            // as the cascade does; resolved here, against the patched specs.
+            let unbuilt = crate::buildmode::ImgType::parse(img).and_then(|t| {
+                crate::buildexec::unbuilt_runtime_specs_for(
+                    &cfg.build_root.join(&cfg.build_common),
+                    &cfg.photon_tree,
+                    &cfg.photon_tree.join("stage"),
+                    t,
+                    Vec::new(),
+                    &composer.tag,
+                    &mut |l| log(l.trim()),
+                )
+            });
             let _ = git(&cfg.photon_tree, &["checkout", "--", "SPECS"]);
             let _ = git(&cfg.photon_tree, &["clean", "-fdq", "SPECS"]);
+            prebuild = unbuilt?;
         }
         // An ISO left at the top of the stage by an interrupted delivery makes
         // build.py refuse to build ("... .iso already exists ..."); gate 51
@@ -822,7 +841,11 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
         let rc = crate::builder::script_command(
             &stage_dir.join("runPh5_normal.sh"),
             &script_args,
-            &[("MC_CANISTER_NEVR", nevr.as_str()), ("MC_POI_IMAGE", composer.tag.as_str())],
+            &[
+                ("MC_CANISTER_NEVR", nevr.as_str()),
+                ("MC_POI_IMAGE", composer.tag.as_str()),
+                ("MC_PREBUILD_SPECS", prebuild.join(" ").as_str()),
+            ],
             &[dest.clone()],
             log,
         )?

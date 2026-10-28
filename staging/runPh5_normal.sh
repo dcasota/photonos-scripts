@@ -943,6 +943,26 @@ for node in ast.parse(sys.stdin.read()).body:
   }
   build_installer_requestable || exit 1
 
+  # ── Runtime dependencies the package builder would not build ──
+  # The builder skips an image package that is already built without looking
+  # at its Requires, so a dependency whose RPMs are gone (the content check
+  # removed iptables after a sync re-dated its spec; minimal requires it) is
+  # never built and poi.py stops on "nothing provides iptables". sharukhan
+  # resolves them against the patched specs and passes them here, toolchain
+  # specs first. One package per make, by its own target, as above.
+  build_prebuild_specs() {
+    local pkg
+    [ "$IMG_TYPE" = "iso" ] && return 0
+    [ "${MC_MAKE_TARGET:-}" = "linux" ] && return 0
+    [ -n "${MC_PREBUILD_SPECS:-}" ] || return 0
+    echo "[runPh5_normal] pre-building runtime dependencies of already-built image packages: $MC_PREBUILD_SPECS"
+    for pkg in $MC_PREBUILD_SPECS; do
+      sudo make -j8 "$pkg" THREADS=8 || {
+        echo "[runPh5_normal] ERROR: could not build $pkg, which an already-built image package requires" 1>&2; return 1; }
+    done
+  }
+  build_prebuild_specs || exit 1
+
   prev_make_rc=""
   prev_progress=""
   for i in $(seq 1 10); do

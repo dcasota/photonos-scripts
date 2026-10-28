@@ -3289,32 +3289,53 @@ fn image_package_lists(common: &Path, img: ImgType) -> Vec<PathBuf> {
 /// not in the stage, named and logged; see specdata::DEPS_DRIVER.
 fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Vec<String>, String> {
     let common = c.spec.tree(Tree::Common);
-    let lists = image_package_lists(&common, c.spec.img);
-    if lists.is_empty() && c.spec.prebuild.is_empty() {
+    // The composer is the image poi.py will run: the common tree's poi-image,
+    // which preflight pointed at the variant's composer, else poi.py's default.
+    let image = fs::read_to_string(common.join("build-config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["photon-build-param"]["poi-image"].as_str().map(str::to_string))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "photon/installer".to_string());
+    let roots = c.spec.prebuild.clone();
+    let img = c.spec.img;
+    let mut lines = Vec::new();
+    let r = unbuilt_runtime_specs_for(&common, release, stage, img, roots, &image, &mut |l| lines.push(l.to_string()));
+    for l in lines {
+        c.say(&l);
+    }
+    r
+}
+
+/// [`unbuilt_runtime_specs`] for any build driver: the release tree as the
+/// build will see it (patched), its stage, the image type, extra roots, and
+/// the composer image whose STIG set reaches the media. The prebuilt path,
+/// which drives runPh5_normal.sh, hands the result to the script.
+pub fn unbuilt_runtime_specs_for(
+    common: &Path,
+    release: &Path,
+    stage: &Path,
+    img: ImgType,
+    mut roots: Vec<String>,
+    composer: &str,
+    say: &mut dyn FnMut(&str),
+) -> Result<Vec<String>, String> {
+    let lists = image_package_lists(common, img);
+    if lists.is_empty() && roots.is_empty() {
         return Ok(Vec::new());
     }
     // The composer adds its installer's STIG set to the media's package list,
     // so those packages are roots too (aide reaches the media only that way).
-    // The composer is the image poi.py will run: the common tree's poi-image,
-    // which preflight pointed at the variant's composer, else poi.py's default.
-    let mut roots = c.spec.prebuild.clone();
     if !lists.is_empty() {
-        let cfg = common.join("build-config.json");
-        let image = fs::read_to_string(&cfg)
-            .ok()
-            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-            .and_then(|v| v["photon-build-param"]["poi-image"].as_str().map(str::to_string))
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "photon/installer".to_string());
-        let stig = crate::poiimage::composer_stig_set(&image)?;
-        c.say(&format!("  the composer {image} adds its STIG set to the media: {}", stig.join(" ")));
+        let stig = crate::poiimage::composer_stig_set(composer)?;
+        say(&format!("  the composer {composer} adds its STIG set to the media: {}", stig.join(" ")));
         for p in stig {
             if !roots.contains(&p) {
                 roots.push(p);
             }
         }
     }
-    let inputs = crate::specdata::Inputs::from_trees(&common, release.join("build-config.json"));
+    let inputs = crate::specdata::Inputs::from_trees(common, release.join("build-config.json"));
     let unbuilt = crate::specdata::unbuilt_runtime_deps(
         &inputs,
         &release.join("SPECS"),
@@ -3333,11 +3354,11 @@ fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Ve
     let mut specs: Vec<String> = Vec::new();
     for u in &unbuilt {
         match u.needed_by.strip_suffix("(root)") {
-            Some(root) => c.say(&format!(
+            Some(root) => say(&format!(
                 "  {}-{} is not built, and the media need {root} itself: pre-building {}",
                 u.spec, u.version, u.spec
             )),
-            None => c.say(&format!(
+            None => say(&format!(
                 "  {}-{} is not built, and the already-built {} requires it: pre-building {}",
                 u.spec, u.version, u.needed_by, u.spec
             )),
@@ -3347,7 +3368,7 @@ fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Ve
         }
     }
     if unbuilt.is_empty() {
-        c.say("  every runtime dependency of the image's already-built packages is built");
+        say("  every runtime dependency of the image's already-built packages is built");
     }
     Ok(specs)
 }
