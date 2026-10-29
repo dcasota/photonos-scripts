@@ -27,7 +27,17 @@ sharukhan remaster --in photon-5.0-c6db6a0d6.aarch64.iso \
 ```
 
 `--hyperv` also exists on `build` and `build-iso`, where it joins the cascade as
-`inject:kernel-config[...]` + `inject:release-bump[...]`.
+`inject:kernel-config[...]` + `inject:release-bump[...]`, after the variant patch,
+the embedded patches and a kernel profile's pins. On `build-iso` it is a build
+axis of its own: the ISO lands in its own cache directory
+(`<type>-poi<poi>-<canister>-hyperv`, stored as `<that>__photon-….iso`), and
+the request always runs through the cascade, the only path that applies
+kernel-config injections. `--hyperv-flavours` without `--hyperv` is refused.
+
+```
+sharukhan build-iso --kernel 7.3 --iso-type full --poi latest --canister equivalent \
+                    --hyperv --allow-build
+```
 
 ### Why remaster rather than build
 

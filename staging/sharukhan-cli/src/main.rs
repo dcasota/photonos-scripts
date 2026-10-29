@@ -740,6 +740,13 @@ fn main() -> ExitCode {
             }),
         "teardown" => need_id(&args).and_then(|id| phases::cmd_teardown(&cfg, id, args.purge)),
         "build-iso" => args.poi.clone().map(Ok).unwrap_or_else(|| default_poi(&cfg)).and_then(|poi| {
+            // --hyperv-flavours without --hyperv would be ignored: refuse it instead
+            let hyperv = match (args.hyperv, args.hyperv_flavours.as_deref()) {
+                (false, None) => Vec::new(),
+                (false, Some(_)) => return Err("--hyperv-flavours needs --hyperv".to_string()),
+                (true, Some(s)) => remaster::parse_flavours(s)?,
+                (true, None) => remaster::flavours_default(),
+            };
             phases::cmd_build_iso(
                 &cfg,
                 args.iso_type.as_deref().unwrap_or("minimal"),
@@ -750,6 +757,7 @@ fn main() -> ExitCode {
                 args.allow_build,
                 args.compose_only,
                 args.wait_idle,
+                hyperv,
             )
         }),
         "build" => cmd_build(&args, &cfg),
@@ -1331,6 +1339,7 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
             canister: c.to_string(),
             kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
             compose_only: false,
+            hyperv: Vec::new(),
         };
         // The same decision `run` takes: present AND built from today's inputs.
         let stale = match build::plan(cfg, &req, false, true) {

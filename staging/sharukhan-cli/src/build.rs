@@ -16,6 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+#[derive(Clone)]
 pub struct IsoRequest {
     pub iso_type: String,
     pub poi: String,
@@ -28,6 +29,11 @@ pub struct IsoRequest {
     /// rebuilding them. Only an equivalent build whose canister is already
     /// built has such kernels.
     pub compose_only: bool,
+    /// `--hyperv`: the kernel flavours that carry Hyper-V guest support built
+    /// in (the Azure variant); empty for the stock kernel. It changes the
+    /// kernel, so it names its own cache slot and goes through the cascade,
+    /// the only path that applies kernel-config injections.
+    pub hyperv: Vec<String>,
 }
 
 impl IsoRequest {
@@ -43,10 +49,32 @@ impl IsoRequest {
         }
     }
     pub fn key(&self) -> String {
-        let base = format!("{}-poi{}-{}", self.iso_type, self.poi, self.canister);
+        let base = format!("{}-poi{}-{}{}", self.iso_type, self.poi, self.canister, self.hyperv_suffix());
         match &self.kernel {
             Some(k) => format!("{base}-k{k}"),
             None => base,
+        }
+    }
+
+    /// `-hyperv` for the default flavour (linux), `-hyperv-linux-linux-esx`
+    /// otherwise; empty for the stock kernel.
+    fn hyperv_suffix(&self) -> String {
+        match self.hyperv.as_slice() {
+            [] => String::new(),
+            [only] if only == "linux" => "-hyperv".to_string(),
+            all => format!("-hyperv-{}", all.join("-")),
+        }
+    }
+
+    /// The cache directory of this request's ISO.
+    pub fn dir(&self, cfg: &Config) -> PathBuf {
+        let d = cfg.iso_dir(&self.iso_type, &self.poi, &self.canister);
+        match self.hyperv_suffix() {
+            s if s.is_empty() => d,
+            s => {
+                let name = d.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                d.with_file_name(format!("{name}{s}"))
+            }
         }
     }
 
@@ -57,8 +85,13 @@ impl IsoRequest {
             .as_deref()
             .map(|k| format!(" --kernel {k}"))
             .unwrap_or_default();
+        let h = match self.hyperv.as_slice() {
+            [] => String::new(),
+            [only] if only == "linux" => " --hyperv".to_string(),
+            all => format!(" --hyperv --hyperv-flavours {}", all.join(",")),
+        };
         format!(
-            "--iso-type {} --poi {} --canister {}{k}",
+            "--iso-type {} --poi {} --canister {}{k}{h}",
             self.iso_type, self.poi, self.canister
         )
     }
@@ -132,9 +165,7 @@ fn plan_in(
     kb: Option<&crate::kbuild::KernelBuild>,
 ) -> Result<Plan, String> {
     req.img()?;
-    let iso = cfg
-        .iso_dir(&req.iso_type, &req.poi, &req.canister)
-        .join("photon.iso");
+    let iso = req.dir(cfg).join("photon.iso");
 
     // Nothing is created before the decision to build: an empty cache
     // directory looks exactly like an ISO that failed to copy.
@@ -369,6 +400,14 @@ pub fn build_inputs(
     // without this line was composed by whatever photon/installer:latest held
     // - POI 2.4 on this host - and is not evidence for the variant.
     out.push_str(&format!("composer {}\n", crate::poiimage::identity()?));
+    // The Azure variant: which flavours, and the fragment that defines it.
+    if !req.hyperv.is_empty() {
+        out.push_str(&format!(
+            "hyperv {} {}\n",
+            req.hyperv.join(","),
+            sha256::bytes(crate::kconfig::HYPERV_FRAGMENT.as_bytes())
+        ));
+    }
     if let Some(kb) = kb {
         // The profile (and through it the rendered pin script, FIPS editor
         // included) and the release branch decide the kernel; the branch
@@ -459,7 +498,7 @@ fn resolve_in(
             req.canister
         ));
     }
-    let dest = cfg.iso_dir(&req.iso_type, &req.poi, &req.canister);
+    let dest = req.dir(cfg);
     let iso = match plan_in(cfg, req, force, allow_build, kb)? {
         Plan::Cached(iso) => {
             log(&format!("cache hit: {} -> {}", req.key(), iso.display()));
@@ -719,7 +758,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
 
         // A kernel profile builds through the cascade in every mode: only the
         // cascade runs its pin script.
-        if req.canister == "equivalent" || kb.is_some() {
+        if req.canister == "equivalent" || kb.is_some() || !req.hyperv.is_empty() {
             let mut spec = crate::buildmode::spec_for(
                 &cfg.build_root.to_string_lossy(),
                 &cfg.build_common,
@@ -736,6 +775,9 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             spec.poi_image = Some(composer.tag.clone());
             spec.remote = Some(cfg.photon_remote.clone());
             spec.compose_only = req.compose_only;
+            if !req.hyperv.is_empty() {
+                crate::buildmode::add_hyperv(&mut spec, std::env::consts::ARCH, &req.hyperv)?;
+            }
             crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
             continue;
         }
@@ -1860,7 +1902,7 @@ mod tests {
     }
 
     fn plan_req() -> IsoRequest {
-        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into(), kernel: None, compose_only: false }
+        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into(), kernel: None, compose_only: false, hyperv: Vec::new() }
     }
 
     /// `run --dry-run --allow-build` once built an ISO: it called `resolve`,
@@ -1944,6 +1986,7 @@ mod tests {
             canister: "prebuilt".into(),
             kernel: None,
             compose_only: false,
+            hyperv: Vec::new(),
         };
         assert_eq!(r("minimal").img().unwrap(), "minimal-iso");
         assert_eq!(r("full").img().unwrap(), "iso");
@@ -2269,6 +2312,7 @@ mod tests {
             canister: "prebuilt".into(),
             kernel: None,
             compose_only: false,
+            hyperv: Vec::new(),
         };
         let b = IsoRequest {
             iso_type: "full".into(),
@@ -2276,9 +2320,36 @@ mod tests {
             canister: "build".into(),
             kernel: None,
             compose_only: false,
+            hyperv: Vec::new(),
         };
         assert_eq!(a.key(), "full-poi2.8-prebuilt");
         assert_ne!(a.key(), b.key());
+    }
+
+    /// The Azure (Hyper-V) variant changes the kernel, so it is a build axis
+    /// of its own: its own key, cache directory and command line, never the
+    /// stock ISO's slot.
+    #[test]
+    fn the_hyperv_variant_has_its_own_slot_name_and_flags() {
+        let stock = IsoRequest {
+            iso_type: "full".into(),
+            poi: "latest".into(),
+            canister: "equivalent".into(),
+            kernel: Some("7.3".into()),
+            compose_only: false,
+            hyperv: Vec::new(),
+        };
+        let azure = IsoRequest { hyperv: vec!["linux".into()], ..stock.clone() };
+        let both = IsoRequest { hyperv: vec!["linux".into(), "linux-esx".into()], ..stock.clone() };
+        assert_eq!(stock.key(), "full-poilatest-equivalent-k7.3");
+        assert_eq!(azure.key(), "full-poilatest-equivalent-hyperv-k7.3");
+        assert_eq!(both.key(), "full-poilatest-equivalent-hyperv-linux-linux-esx-k7.3");
+        let c = Config::defaults();
+        assert_eq!(stock.dir(&c), c.iso_dir("full", "latest", "equivalent"));
+        assert_eq!(azure.dir(&c), c.iso_dir("full", "latest", "equivalent").with_file_name("full-poilatest-equivalent-hyperv"));
+        assert!(!stock.flags().contains("hyperv"));
+        assert!(azure.flags().ends_with(" --hyperv"), "{}", azure.flags());
+        assert!(both.flags().ends_with(" --hyperv --hyperv-flavours linux,linux-esx"), "{}", both.flags());
     }
 }
 

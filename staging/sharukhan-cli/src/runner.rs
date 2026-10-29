@@ -524,6 +524,7 @@ fn prepare_media(
                 canister: g.rows[0].canister.clone(),
                 kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
                 compose_only: false,
+                hyperv: Vec::new(),
             };
             // A dry run only asks what resolve WOULD do. Calling resolve here
             // with --allow-build is how a dry run once purged stage/RPMS and

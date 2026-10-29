@@ -144,6 +144,7 @@ pub fn cmd_create_vm(
                 canister: p.canister.clone(),
                 kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
                 compose_only: false,
+                hyperv: Vec::new(),
             },
             false,
             allow_build,
@@ -255,6 +256,7 @@ pub fn cmd_build_iso(
     allow_build: bool,
     compose_only: bool,
     wait_idle: u64,
+    hyperv: Vec<String>,
 ) -> Result<(), String> {
     let req = build::IsoRequest {
         iso_type: iso_type.to_string(),
@@ -262,6 +264,7 @@ pub fn cmd_build_iso(
         canister: canister.to_string(),
         kernel: kernel.map(str::to_string),
         compose_only,
+        hyperv,
     };
     // A cache hit starts nothing, so only an actual build waits for others.
     if let build::Plan::Build(_) = build::plan(cfg, &req, force, allow_build)? {
