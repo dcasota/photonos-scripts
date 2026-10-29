@@ -453,7 +453,9 @@ fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
         let (own_base, new_base) = match parent {
             None => (git(&ctx.repo, &["merge-base", &src, old_root])?, new_root.clone()),
             Some(p) => {
-                let old_parent = git(&ctx.repo, &["rev-parse", &format!("refs/heads/{p}")])?;
+                // the parent head the child is built on: its staging branch when
+                // a sync published the child on a staged parent (sync::parent_head)
+                let old_parent = crate::sync::parent_head(&ctx.repo, &ctx.fork, p, &src)?;
                 let new_parent = git(&ctx.repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/sync/{}/{p}", ctx.run)])
                     .unwrap_or_else(|_| old_parent.clone());
                 (git(&ctx.repo, &["merge-base", &src, &old_parent])?, new_parent)

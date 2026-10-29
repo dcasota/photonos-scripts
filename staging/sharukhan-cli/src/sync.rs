@@ -136,6 +136,44 @@ pub struct Analysis {
 }
 
 /// `old..new` per root, e.g. 5.0 = (a18c26c1f, refs/remotes/dcasota/5.0).
+/// The head of parent branch `p` that the stacked PR at `head` is built on.
+///
+/// Normally the parent's own branch. But a sync publishes the child of a
+/// paired parent (one with an upstream PR) while the parent's rebased code
+/// waits on the fork as `staging/<p>` for the UPSTREAM stage: the child then
+/// sits on the staged parent, not on the parent's branch, and measured from
+/// the branch it would own every upstream commit under the staged parent. So
+/// when the fork's `staging/<p>` is an ancestor of `head`, that is the parent.
+pub fn parent_head(repo: &Path, fork: &str, p: &str, head: &str) -> Result<String, String> {
+    let branch = git_in(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{p}")])
+        .or_else(|_| git_in(repo, &["rev-parse", &format!("refs/sync/pr/{p}")]))?
+        .trim()
+        .to_string();
+    let staged_ref = format!("refs/sync/staging/{p}");
+    let fetched = git_in(
+        repo,
+        &["fetch", "-q", &format!("https://github.com/{fork}.git"), &format!("+refs/heads/staging/{p}:{staged_ref}")],
+    )
+    .is_ok();
+    if fetched {
+        let staged = git_in(repo, &["rev-parse", &staged_ref])?.trim().to_string();
+        let on_staged = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["merge-base", "--is-ancestor", &staged, head])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if on_staged && staged != branch {
+            return Ok(staged);
+        }
+    } else {
+        // no staging branch (any more): a stale local copy must not be used
+        let _ = git_in(repo, &["update-ref", "-d", &staged_ref]);
+    }
+    Ok(branch)
+}
+
 pub fn analyze(
     repo: &Path,
     fork: &str,
@@ -166,9 +204,8 @@ pub fn analyze(
         let own_base = match &parent {
             None => git_in(repo, &["merge-base", &head, old])?.trim().to_string(),
             Some(p) => {
-                let ph = git_in(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{p}")])
-                    .or_else(|_| git_in(repo, &["rev-parse", &format!("refs/sync/pr/{p}")]))?;
-                git_in(repo, &["merge-base", &head, ph.trim()])?.trim().to_string()
+                let ph = parent_head(repo, fork, p, &head)?;
+                git_in(repo, &["merge-base", &head, &ph])?.trim().to_string()
             }
         };
         let new_tree = git_in(repo, &["rev-parse", &format!("{new}^{{tree}}")])?.trim().to_string();
