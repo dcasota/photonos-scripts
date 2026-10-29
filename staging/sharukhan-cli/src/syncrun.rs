@@ -1426,16 +1426,44 @@ fn upstream_stage(ctx: &Ctx, approved: bool) -> Result<Outcome, String> {
 }
 
 fn done(ctx: &Ctx) -> Result<Outcome, String> {
-    for (root, (_, new)) in &ctx.bases {
-        ctx.c
-            .execute(
-                "INSERT INTO upstream_head (repo, ref, value, seen_at) VALUES ('synced', ?1, ?2, ?3) \
-                 ON CONFLICT(repo, ref) DO UPDATE SET value = excluded.value, seen_at = excluded.seen_at",
-                rusqlite::params![root, new, now()],
-            )
-            .map_err(sql)?;
-    }
+    record_synced(ctx.c, &ctx.bases)?;
     Ok(Outcome::Done("synced bases recorded".into()))
+}
+
+/// The new heads become the bases the next run measures from.
+fn record_synced(c: &Connection, bases: &BTreeMap<String, (String, String)>) -> Result<(), String> {
+    for (root, (_, new)) in bases {
+        c.execute(
+            "INSERT INTO upstream_head (repo, ref, value, seen_at) VALUES ('synced', ?1, ?2, ?3) \
+             ON CONFLICT(repo, ref) DO UPDATE SET value = excluded.value, seen_at = excluded.seen_at",
+            rusqlite::params![root, new, now()],
+        )
+        .map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// What an abort keeps once PUBLISH is done: the published PRs sit on the new
+/// bases on GitHub, so their gate refs and the base refs stay at the new heads,
+/// and the new bases are recorded as synced (else the next run counts the
+/// upstream commits under them as the PRs' own). Staged and unpublished PRs
+/// did not move on GitHub and are restored. Before PUBLISH: nothing is kept.
+fn kept_after_publish(c: &Connection, run: i64) -> Result<(Vec<String>, BTreeMap<String, (String, String)>), String> {
+    let published: bool = c
+        .prepare("SELECT 1 FROM sync_stage WHERE run_id = ?1 AND name = 'PUBLISH' AND state = 'done'")
+        .and_then(|mut s| s.exists([run]))
+        .map_err(sql)?;
+    if !published {
+        return Ok((Vec::new(), BTreeMap::new()));
+    }
+    let bases_s: String = c.query_row("SELECT bases FROM sync_run WHERE id = ?1", [run], |r| r.get(0)).map_err(sql)?;
+    let bases = parse_bases(&bases_s)?;
+    let mut keep: Vec<String> = c
+        .prepare("SELECT branch FROM sync_pr WHERE run_id = ?1 AND state = 'published'")
+        .and_then(|mut s| s.query_map([run], |r| r.get::<_, String>(0)).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
+    keep.extend(bases.keys().cloned());
+    Ok((keep, bases))
 }
 
 /// Run the remaining stages of `run` until it finishes or stops.
@@ -1537,7 +1565,7 @@ pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> R
 }
 
 /// Restore the gate repository refs PREPARE moved (abort, superseded).
-pub fn restore_refs(results: &Path, run: i64, repo: &Path) -> Result<usize, String> {
+pub fn restore_refs(results: &Path, run: i64, repo: &Path, keep: &[String]) -> Result<usize, String> {
     // the run's candidates go with it
     let cands = git(repo, &["for-each-ref", "--format=%(refname)", &format!("refs/heads/sync/{run}/")])?;
     for r in cands.lines().filter(|l| !l.is_empty()) {
@@ -1548,6 +1576,10 @@ pub fn restore_refs(results: &Path, run: i64, repo: &Path) -> Result<usize, Stri
     let mut n = 0;
     for l in text.lines() {
         let Some((branch, old)) = l.split_once('\t') else { continue };
+        // published: GitHub already has the new head, and the gate ref must equal it
+        if keep.iter().any(|k| k == branch) {
+            continue;
+        }
         if old.is_empty() {
             git(repo, &["update-ref", "-d", &format!("refs/heads/{branch}")])?;
         } else {
@@ -2016,8 +2048,19 @@ pub fn cli(args: &[String]) -> Option<u8> {
                 let note = if staged.is_empty() { String::new() } else { format!("; on the fork, no PR uses: {}", staged.join(" ")) };
                 if state != "running" {
                     let repo: String = c.query_row("SELECT repo FROM sync_run WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
-                    let n = restore_refs(&results, id, Path::new(&repo))?;
-                    set_run(&c, id, "aborted", &format!("aborted; {n} gate ref(s) restored{note}"))?;
+                    let (keep, bases) = kept_after_publish(&c, id)?;
+                    let n = restore_refs(&results, id, Path::new(&repo), &keep)?;
+                    let published = if keep.is_empty() {
+                        String::new()
+                    } else {
+                        record_synced(&c, &bases)?;
+                        format!(
+                            "; {} published PR(s) and the bases ({}) kept at their new heads, synced bases recorded",
+                            keep.len() - bases.len(),
+                            bases.keys().cloned().collect::<Vec<_>>().join(", ")
+                        )
+                    };
+                    set_run(&c, id, "aborted", &format!("aborted; {n} gate ref(s) restored{published}{note}"))?;
                 }
                 Ok(format!("run {id}: abort recorded{note}"))
             }
@@ -2106,6 +2149,59 @@ mod tests {
         assert_eq!(recover(&c, 1).unwrap(), 1);
         let st: String = c.query_row("SELECT state FROM sync_stage WHERE run_id = 1 AND name = 'GATE'", [], |r| r.get(0)).unwrap();
         assert_eq!(st, "interrupted");
+    }
+
+    /// An abort after PUBLISH keeps what GitHub already has: the published PR
+    /// and the base stay at their new heads and the new base is recorded as
+    /// synced; a staged PR, which did not move on GitHub, is restored.
+    #[test]
+    fn an_abort_after_publish_keeps_the_published_heads_and_records_the_base() {
+        let d = std::env::temp_dir().join(format!("shk-abort-pub-{}-{}", std::process::id(), crate::job::stamp()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        let g = |a: &[&str]| -> String {
+            let o = Command::new("git").arg("-C").arg(&d).args(a).output().unwrap();
+            assert!(o.status.success(), "{a:?}: {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        g(&["init", "-q", "-b", "5.0"]);
+        g(&["config", "user.email", "a@b"]);
+        g(&["config", "user.name", "A B"]);
+        g(&["commit", "-q", "--allow-empty", "-m", "old"]);
+        let old = g(&["rev-parse", "HEAD"]);
+        g(&["commit", "-q", "--allow-empty", "-m", "new"]);
+        let new = g(&["rev-parse", "HEAD"]);
+        for b in ["fix/pub", "fix/staged"] {
+            g(&["branch", b, &new]);
+        }
+        let results = d.join("results");
+        fs::create_dir_all(results.join("sync/1")).unwrap();
+        fs::write(results.join("sync/1/PREPARE.saved-refs.tsv"), format!("5.0\t{old}\nfix/pub\t{old}\nfix/staged\t{old}\n")).unwrap();
+        let c = db();
+        c.execute(
+            "INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'needs-decision', 'f', ?1, ?2, 'auto')",
+            rusqlite::params![d.to_string_lossy(), format!("5.0={old}..{new}")],
+        )
+        .unwrap();
+        c.execute("INSERT INTO sync_stage (run_id, name, state) VALUES (1, 'PUBLISH', 'done')", []).unwrap();
+        for (n, b, st) in [(1, "fix/pub", "published"), (2, "fix/staged", "staged")] {
+            c.execute(
+                "INSERT INTO sync_pr (run_id, number, branch, root, gh_head, action, state) VALUES (1, ?1, ?2, '5.0', ?3, 'rebase', ?4)",
+                rusqlite::params![n, b, old, st],
+            )
+            .unwrap();
+        }
+        let (keep, bases) = kept_after_publish(&c, 1).unwrap();
+        assert_eq!(restore_refs(&results, 1, &d, &keep).unwrap(), 1);
+        record_synced(&c, &bases).unwrap();
+        assert_eq!(g(&["rev-parse", "fix/pub"]), new);
+        assert_eq!(g(&["rev-parse", "5.0"]), new);
+        assert_eq!(g(&["rev-parse", "fix/staged"]), old);
+        assert_eq!(synced_base(&c, "5.0").as_deref(), Some(new.as_str()));
+        // before PUBLISH an abort keeps nothing
+        c.execute("UPDATE sync_stage SET state = 'failed' WHERE run_id = 1 AND name = 'PUBLISH'", []).unwrap();
+        assert!(kept_after_publish(&c, 1).unwrap().0.is_empty());
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]
