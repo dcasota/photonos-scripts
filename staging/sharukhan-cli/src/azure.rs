@@ -69,9 +69,12 @@ pub fn installer_console(iso: &Path, arch: Arch, say: &mut dyn FnMut(&str)) -> R
 /// modified when they differ.
 pub fn installer_console_to(input: &Path, output: &Path, arch: Arch, say: &mut dyn FnMut(&str)) -> Result<(), String> {
     let iso = input;
+    // Scratch on the Linux side: the initrd is a root with symlinks, and the
+    // output may live on a Windows drive (drvfs). Beside the output otherwise,
+    // so the result is a rename; from the temp directory it is a copy.
     let parent = output.parent().ok_or_else(|| format!("{}: no directory", output.display()))?;
-    // beside the ISO: the rewritten image is renamed over it, never copied
-    let work = parent.join(format!(".sharukhan-azure-{}-{}", std::process::id(), crate::job::stamp()));
+    let base = if is_drvfs(parent) { std::env::temp_dir() } else { parent.to_path_buf() };
+    let work = base.join(format!(".sharukhan-azure-{}-{}", std::process::id(), crate::job::stamp()));
     let r = (|| {
         fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
         say(&format!("  azure: the installed system's console is {} ({})", arch.console(), arch.rpm()));
@@ -107,11 +110,34 @@ pub fn installer_console_to(input: &Path, output: &Path, arch: Arch, say: &mut d
             return Err(format!("read-back: the boot records changed:\n--- before\n{before}\n--- after\n{after}"));
         }
         say("  azure: read back: installer console set, boot records unchanged");
-        fs::rename(&out, output).map_err(|e| format!("{} -> {}: {e}", out.display(), output.display()))?;
+        if fs::rename(&out, output).is_err() {
+            // another file system: copy, then check the copy byte for byte
+            let tmp = output.with_extension("iso.partial");
+            fs::copy(&out, &tmp).map_err(|e| format!("{} -> {}: {e}", out.display(), tmp.display()))?;
+            if crate::sha256::file(&tmp)? != crate::sha256::file(&out)? {
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("{}: the copy differs from the written image", tmp.display()));
+            }
+            fs::rename(&tmp, output).map_err(|e| format!("{} -> {}: {e}", tmp.display(), output.display()))?;
+        }
         Ok(())
     })();
     let _ = fs::remove_dir_all(&work);
     r
+}
+
+/// A Windows drive under WSL (drvfs/9p): no place to unpack a Linux root.
+fn is_drvfs(p: &Path) -> bool {
+    let Ok(m) = fs::read_to_string("/proc/self/mounts") else { return false };
+    let p = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    m.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            (f.len() > 2).then(|| (f[1].to_string(), f[2].to_string()))
+        })
+        .filter(|(mnt, _)| p.starts_with(mnt))
+        .max_by_key(|(mnt, _)| mnt.len())
+        .is_some_and(|(_, ty)| ty == "9p" || ty == "drvfs")
 }
 
 /// The architecture a medium is for, from its repository (`/RPMS/<arch>`).

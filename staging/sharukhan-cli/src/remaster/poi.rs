@@ -114,7 +114,9 @@ pub fn apply(text: &str, anchor: &str, fixed: &str) -> Result<(String, Edit), St
 pub fn site_packages(root: &Path) -> Result<PathBuf, String> {
     let mut found: Vec<PathBuf> = Vec::new();
     for lib in ["usr/lib", "usr/lib64", "lib", "lib64"] {
-        let base = root.join(lib);
+        // resolved inside the root: an absolute link (lib64 -> /usr/lib)
+        // read as-is would list the HOST's directory
+        let base = resolve_in(root, &root.join(lib));
         let Ok(rd) = fs::read_dir(&base) else {
             continue;
         };
@@ -123,8 +125,10 @@ pub fn site_packages(root: &Path) -> Result<PathBuf, String> {
             if !name.starts_with("python3") {
                 continue;
             }
-            let sp = e.path().join("site-packages");
-            if sp.join("photon_installer").is_dir() && !found.contains(&sp) {
+            // lib and lib64 are often links to usr/lib: one tree, several
+            // paths, compared by where they resolve inside the root
+            let sp = resolve_in(root, &e.path().join("site-packages"));
+            if resolve_in(root, &sp.join("photon_installer")).is_dir() && !found.contains(&sp) {
                 found.push(sp);
             }
         }
@@ -148,6 +152,40 @@ pub fn site_packages(root: &Path) -> Result<PathBuf, String> {
                 .join(", ")
         )),
     }
+}
+
+/// `p` (under `root`) with every symlink resolved INSIDE `root`: an absolute
+/// link target names a path of the unpacked image, never of the host.
+fn resolve_in(root: &Path, p: &Path) -> PathBuf {
+    let Ok(rel) = p.strip_prefix(root) else { return p.to_path_buf() };
+    let mut cur = root.to_path_buf();
+    let mut todo: Vec<std::ffi::OsString> = rel.iter().map(|c| c.to_os_string()).collect();
+    todo.reverse();
+    let mut hops = 0;
+    while let Some(c) = todo.pop() {
+        if c == ".." {
+            if cur != root {
+                cur.pop();
+            }
+            continue;
+        }
+        let next = cur.join(&c);
+        match fs::read_link(&next) {
+            Ok(t) if hops < 40 => {
+                hops += 1;
+                let mut parts: Vec<std::ffi::OsString> = t.iter().map(|c| c.to_os_string()).collect();
+                if t.is_absolute() {
+                    cur = root.to_path_buf();
+                    parts.remove(0);
+                }
+                for part in parts.into_iter().rev() {
+                    todo.push(part);
+                }
+            }
+            _ => cur = next,
+        }
+    }
+    cur
 }
 
 /// The installer version, read off the egg-info/dist-info directory name.
@@ -251,6 +289,10 @@ pub fn patch(c: &mut Ctx, root: &Path, arch: Arch) -> Result<usize, String> {
 /// already carries those fixes.
 pub fn patch_console(pkg: &Path, arch: Arch, say: &mut dyn FnMut(&str)) -> Result<bool, String> {
     let installer = pkg.join("installer.py");
+    // a link could point out of the image (an absolute target is the host's)
+    if fs::symlink_metadata(&installer).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        return Err(format!("{}: a symlink; refusing to write through it", installer.display()));
+    }
     let text =
         fs::read_to_string(&installer).map_err(|e| format!("{}: {e}", installer.display()))?;
     let (out, edit) = apply(&text, CMDLINE_ANCHOR, &cmdline_fixed(arch)).map_err(|e| {
@@ -280,6 +322,23 @@ pub fn console_line(arch: Arch) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The x86 installer initrd links lib and lib64 to usr/lib: one installer,
+    /// four paths. It is found once; two real trees are still refused.
+    #[test]
+    fn linked_lib_directories_are_one_python_tree() {
+        let d = std::env::temp_dir().join(format!("shk-sp-{}-{}", std::process::id(), crate::job::stamp()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("usr/lib/python3.14/site-packages/photon_installer")).unwrap();
+        std::os::unix::fs::symlink("usr/lib", d.join("lib")).unwrap();
+        std::os::unix::fs::symlink("/usr/lib", d.join("lib64")).unwrap();
+        std::os::unix::fs::symlink("lib", d.join("usr/lib64")).unwrap();
+        let sp = site_packages(&d).unwrap();
+        assert!(sp.ends_with("python3.14/site-packages"), "{}", sp.display());
+        fs::create_dir_all(d.join("usr/lib/python3.12/site-packages/photon_installer")).unwrap();
+        assert!(site_packages(&d).unwrap_err().contains("python trees"));
+        let _ = fs::remove_dir_all(&d);
+    }
 
     /// A tree shaped like the real initrd, with the UPSTREAM (unpatched) text.
     fn fake_poi(root: &Path, pyver: &str, poi_version: &str) -> PathBuf {
