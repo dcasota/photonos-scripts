@@ -551,6 +551,21 @@ fn verify_stage(ctx: &Ctx) -> Result<Outcome, String> {
     }
 }
 
+/// The saved-refs lines: every branch the file already records keeps its
+/// first value, a branch new to the run gets its current head.
+fn saved_refs_first(earlier: &str, current: &[(String, String)]) -> Vec<String> {
+    let mut first: Vec<(String, String)> = earlier
+        .lines()
+        .filter_map(|l| l.split_once('\t').map(|(b, o)| (b.to_string(), o.to_string())))
+        .collect();
+    for (branch, head) in current {
+        if !first.iter().any(|(b, _)| b == branch) {
+            first.push((branch.clone(), head.clone()));
+        }
+    }
+    first.into_iter().map(|(b, o)| format!("{b}\t{o}")).collect()
+}
+
 /// Point the gate repository at the candidates and the new bases, keeping the
 /// previous values beside the run so an abort can restore them.
 fn prepare(ctx: &Ctx) -> Result<Outcome, String> {
@@ -562,13 +577,25 @@ fn prepare(ctx: &Ctx) -> Result<Outcome, String> {
         .and_then(|mut s| s.query_map([ctx.run], |r| Ok((r.get(0)?, r.get(1)?))).map(|x| x.flatten().collect()))
         .map_err(sql)?;
     moves.extend(rows);
+    // The values from BEFORE the run, recorded once. A PREPARE that runs again
+    // (a resume after a failed PREPARE) finds its own candidates on the refs;
+    // recording those would make an abort "restore" the candidates (run 12).
+    let saved_path = ctx.dir.join("PREPARE.saved-refs.tsv");
+    let earlier = fs::read_to_string(&saved_path).unwrap_or_default();
+    let current: Vec<(String, String)> = moves
+        .iter()
+        .map(|(branch, _)| {
+            let old = git(&ctx.repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{branch}")]).unwrap_or_default();
+            (branch.clone(), old)
+        })
+        .collect();
+    saved.extend(saved_refs_first(&earlier, &current));
+    // written before any ref moves, so a crash in between loses nothing
+    fs::write(&saved_path, saved.join("\n") + "\n").map_err(|e| format!("{e}"))?;
     for (branch, target) in &moves {
-        let old = git(&ctx.repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{branch}")]).unwrap_or_default();
         let new = git(&ctx.repo, &["rev-parse", target])?;
-        saved.push(format!("{branch}\t{old}"));
         git(&ctx.repo, &["update-ref", &format!("refs/heads/{branch}"), &new])?;
     }
-    fs::write(ctx.dir.join("PREPARE.saved-refs.tsv"), saved.join("\n") + "\n").map_err(|e| format!("{e}"))?;
     let cfg = crate::config::Config::load();
     for (tree, branch) in [(cfg.build_common.as_str(), cfg.build_common.as_str()), (cfg.release.as_str(), cfg.release.as_str())] {
         let dir = cfg.build_root.join(tree);
@@ -2239,6 +2266,20 @@ mod tests {
         c.execute("UPDATE sync_stage SET state = 'failed' WHERE run_id = 1 AND name = 'PUBLISH'", []).unwrap();
         assert!(kept_after_publish(&c, 1).unwrap().0.is_empty());
         let _ = fs::remove_dir_all(&d);
+    }
+
+    /// Sync run 12: PREPARE failed after moving the refs, ran again, and saved
+    /// its own candidates as "previous", so the abort restored candidates.
+    #[test]
+    fn a_rerun_prepare_keeps_the_refs_from_before_the_run() {
+        let first = saved_refs_first("", &[("5.0".into(), "old5".into()), ("fix/a".into(), "origA".into())]);
+        assert_eq!(first, vec!["5.0\told5", "fix/a\torigA"]);
+        // rerun: the refs now hold the candidates; a new branch joined the run
+        let again = saved_refs_first(
+            &(first.join("\n") + "\n"),
+            &[("5.0".into(), "new5".into()), ("fix/a".into(), "candA".into()), ("fix/b".into(), "origB".into())],
+        );
+        assert_eq!(again, vec!["5.0\told5", "fix/a\torigA", "fix/b\torigB"]);
     }
 
     #[test]
