@@ -640,8 +640,12 @@ pub fn unexplained(dirty: &[String], named: &[String]) -> Vec<String> {
 /// there, then clean it and fast-forward it to `branch` of the gate repository.
 fn reset_build_tree(dir: &Path, patches: &Path, gate: &Path, branch: &str) -> Result<(), String> {
     let mounted = fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
-    if mounted.lines().any(|l| l.split(' ').nth(4).is_some_and(|m| m.starts_with(&dir.join("stage/photonroot").to_string_lossy().to_string()))) {
-        return Err(format!("{}: a build sandbox is still mounted under the stage", dir.display()));
+    let sandbox = dir.join("stage/photonroot");
+    if mounted.lines().any(|l| l.split(' ').nth(4).is_some_and(|m| Path::new(m).starts_with(&sandbox))) {
+        // left by a stopped build (a pause, a killed process): unmounted when
+        // nothing runs inside the stage, refused while a build does
+        crate::buildexec::unmount_stale_sandboxes(&dir.join("stage"))
+            .map_err(|e| format!("{}: a build sandbox is still mounted under the stage: {e}", dir.display()))?;
     }
     let texts: Vec<String> = fs::read_dir(patches)
         .map_err(|e| format!("{}: {e}", patches.display()))?

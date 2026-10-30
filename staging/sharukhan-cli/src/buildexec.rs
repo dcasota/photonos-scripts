@@ -2946,6 +2946,56 @@ fn purge_corrupt_rpms(c: &mut Ctx, stage: &Path) -> u32 {
 /// `<sandbox>/root/.gradle/caches/*/zinc-*/zinc-*.lock`, so the next attempt
 /// dies with "Timeout waiting to lock zinc-..." - which is how kafka broke a
 /// canister ISO while nothing was wrong with kafka.
+/// Processes whose root is under `stage`: a build sandbox in use.
+pub fn processes_rooted_under(stage: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir("/proc") {
+        for e in rd.flatten() {
+            let name = e.file_name();
+            let Some(pid) = name.to_str().filter(|s| s.chars().all(|c| c.is_ascii_digit())) else { continue };
+            if pid == "1" {
+                continue;
+            }
+            if fs::read_link(format!("/proc/{pid}/root")).is_ok_and(|t| t.starts_with(stage)) {
+                out.push(pid.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Unmount sandbox mounts a stopped build left under `stage/photonroot`.
+///
+/// Only when nothing runs inside the stage: a mount with a process rooted
+/// under it is a build in progress, and that is refused, never cleaned. The
+/// mount points come from the mount table, deepest first; nothing is killed.
+pub fn unmount_stale_sandboxes(stage: &Path) -> Result<usize, String> {
+    let live = processes_rooted_under(stage);
+    if !live.is_empty() {
+        return Err(format!(
+            "{}: a build is running in its sandbox (pid {})",
+            stage.display(),
+            live.join(", ")
+        ));
+    }
+    let prefix = stage.join("photonroot");
+    let table = fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
+    let mut mps: Vec<String> = table
+        .lines()
+        .filter_map(|l| l.split(' ').nth(4).map(str::to_string))
+        .filter(|m| Path::new(m).starts_with(&prefix))
+        .collect();
+    mps.sort_unstable();
+    mps.dedup();
+    mps.reverse();
+    for mp in &mps {
+        if !ok(Path::new("/"), "umount", &[mp]) && !ok(Path::new("/"), "umount", &["-l", mp]) {
+            return Err(format!("{mp}: cannot be unmounted"));
+        }
+    }
+    Ok(mps.len())
+}
+
 fn clean_sandboxes(c: &mut Ctx, stage: &Path) {
     let root = stage.join("photonroot");
     let mounts = run(Path::new("/"), "mount", &[]).unwrap_or_default();
