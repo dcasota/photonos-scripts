@@ -145,6 +145,16 @@ fn pid_alive(pid: i64) -> bool {
     Path::new(&format!("/proc/{pid}")).exists()
 }
 
+/// The state an abort acts on: a `running` run whose process is gone is
+/// stopped in fact, so the abort finishes it like any other stopped run.
+fn orphaned_state(stored: &str, process_alive: bool) -> &str {
+    if stored == "running" && !process_alive {
+        "interrupted"
+    } else {
+        stored
+    }
+}
+
 /// Mark stages left `running` by a process that is gone as `interrupted`.
 pub fn recover(c: &Connection, run: i64) -> Result<usize, String> {
     let pid: Option<i64> = c.query_row("SELECT pid FROM sync_run WHERE id = ?1", [run], |r| r.get(0)).map_err(sql)?;
@@ -2035,7 +2045,28 @@ pub fn cli(args: &[String]) -> Option<u8> {
             "abort" => {
                 let id = num(1)?;
                 c.execute("UPDATE sync_run SET abort = 1 WHERE id = ?1", [id]).map_err(sql)?;
-                let state: String = c.query_row("SELECT state FROM sync_run WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
+                // a run left `running` by a process that is gone (a host stop, a
+                // pause) has nobody to act on the flag: finish the abort here
+                recover(&c, id)?;
+                let stored: String = c.query_row("SELECT state FROM sync_run WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
+                let pid: Option<i64> = c.query_row("SELECT pid FROM sync_run WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
+                let state = orphaned_state(&stored, pid.is_some_and(pid_alive));
+                if state != stored {
+                    let partial: i64 = c
+                        .query_row(
+                            "SELECT count(*) FROM sync_pr WHERE run_id = ?1 AND state = 'published' \
+                             AND NOT EXISTS (SELECT 1 FROM sync_stage WHERE run_id = ?1 AND name = 'PUBLISH' AND state = 'done')",
+                            [id],
+                            |r| r.get(0),
+                        )
+                        .map_err(sql)?;
+                    if partial > 0 {
+                        return Err(format!(
+                            "run {id}: its process is gone with PUBLISH interrupted after {partial} push(es); \
+                             an abort would restore refs GitHub already has: `sync resume {id}` finishes PUBLISH"
+                        ));
+                    }
+                }
                 let publishing: i64 = c
                     .query_row("SELECT count(*) FROM sync_stage WHERE run_id = ?1 AND name = 'PUBLISH' AND state = 'running'", [id], |r| r.get(0))
                     .map_err(sql)?;
@@ -2204,6 +2235,14 @@ mod tests {
         c.execute("UPDATE sync_stage SET state = 'failed' WHERE run_id = 1 AND name = 'PUBLISH'", []).unwrap();
         assert!(kept_after_publish(&c, 1).unwrap().0.is_empty());
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn an_abort_finishes_a_run_whose_process_is_gone() {
+        assert_eq!(orphaned_state("running", false), "interrupted");
+        assert_eq!(orphaned_state("running", true), "running");
+        assert_eq!(orphaned_state("needs-decision", false), "needs-decision");
+        assert_eq!(orphaned_state("paused", false), "paused");
     }
 
     #[test]
