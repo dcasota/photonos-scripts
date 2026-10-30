@@ -151,6 +151,12 @@ pub fn argv(plan: &IsoPlan) -> Vec<String> {
 
 /// Write the ISO and its `.sha256` sidecar.
 pub fn write(c: &mut Ctx, plan: &IsoPlan) -> Result<String, String> {
+    let logdir = c.spec.workdir.clone();
+    write_to(plan, &logdir, &mut |l| c.say(l))
+}
+
+/// [`write`] without a remaster context: `logdir` receives xorriso.log.
+pub fn write_to(plan: &IsoPlan, logdir: &Path, say: &mut dyn FnMut(&str)) -> Result<String, String> {
     if plan.output.exists() {
         // xorriso appends to an existing image rather than replacing it, which
         // would silently produce a second session.
@@ -159,13 +165,13 @@ pub fn write(c: &mut Ctx, plan: &IsoPlan) -> Result<String, String> {
     }
     let a = argv(plan);
     let refs: Vec<&str> = a.iter().map(|s| s.as_str()).collect();
-    let log = c.spec.workdir.join("xorriso.log");
-    c.say(&format!(
+    let log = logdir.join("xorriso.log");
+    say(&format!(
         "  writing {} ({} operations)",
         plan.output.display(),
         plan.map.len()
     ));
-    super::run_logged(c, "xorriso", &refs, &log)?;
+    super::run_logged_with("xorriso", &refs, &log, say)?;
 
     let size = std::fs::metadata(&plan.output)
         .map(|m| m.len())
@@ -182,8 +188,8 @@ pub fn write(c: &mut Ctx, plan: &IsoPlan) -> Result<String, String> {
     let side = PathBuf::from(format!("{}.sha256", plan.output.display()));
     std::fs::write(&side, format!("{sum}  {name}\n"))
         .map_err(|e| format!("{}: {e}", side.display()))?;
-    c.say(&format!("  {} bytes, sha256 {sum}", size));
-    c.say(&format!("  wrote {}", side.display()));
+    say(&format!("  {} bytes, sha256 {sum}", size));
+    say(&format!("  wrote {}", side.display()));
     Ok(sum)
 }
 

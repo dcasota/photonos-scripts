@@ -306,6 +306,11 @@ pub fn ok(prog: &str, args: &[&str]) -> bool {
 /// output - a multi-hour build that fails must say WHY at the point of
 /// failure, not "exit 1".
 pub fn run_logged(c: &mut Ctx, prog: &str, args: &[&str], logfile: &Path) -> Result<(), String> {
+    run_logged_with(prog, args, logfile, &mut |l| c.say(l))
+}
+
+/// [`run_logged`] without a remaster context, for other media steps.
+pub fn run_logged_with(prog: &str, args: &[&str], logfile: &Path, say: &mut dyn FnMut(&str)) -> Result<(), String> {
     use std::fs::OpenOptions;
     let f = OpenOptions::new()
         .create(true)
@@ -315,8 +320,8 @@ pub fn run_logged(c: &mut Ctx, prog: &str, args: &[&str], logfile: &Path) -> Res
     let f2 = f
         .try_clone()
         .map_err(|e| format!("{}: {e}", logfile.display()))?;
-    c.say(&format!("  $ {prog} {}", args.join(" ")));
-    c.say(&format!("    log: {}", logfile.display()));
+    say(&format!("  $ {prog} {}", args.join(" ")));
+    say(&format!("    log: {}", logfile.display()));
     let st = Command::new(prog)
         .args(args)
         .stdout(Stdio::from(f))

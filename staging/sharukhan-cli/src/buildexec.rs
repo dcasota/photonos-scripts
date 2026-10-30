@@ -3249,6 +3249,16 @@ restored from the kernel store or left by an earlier phase A",
 
         if let Some(iso) = find_iso(&stage, &common_stage, &marker) {
             c.say(&format!("  built ISO: {}", iso.display()));
+            // The Azure variant: the installed system's console is the
+            // target's serial port (azure.rs), set on the composed media.
+            let azure = c.spec.injections.iter().find_map(|i| match i {
+                Injection::KernelConfig { arch, .. } => Some(arch.clone()),
+                _ => None,
+            });
+            if let Some(arch) = azure {
+                let a = crate::remaster::Arch::parse(&arch)?;
+                crate::azure::installer_console(&iso, a, &mut |l| c.say(l))?;
+            }
             return deliver(c, &iso, true);
         }
 

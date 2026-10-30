@@ -39,6 +39,28 @@ sharukhan build-iso --kernel 7.3 --iso-type full --poi latest --canister equival
                     --hyperv --allow-build
 ```
 
+### The installed system's console
+
+Azure reads a VM's console from its first serial port: **ttyS0 on x86_64, ttyAMA0 on
+Arm64**. A Photon install writes no `console=` anywhere (not the kernel package's
+`photon_cmdline`, not the installer's GRUB entry), so without help an Azure VM shows a
+login on tty1 in the boot screenshot and nothing in the serial log or console.
+Every Azure medium sharukhan makes therefore patches the installer in the media's
+initrd: `poi_kernel_cmdline = "console=<dev>,115200n8"`, the device by architecture,
+which the installer writes into the installed system's GRUB entry.
+
+* `remaster --hyperv` does it in its initrd stage (with the kickstart-loading fixes old
+  installers need).
+* `build-iso --hyperv` does it after composing the ISO (`azure.rs`): unpack the initrd,
+  set the line, repack, rewrite the ISO with its boot records replayed, then read back
+  the line and the El Torito records (addresses may move, what boots may not).
+* `sharukhan azure-console --in <iso> --out <iso>` applies the same step to an existing
+  medium, taking the architecture from its `/RPMS/<arch>`.
+
+The ISO's own boot entry is not changed: the installer starts its UI on the single
+active console, so a serial console added there could keep it from starting on a
+local Hyper-V install.
+
 ### Why remaster rather than build
 
 A full aarch64 ISO on an x86_64 host is hundreds of packages under qemu-user at

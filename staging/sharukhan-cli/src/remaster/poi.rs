@@ -234,6 +234,22 @@ pub fn patch(c: &mut Ctx, root: &Path, arch: Arch) -> Result<usize, String> {
     }
 
     // The console: not a bug fix, a property of the target.
+    if patch_console(&pkg, arch, &mut |l| c.say(l))? {
+        changed += 1;
+    }
+
+    Ok(changed)
+}
+
+/// The installed system's kernel console, on its own: Azure reads the VM
+/// console from ttyS0 (x86_64) or ttyAMA0 (aarch64), and POI 2.x has no
+/// kickstart key for kernel parameters. `pkg` is the `photon_installer`
+/// package directory. Returns whether installer.py changed.
+///
+/// Shared by remaster (which also fixes the kickstart loading of old
+/// installers) and the Azure media step of a `--hyperv` build, whose installer
+/// already carries those fixes.
+pub fn patch_console(pkg: &Path, arch: Arch, say: &mut dyn FnMut(&str)) -> Result<bool, String> {
     let installer = pkg.join("installer.py");
     let text =
         fs::read_to_string(&installer).map_err(|e| format!("{}: {e}", installer.display()))?;
@@ -245,16 +261,20 @@ pub fn patch(c: &mut Ctx, root: &Path, arch: Arch) -> Result<usize, String> {
     })?;
     if edit == Edit::Applied {
         fs::write(&installer, &out).map_err(|e| format!("{}: {e}", installer.display()))?;
-        changed += 1;
-        c.say(&format!(
+        say(&format!(
             "  installer: the installed system gets console={},115200n8",
             arch.console()
         ));
+        Ok(true)
     } else {
-        c.say("  installer: the kernel command line is already set");
+        say("  installer: the kernel command line is already set");
+        Ok(false)
     }
+}
 
-    Ok(changed)
+/// The console line the patched installer carries, for a read-back check.
+pub fn console_line(arch: Arch) -> String {
+    format!("self.poi_kernel_cmdline = \"console={},115200n8\"", arch.console())
 }
 
 #[cfg(test)]

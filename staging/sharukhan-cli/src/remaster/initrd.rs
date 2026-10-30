@@ -24,6 +24,11 @@ use std::process::{Command, Stdio};
 /// pipeline: `zcat x | cpio` under `set -o pipefail` reports SIGPIPE as
 /// failure, and a composed string is how a path becomes shell syntax.
 pub fn unpack(_c: &mut Ctx, initrd: &Path, dest: &Path) -> Result<usize, String> {
+    unpack_to(initrd, dest)
+}
+
+/// [`unpack`] without a remaster context.
+pub fn unpack_to(initrd: &Path, dest: &Path) -> Result<usize, String> {
     fs::create_dir_all(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     let f = fs::File::open(initrd).map_err(|e| format!("{}: {e}", initrd.display()))?;
     let mut gz = Command::new("gzip")
@@ -170,6 +175,12 @@ pub fn depmod(c: &mut Ctx, root: &Path, uname: &str) -> Result<(), String> {
 /// `find | sort` in a shell: the locale changes `sort`'s order, and an initrd
 /// whose entries are ordered differently is a different image for no reason.
 pub fn repack(c: &mut Ctx, root: &Path, out: &Path) -> Result<u64, String> {
+    let scratch = c.spec.workdir.clone();
+    repack_to(root, out, &scratch, &mut |l| c.say(l))
+}
+
+/// [`repack`] without a remaster context: `scratch` holds the file list.
+pub fn repack_to(root: &Path, out: &Path, scratch: &Path, say: &mut dyn FnMut(&str)) -> Result<u64, String> {
     let mut names: Vec<Vec<u8>> = Vec::new();
     collect(root, root, &mut names)?;
     names.sort();
@@ -178,7 +189,7 @@ pub fn repack(c: &mut Ctx, root: &Path, out: &Path) -> Result<u64, String> {
         list.extend_from_slice(n);
         list.push(b'\n');
     }
-    let listfile = c.spec.workdir.join("initrd.filelist");
+    let listfile = scratch.join("initrd.filelist");
     fs::write(&listfile, &list).map_err(|e| format!("{}: {e}", listfile.display()))?;
 
     if let Some(p) = out.parent() {
@@ -212,7 +223,7 @@ pub fn repack(c: &mut Ctx, root: &Path, out: &Path) -> Result<u64, String> {
     if size == 0 {
         return Err(format!("{} is empty", out.display()));
     }
-    c.say(&format!(
+    say(&format!(
         "  repacked {} entries into {} ({size} bytes)",
         names.len(),
         out.display()

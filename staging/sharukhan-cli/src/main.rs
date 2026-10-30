@@ -5,6 +5,7 @@
 //! that reports a confident wrong answer is worse than one that reports none.
 
 mod author;
+mod azure;
 mod b64;
 mod branchguard;
 mod build;
@@ -102,6 +103,8 @@ PHASES (the same code `run` calls, one step at a time)
     build-iso           resolve a build-axis tuple to an ISO (see --allow-build)
     build               run the build cascade directly (replaces the run*.sh scripts);
                         --dry-run prints every phase without touching anything
+    azure-console       give an existing ISO's installed system the Azure serial
+                        console (ttyS0 on x86_64, ttyAMA0 on aarch64): --in, --out
     remaster            make an Azure variant of an ISO that already exists, by
                         rebuilding only the kernel spec (--in, --out, --hyperv)
     variant-patches     rebuild the installer variant patches from the PR branches
@@ -762,6 +765,7 @@ fn main() -> ExitCode {
         }),
         "build" => cmd_build(&args, &cfg),
         "remaster" => cmd_remaster(&args),
+        "azure-console" => azure::cli(args.input.as_deref(), args.out.as_deref(), args.arch.as_deref()),
         "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
         "pkg-lifecycle" => need_id(&args).and_then(|id| {
             cmd_pkg_lifecycle(&cfg, id, args.iso.as_deref(), lifecycle.as_ref(), args.pkg_segments)

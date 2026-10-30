@@ -407,6 +407,9 @@ pub fn build_inputs(
             req.hyperv.join(","),
             sha256::bytes(crate::kconfig::HYPERV_FRAGMENT.as_bytes())
         ));
+        // the media step (azure.rs): an ISO built before it carries no console
+        let arch = crate::remaster::Arch::parse(std::env::consts::ARCH)?;
+        out.push_str(&format!("azure-console {}\n", crate::remaster::poi::console_line(arch)));
     }
     if let Some(kb) = kb {
         // The profile (and through it the rendered pin script, FIPS editor
