@@ -299,6 +299,25 @@ fn changelog_header(line: &str) -> Option<(&str, &str)> {
     Some((&body[..end - 1], &body[end..]))
 }
 
+/// `Tue Oct 27 2026` as (year, month, day); None for anything else.
+fn date_key(d: &str) -> Option<(u32, u32, u32)> {
+    let w: Vec<&str> = d.split_whitespace().collect();
+    let [_, mon, day, year] = w.as_slice() else { return None };
+    let m = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        .iter()
+        .position(|x| x == mon)? as u32
+        + 1;
+    Some((year.parse().ok()?, m, day.parse().ok()?))
+}
+
+/// The newest changelog date in a file, as written there.
+fn newest_date(text: &str) -> Option<&str> {
+    text.lines()
+        .filter_map(|l| changelog_header(l).map(|(d, _)| d))
+        .filter(|d| date_key(d).is_some())
+        .max_by_key(|d| date_key(d))
+}
+
 /// The embedded patch with each changelog header in its context (and in its
 /// removed lines) re-dated to the header the target tree carries for the same
 /// author and version-release. A sync re-dates the kernel stack's own entry on
@@ -313,6 +332,19 @@ pub fn align_changelog_context(patch: &str, read: &dyn Fn(&str) -> Option<String
     for line in patch.split_inclusive('\n') {
         if let Some(path) = line.strip_prefix("+++ b/") {
             target = read(path.trim_end());
+            out.push_str(line);
+            continue;
+        }
+        // the patch's own entry: never older than the newest entry under it,
+        // which a rebase re-dates (an older one fails check_spec's date order)
+        if let (Some(text), Some(added)) = (target.as_deref(), line.strip_prefix('+')) {
+            let content = added.trim_end_matches('\n');
+            if let (Some((date, rest)), Some(newest)) = (changelog_header(content), newest_date(text)) {
+                if date_key(newest).is_some_and(|n| date_key(date).is_some_and(|d| d < n)) {
+                    out.push_str(&format!("+* {newest} {rest}\n"));
+                    continue;
+                }
+            }
             out.push_str(line);
             continue;
         }
@@ -474,6 +506,20 @@ mod tests {
 
     const CLOG_OLD: &str = "%changelog\n* Fri Oct 23 2026 A B <a@b> 6.12.113-6\n- Share the config\n* Fri Oct 23 2026 C D <c@d> 6.12.113-5\n- CVE fixes\n";
     const EMB: &str = "--- a/SPECS/92/linux/linux-6.12-changelog.inc\n+++ b/SPECS/92/linux/linux-6.12-changelog.inc\n@@ -1,4 +1,6 @@\n %changelog\n+* Wed Oct 28 2026 A B <a@b> 6.12.113-7\n+- Overridable canister\n * Fri Oct 23 2026 A B <a@b> 6.12.113-6\n - Share the config\n * Fri Oct 23 2026 C D <c@d> 6.12.113-5\n";
+
+    #[test]
+    fn the_patchs_own_entry_is_never_older_than_the_rebased_one_under_it() {
+        let target = "%changelog\n* Sat Oct 31 2026 A B <a@b> 6.12.114-2\n- Share\n* Wed Oct 28 2026 C D <c@d> 6.12.114-1\n- Update\n";
+        let patch = "--- a/SPECS/92/linux/linux-6.12-changelog.inc\n+++ b/SPECS/92/linux/linux-6.12-changelog.inc\n@@ -1,3 +1,5 @@\n %changelog\n+* Fri Oct 30 2026 A B <a@b> 6.12.114-3\n+- Overridable canister\n * Sat Oct 31 2026 A B <a@b> 6.12.114-2\n";
+        let out = align_changelog_context(patch, &|_: &str| Some(target.to_string()));
+        assert!(out.contains("+* Sat Oct 31 2026 A B <a@b> 6.12.114-3\n"), "{out}");
+        // a newer own date stays; so does everything that is not a header
+        let newer = patch.replace("Fri Oct 30 2026", "Mon Nov 02 2026");
+        let out = align_changelog_context(&newer, &|_: &str| Some(target.to_string()));
+        assert!(out.contains("+* Mon Nov 02 2026 A B <a@b> 6.12.114-3\n") && out.contains("+- Overridable canister\n"), "{out}");
+        assert_eq!(date_key("Sat Oct 31 2026"), Some((2026, 10, 31)));
+        assert!(date_key("Sat Okt 31 2026").is_none());
+    }
 
     #[test]
     fn a_changelog_header_is_read_and_anything_else_is_not() {
