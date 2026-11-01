@@ -329,7 +329,8 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
     let bases: BTreeMap<String, (String, String)> =
         ctx.bases.iter().map(|(k, (o, _))| (k.clone(), (o.clone(), format!("refs/sync/base/{k}")))).collect();
     let mut lines = Vec::new();
-    let res = crate::sync::analyze(&ctx.repo, &ctx.fork, &bases, &mut |l| lines.push(l.to_string()))?;
+    let known = known_heads(&ctx.c)?;
+    let res = crate::sync::analyze(&ctx.repo, &ctx.fork, &bases, &known, &mut |l| lines.push(l.to_string()))?;
     let prs = crate::sync::open_prs(&ctx.fork)?;
     ctx.c.execute("DELETE FROM sync_pr WHERE run_id = ?1", [ctx.run]).map_err(sql)?;
     let rebase_all: bool = ctx
@@ -382,6 +383,25 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
 
 /// A PR must move when it no longer merges or upstream touched its files; with
 /// `--rebase-all` every PR moves, so each one sits on the new base.
+/// Every head a PR branch had in any run (on GitHub, a candidate, a staged
+/// branch): where a child built on an earlier version of its parent starts.
+fn known_heads(c: &Connection) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let rows: Vec<(String, String, Option<String>)> = c
+        .prepare("SELECT branch, gh_head, new_head FROM sync_pr ORDER BY run_id DESC")
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
+    for (b, gh, new) in rows {
+        let v = out.entry(b).or_default();
+        for h in [Some(gh), new].into_iter().flatten().filter(|h| !h.is_empty()) {
+            if !v.contains(&h) {
+                v.push(h);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// `--rebase-all` moves every PR not yet on the tip it would move to; one
 /// already there would only get a new date (a child still moves with its
 /// parent, see analyze).
@@ -425,6 +445,7 @@ fn depth(branch: &str, rows: &[(i64, String, String, Option<String>)]) -> usize 
 
 fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
     let who = crate::author::resolve(Some(&ctx.repo))?;
+    let known = known_heads(&ctx.c)?;
     let mut rows: Vec<(i64, String, String, Option<String>)> = ctx
         .c
         .prepare("SELECT number, branch, root, parent FROM sync_pr WHERE run_id = ?1 AND action = 'rebase' AND state NOT IN ('rebased', 'resolved')")
@@ -472,7 +493,7 @@ fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
             Some(p) => {
                 // the parent head the child is built on: its staging branch when
                 // a sync published the child on a staged parent (sync::parent_head)
-                let old_parent = crate::sync::parent_head(&ctx.repo, &ctx.fork, p, &src)?;
+                let old_parent = crate::sync::parent_head(&ctx.repo, &ctx.fork, p, &src, known.get(p).map(Vec::as_slice).unwrap_or(&[]))?;
                 let new_parent = git(&ctx.repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/sync/{}/{p}", ctx.run)])
                     .unwrap_or_else(|_| old_parent.clone());
                 (git(&ctx.repo, &["merge-base", &src, &old_parent])?, new_parent)
@@ -810,7 +831,9 @@ fn row_facts(ctx: &Ctx, n: i64) -> Result<crate::prbody::Facts, String> {
             .map(|(old, new)| {
                 let from = own_from.filter(|f| !f.is_empty()).unwrap_or_else(|| {
                     let staged = parent_branch.as_deref().map(|b| format!("refs/sync/staging/{b}"));
-                    nearest_ancestor(&ctx.repo, &old_head, &[Some(old.clone()), staged].into_iter().flatten().collect::<Vec<_>>()).unwrap_or(old)
+                    let earlier = parent_branch.as_deref().and_then(|b| known_heads(&ctx.c).ok()?.remove(b)).unwrap_or_default();
+                    let cands: Vec<String> = [Some(old.clone()), staged].into_iter().flatten().chain(earlier).collect();
+                    crate::sync::nearest_ancestor(&ctx.repo, &old_head, &cands).unwrap_or(old)
                 });
                 (from, new)
             }),
@@ -824,24 +847,6 @@ fn row_facts(ctx: &Ctx, n: i64) -> Result<crate::prbody::Facts, String> {
         parent.map(|p| p as u64),
         own.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
     )
-}
-
-/// Of `candidates`, the ancestor of `head` fewest commits below it: the parent
-/// head a child was built on. None when no candidate is an ancestor.
-fn nearest_ancestor(repo: &Path, head: &str, candidates: &[String]) -> Option<String> {
-    candidates
-        .iter()
-        .filter_map(|c| {
-            let sha = git(repo, &["rev-parse", "--verify", "-q", &format!("{c}^{{commit}}")]).ok()?.trim().to_string();
-            let anc = Command::new("git").arg("-C").arg(repo).args(["merge-base", "--is-ancestor", &sha, head]).status().ok()?.success();
-            if !anc {
-                return None;
-            }
-            let n: u64 = git(repo, &["rev-list", "--count", &format!("{sha}..{head}")]).ok()?.trim().parse().ok()?;
-            Some((n, sha))
-        })
-        .min()
-        .map(|(_, sha)| sha)
 }
 
 /// One PR's description carried to its new head: (current, carried, lint
@@ -2330,10 +2335,28 @@ mod tests {
         g(&["commit", "-q", "--allow-empty", "-m", "unrelated"]);
         let unrelated = g(&["rev-parse", "HEAD"]);
         let cands = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert_eq!(nearest_ancestor(&d, &child, &cands(&[&fork_head, "refs/sync/staging/fix/parent"])), Some(staged.clone()));
-        assert_eq!(nearest_ancestor(&d, &child, &cands(&[&fork_head, "refs/sync/staging/fix/gone"])), Some(fork_head.clone()));
-        assert_eq!(nearest_ancestor(&d, &child, &cands(&[&unrelated])), None);
+        assert_eq!(crate::sync::nearest_ancestor(&d, &child, &cands(&[&fork_head, "refs/sync/staging/fix/parent"])), Some(staged.clone()));
+        assert_eq!(crate::sync::nearest_ancestor(&d, &child, &cands(&[&fork_head, "refs/sync/staging/fix/gone"])), Some(fork_head.clone()));
+        assert_eq!(crate::sync::nearest_ancestor(&d, &child, &cands(&[&unrelated])), None);
         let _ = fs::remove_dir_all(&d);
+    }
+
+    /// Sync run 16: #76 was built on run 8's staging/fix-selinux-relabel,
+    /// which run 15 replaced on the fork; only the run records still have it.
+    #[test]
+    fn every_head_a_parent_had_in_a_run_is_a_candidate() {
+        let c = db();
+        c.execute("INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'done', 'f', '/r', 'x=a..b', 'auto')", []).unwrap();
+        c.execute("INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'aborted', 'f', '/r', 'x=b..c', 'auto')", []).unwrap();
+        for (run, gh, new) in [(1, "g1", Some("run8staged")), (2, "g1", Some("run15staged"))] {
+            c.execute(
+                "INSERT INTO sync_pr (run_id, number, branch, root, gh_head, action, state, new_head) VALUES (?1, 31, 'fix-selinux-relabel', '5.0', ?2, 'rebase', 'published', ?3)",
+                rusqlite::params![run, gh, new],
+            )
+            .unwrap();
+        }
+        let k = known_heads(&c).unwrap();
+        assert_eq!(k["fix-selinux-relabel"], vec!["g1".to_string(), "run15staged".into(), "run8staged".into()]);
     }
 
     /// Sync run 12: PREPARE failed after moving the refs, ran again, and saved

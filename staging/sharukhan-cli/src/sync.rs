@@ -147,7 +147,7 @@ pub struct Analysis {
 /// sits on the staged parent, not on the parent's branch, and measured from
 /// the branch it would own every upstream commit under the staged parent. So
 /// when the fork's `staging/<p>` is an ancestor of `head`, that is the parent.
-pub fn parent_head(repo: &Path, fork: &str, p: &str, head: &str) -> Result<String, String> {
+pub fn parent_head(repo: &Path, fork: &str, p: &str, head: &str, known: &[String]) -> Result<String, String> {
     let branch = git_in(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{p}")])
         .or_else(|_| git_in(repo, &["rev-parse", &format!("refs/sync/pr/{p}")]))?
         .trim()
@@ -158,29 +158,43 @@ pub fn parent_head(repo: &Path, fork: &str, p: &str, head: &str) -> Result<Strin
         &["fetch", "-q", &format!("https://github.com/{fork}.git"), &format!("+refs/heads/staging/{p}:{staged_ref}")],
     )
     .is_ok();
-    if fetched {
-        let staged = git_in(repo, &["rev-parse", &staged_ref])?.trim().to_string();
-        let on_staged = Command::new("git")
-            .arg("-C")
-            .arg(repo)
-            .args(["merge-base", "--is-ancestor", &staged, head])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if on_staged && staged != branch {
-            return Ok(staged);
-        }
-    } else {
+    if !fetched {
         // no staging branch (any more): a stale local copy must not be used
         let _ = git_in(repo, &["update-ref", "-d", &staged_ref]);
     }
-    Ok(branch)
+    // a later sync may have replaced the staging branch the child was built
+    // on: every head the parent had in a run is a candidate, the nearest wins
+    let mut cands = vec![branch.clone()];
+    if fetched {
+        cands.push(staged_ref);
+    }
+    cands.extend(known.iter().cloned());
+    Ok(nearest_ancestor(repo, head, &cands).unwrap_or(branch))
+}
+
+/// Of `candidates`, the ancestor of `head` fewest commits below it: the parent
+/// head a child was built on. None when no candidate is an ancestor.
+pub fn nearest_ancestor(repo: &Path, head: &str, candidates: &[String]) -> Option<String> {
+    candidates
+        .iter()
+        .filter_map(|c| {
+            let sha = git_in(repo, &["rev-parse", "--verify", "-q", &format!("{c}^{{commit}}")]).ok()?.trim().to_string();
+            let anc = Command::new("git").arg("-C").arg(repo).args(["merge-base", "--is-ancestor", &sha, head]).status().ok()?.success();
+            if !anc {
+                return None;
+            }
+            let n: u64 = git_in(repo, &["rev-list", "--count", &format!("{sha}..{head}")]).ok()?.trim().parse().ok()?;
+            Some((n, sha))
+        })
+        .min()
+        .map(|(_, sha)| sha)
 }
 
 pub fn analyze(
     repo: &Path,
     fork: &str,
     bases: &BTreeMap<String, (String, String)>,
+    known: &BTreeMap<String, Vec<String>>,
     log: &mut dyn FnMut(&str),
 ) -> Result<Vec<Analysis>, String> {
     let prs = open_prs(fork)?;
@@ -207,7 +221,7 @@ pub fn analyze(
         let own_base = match &parent {
             None => git_in(repo, &["merge-base", &head, old])?.trim().to_string(),
             Some(p) => {
-                let ph = parent_head(repo, fork, p, &head)?;
+                let ph = parent_head(repo, fork, p, &head, known.get(p.as_str()).map(Vec::as_slice).unwrap_or(&[]))?;
                 git_in(repo, &["merge-base", &head, &ph])?.trim().to_string()
             }
         };
@@ -1017,7 +1031,7 @@ pub fn cli(args: &[String]) -> u8 {
                 if bases.is_empty() {
                     return Err(USAGE.into());
                 }
-                let res = analyze(&repo, fork, &bases, &mut log)?;
+                let res = analyze(&repo, fork, &bases, &BTreeMap::new(), &mut log)?;
                 for a in &res {
                     let m = match &a.merge {
                         Ok(true) => "clean".to_string(),
