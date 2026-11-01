@@ -417,8 +417,25 @@ pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, d
     } else {
         changelog_body(base).to_string()
     };
+    // an amended stack entry is no older than the parent's entry it replaces
+    let replaced = if parent_entry { changelog_body(base).lines().next().unwrap_or("") } else { "" };
+    let date = entry_date(entry[0], &format!("{replaced}\n{rest}"), date);
     let out = format!("{}* {date} {author} {version}-{next}\n{}\n{}", merged.replace(REL_MASK, &next), entry[1], rest);
     Ok((out, format!("{version}-{next}")))
+}
+
+/// The date of the PR's rebased entry: its own, while no entry below it is
+/// newer, so a rebase that changes nothing else leaves the spec as it was (and
+/// its package built); `today` when an entry below is newer, so dates still
+/// descend.
+fn entry_date(pr_header: &str, below: &str, today: &str) -> String {
+    use crate::caneq::{changelog_header, date_key, newest_date};
+    let own = changelog_header(pr_header).map(|(d, _)| d).filter(|d| date_key(d).is_some());
+    match (own, newest_date(below)) {
+        (Some(d), None) => d.to_string(),
+        (Some(d), Some(n)) if date_key(d) >= date_key(n) => d.to_string(),
+        _ => today.to_string(),
+    }
 }
 
 /// A file the PR adds that carries what a spec of the same commit held before:
@@ -496,6 +513,7 @@ pub fn rebase_changelog_include(prev: &str, pr_head: &str, base: &str, date: &st
     let vr = base_header.rsplit(' ').next().ok_or("no version-release in the base entry")?;
     let section = changelog_section(base);
     let rest: Vec<&str> = section.lines().skip(2 + base_lines.len()).collect();
+    let date = entry_date(&pr_header, &format!("{base_header}\n{}", rest.join("\n")), date);
     let mut out = format!("{}%changelog\n* {date} {author} {vr}\n", head(base));
     for l in pr_lines {
         out.push_str(&l);
@@ -1185,6 +1203,29 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
     }
 
+    /// A rebase that changes nothing in a spec leaves it byte for byte, so the
+    /// package it builds is not rebuilt (run 15: 39 packages, about three hours).
+    #[test]
+    fn a_rebase_keeps_the_prs_date_unless_an_entry_below_is_newer() {
+        let a = "Daniel Casota <dcasota@gmail.com>";
+        let spec = |rel: &str, cl: &str| format!("Name: p\nVersion: 1.0\nRelease: {rel}%{{?dist}}\n\n%changelog\n{cl}");
+        let up = "* Mon Oct 19 2026 X Y <x@y> 1.0-3\n- Old\n";
+        let prev = spec("3", up);
+        let pr = spec("4", &format!("* Tue Oct 20 2026 {a} 1.0-4\n- Fix\n{up}"));
+        let (out, _) = rebase_spec(&prev, &prev, &pr, &pr, &prev, "Sun Nov 01 2026", false, a).unwrap();
+        assert_eq!(out, pr, "the base did not touch the spec: nothing changes");
+        // the base added a newer entry: the PR's goes on top, dated today
+        let base = spec("4", &format!("* Fri Oct 30 2026 X Y <x@y> 1.0-4\n- Rebuild\n{up}"));
+        let (out, vr) = rebase_spec(&prev, &base, &pr, &pr, &base, "Sun Nov 01 2026", false, a).unwrap();
+        assert_eq!(vr, "1.0-5");
+        assert!(out.contains(&format!("%changelog\n* Sun Nov 01 2026 {a} 1.0-5\n- Fix\n* Fri Oct 30 2026 X Y")), "{out}");
+        // an entry of the same day is not newer
+        let same = spec("4", &format!("* Tue Oct 20 2026 X Y <x@y> 1.0-4\n- Rebuild\n{up}"));
+        let (out, _) = rebase_spec(&prev, &same, &pr, &pr, &same, "Sun Nov 01 2026", false, a).unwrap();
+        assert!(out.contains(&format!("* Tue Oct 20 2026 {a} 1.0-5\n")), "{out}");
+        assert_eq!(entry_date("* not a header", "", "Sun Nov 01 2026"), "Sun Nov 01 2026");
+    }
+
     #[test]
     fn a_stacked_pr_amends_the_shared_entry_of_a_changelog_include() {
         let inc = |date: &str, line: &str| {
@@ -1309,7 +1350,9 @@ mod tests {
         let (out, vr) = rebase_spec(&prev, &prev, &pr, &pr, &prev, "Sat Oct 31 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap();
         assert_eq!(vr, "2.9-1");
         assert!(out.contains("Version: 2.9\nRelease: 1%{?dist}\n"), "{out}");
-        assert!(out.contains("%changelog\n* Sat Oct 31 2026 Daniel Casota <dcasota@gmail.com> 2.9-1\n- Upgrade to v2.9\n* Fri May 15 2026 X Y <x@y> 2.8-2\n"), "{out}");
+        // nothing below is newer than the PR's entry: its date stays, the spec is unchanged
+        assert!(out.contains("%changelog\n* Tue Oct 20 2026 Daniel Casota <dcasota@gmail.com> 2.9-1\n- Upgrade to v2.9\n* Fri May 15 2026 X Y <x@y> 2.8-2\n"), "{out}");
+        assert_eq!(out, pr);
         // upstream took a new Release of the old version meanwhile: the upgrade still starts at 1
         let base = spec("2.8", "3", &format!("* Thu Oct 29 2026 X Y <x@y> 2.8-3\n- Rebuild\n{up}"));
         let (_, vr) = rebase_spec(&prev, &base, &pr, &pr, &base, "Sat Oct 31 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap();

@@ -283,7 +283,7 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 
 /// A `%changelog` entry header, `* Tue Oct 27 2026 <author> <version-release>`:
 /// (the date, the rest). None for any other line.
-fn changelog_header(line: &str) -> Option<(&str, &str)> {
+pub(crate) fn changelog_header(line: &str) -> Option<(&str, &str)> {
     let body = line.strip_prefix("* ")?;
     // weekday, month, day, year: letters, letters, digits, digits
     let shape: [(usize, fn(char) -> bool); 4] =
@@ -300,7 +300,7 @@ fn changelog_header(line: &str) -> Option<(&str, &str)> {
 }
 
 /// `Tue Oct 27 2026` as (year, month, day); None for anything else.
-fn date_key(d: &str) -> Option<(u32, u32, u32)> {
+pub(crate) fn date_key(d: &str) -> Option<(u32, u32, u32)> {
     let w: Vec<&str> = d.split_whitespace().collect();
     let [_, mon, day, year] = w.as_slice() else { return None };
     let m = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -311,7 +311,7 @@ fn date_key(d: &str) -> Option<(u32, u32, u32)> {
 }
 
 /// The newest changelog date in a file, as written there.
-fn newest_date(text: &str) -> Option<&str> {
+pub(crate) fn newest_date(text: &str) -> Option<&str> {
     text.lines()
         .filter_map(|l| changelog_header(l).map(|(d, _)| d))
         .filter(|d| date_key(d).is_some())
