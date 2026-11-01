@@ -342,8 +342,10 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
         let pr = prs.iter().find(|p| p.number == a.number).ok_or("PR vanished during analyze")?;
         let parent = crate::sync::root_base(pr, &prs, &bases.keys().map(String::as_str).collect::<Vec<_>>()).and_then(|x| x.1);
         let needs = needs_rebase(a, rebase_all);
-        let verdict = if rebase_all && !needs_rebase(a, false) {
+        let verdict = if needs && !needs_rebase(a, false) {
             format!("{}; rebased on request (--rebase-all)", crate::sync::verdict(a))
+        } else if rebase_all && !needs {
+            format!("{}; already on its new tip", crate::sync::verdict(a))
         } else {
             crate::sync::verdict(a).to_string()
         };
