@@ -133,6 +133,9 @@ pub struct Analysis {
     pub own_commits: usize,
     pub equivalent: usize,
     pub touched: Vec<String>,
+    /// the PR's own commits start at the tip it would move to: the new base,
+    /// or its parent's branch head (a rebase would only re-date it)
+    pub on_new_base: bool,
 }
 
 /// `old..new` per root, e.g. 5.0 = (a18c26c1f, refs/remotes/dcasota/5.0).
@@ -227,6 +230,11 @@ pub fn analyze(
                 .collect()),
             Err(e) => return Err(format!("git merge-tree: {e}")),
         };
+        let tip = match &parent {
+            None => git_in(repo, &["rev-parse", &format!("{new}^{{commit}}")])?,
+            Some(p) => git_in(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{p}")]).unwrap_or_default(),
+        };
+        let on_new_base = !own_base.is_empty() && tip.trim() == own_base;
         let pr_files: Vec<String> = git_in(repo, &["diff", "--name-only", &own_base, &head])?.lines().map(str::to_string).collect();
         let up_files: Vec<String> = git_in(repo, &["diff", "--name-only", old, new])?.lines().map(str::to_string).collect();
         let moved = base_renames(repo, old, new)?;
@@ -247,6 +255,7 @@ pub fn analyze(
             own_commits: own.len(),
             equivalent,
             touched,
+            on_new_base,
         });
     }
     Ok(out)

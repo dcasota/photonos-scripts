@@ -380,8 +380,11 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
 
 /// A PR must move when it no longer merges or upstream touched its files; with
 /// `--rebase-all` every PR moves, so each one sits on the new base.
+/// `--rebase-all` moves every PR not yet on the tip it would move to; one
+/// already there would only get a new date (a child still moves with its
+/// parent, see analyze).
 fn needs_rebase(a: &crate::sync::Analysis, rebase_all: bool) -> bool {
-    rebase_all || a.merge.is_err() || !a.touched.is_empty()
+    (rebase_all && !a.on_new_base) || a.merge.is_err() || !a.touched.is_empty()
 }
 
 /// `sync start` takes these flags only: a typo or `--help` must not start a run.
@@ -2376,9 +2379,14 @@ mod tests {
             own_commits: 1,
             equivalent: 0,
             touched: vec![],
+            on_new_base: false,
         };
         assert!(!needs_rebase(&clean, false));
         assert!(needs_rebase(&clean, true));
+        // already on the tip: --rebase-all leaves it, a conflict still moves it
+        let there = crate::sync::Analysis { on_new_base: true, ..clean.clone() };
+        assert!(!needs_rebase(&there, true));
+        assert!(needs_rebase(&crate::sync::Analysis { merge: Err(vec!["x".into()]), ..there }, true));
         let conflict = crate::sync::Analysis { merge: Err(vec!["SPECS/a/a.spec".into()]), ..clean.clone() };
         assert!(needs_rebase(&conflict, false));
         let touched = crate::sync::Analysis { touched: vec!["SPECS/a/a.spec".into()], ..clean };
