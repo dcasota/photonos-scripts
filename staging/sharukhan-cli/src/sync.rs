@@ -363,18 +363,23 @@ pub fn rebase_spec(prev: &str, cur: &str, pr: &str, pr_head: &str, base: &str, d
         return Ok((merged, String::new()));
     }
     let base_rel = release_value(base).ok_or("no Release in the base")?;
+    let version_of = |t: &str| t.lines().find_map(|l| l.strip_prefix("Version:").map(|v| v.trim().to_string()));
+    let version = version_of(&merged).ok_or("no Version")?;
     // A stacked PR amends its parent's entry: same Release, its line replaces
     // the parent's, so the stack still adds exactly one entry.
     let parent_entry = stacked && changelog_body(base).lines().next().is_some_and(|l| l.starts_with("* ") && l.contains(author));
     let next = if parent_entry {
         base_rel.clone()
+    } else if version_of(base).as_deref() != Some(version.as_str()) {
+        // the PR upgrades the Version: its Release counts from the new
+        // version's start, as the PR numbered it, not from the base's
+        if version_of(pr).as_deref() != Some(version.as_str()) {
+            return Err(format!("the PR sets Version {version}, its spec says {}: needs a person", version_of(pr).unwrap_or_default()));
+        }
+        release_value(pr).ok_or("no Release in the PR's spec")?
     } else {
         next_release(&base_rel).ok_or_else(|| format!("cannot increment Release {base_rel}"))?
     };
-    let version = merged
-        .lines()
-        .find_map(|l| l.strip_prefix("Version:").map(|v| v.trim().to_string()))
-        .ok_or("no Version")?;
     let entry: Vec<&str> = changelog_body(pr_head).lines().take(2).collect();
     if entry.len() < 2 || !entry[0].starts_with("* ") || !entry[0].contains(author) {
         return Err(format!("the top changelog entry of the PR is not its own: {}", entry.first().unwrap_or(&"")));
@@ -1267,6 +1272,30 @@ mod tests {
         // a real conflict is refused, not resolved
         let other = head("1", "1.1", "Patch9: other.patch", "");
         assert!(rebase_spec(&prev, &other, &pr, &pr, &base, "Fri Oct 23 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap_err().contains("conflict"));
+    }
+
+    /// Sync run 15: #26 upgrades photon-os-installer 2.8-2 to 2.9-1; counted
+    /// from the base's Release it became 2.9-3.
+    #[test]
+    fn a_version_upgrade_keeps_the_prs_release_on_the_new_version() {
+        let spec = |ver: &str, rel: &str, cl: &str| format!("Name: p\nVersion: {ver}\nRelease: {rel}%{{?dist}}\n\n%changelog\n{cl}");
+        let up = "* Fri May 15 2026 X Y <x@y> 2.8-2\n- Extend\n";
+        let prev = spec("2.8", "2", up);
+        let pr = spec("2.9", "1", &format!("* Tue Oct 20 2026 Daniel Casota <dcasota@gmail.com> 2.9-1\n- Upgrade to v2.9\n{up}"));
+        // the base moved elsewhere; this spec is the same
+        let (out, vr) = rebase_spec(&prev, &prev, &pr, &pr, &prev, "Sat Oct 31 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap();
+        assert_eq!(vr, "2.9-1");
+        assert!(out.contains("Version: 2.9\nRelease: 1%{?dist}\n"), "{out}");
+        assert!(out.contains("%changelog\n* Sat Oct 31 2026 Daniel Casota <dcasota@gmail.com> 2.9-1\n- Upgrade to v2.9\n* Fri May 15 2026 X Y <x@y> 2.8-2\n"), "{out}");
+        // upstream took a new Release of the old version meanwhile: the upgrade still starts at 1
+        let base = spec("2.8", "3", &format!("* Thu Oct 29 2026 X Y <x@y> 2.8-3\n- Rebuild\n{up}"));
+        let (_, vr) = rebase_spec(&prev, &base, &pr, &pr, &base, "Sat Oct 31 2026", false, "Daniel Casota <dcasota@gmail.com>").unwrap();
+        assert_eq!(vr, "2.9-1");
+        // a child on the upgraded parent amends the parent's entry: 2.9-1 stays
+        let parent = spec("2.9", "1", &format!("* Sat Oct 31 2026 Daniel Casota <dcasota@gmail.com> 2.9-1\n- Upgrade to v2.9\n{up}"));
+        let child = spec("2.9", "1", &format!("* Tue Oct 20 2026 Daniel Casota <dcasota@gmail.com> 2.9-1\n- Upgrade to v2.9; STIG packages\n{up}"));
+        let (_, vr) = rebase_spec(&pr, &parent, &child, &child, &parent, "Sat Oct 31 2026", true, "Daniel Casota <dcasota@gmail.com>").unwrap();
+        assert_eq!(vr, "2.9-1");
     }
 
     #[test]
