@@ -2388,12 +2388,18 @@ fn is_stale_version(name: &str, fams: &SpecFamilies) -> bool {
 /// touch.
 fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
+    let sub = build_subrelease(c, &release_tree);
     for spec in patched_specs(c) {
         // Resolved, not read: a kernel spec that serves several subreleases
         // keeps Release in an included file behind a subrelease conditional.
         let Some(text) = resolved_spec(c, &release_tree, Path::new(&spec)) else {
             continue;
         };
+        // A spec this subrelease does not build (SPECS/91/mariadb 11.8.8 at
+        // 92) shadows nothing: the RPM above it is the one that builds here.
+        if !builds_at(&text, sub) {
+            continue;
+        }
         let Some(fams) = spec_families_text(&text) else {
             continue;
         };
@@ -2444,6 +2450,14 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
             }
         }
     }
+}
+
+/// False only when the spec's `%global build_if` decides it is not built at
+/// `sub`; an unknown subrelease or an expression that cannot be read builds.
+fn builds_at(spec: &str, sub: Option<u32>) -> bool {
+    let Some(sub) = sub else { return true };
+    let cond = spec.lines().find_map(|l| l.trim().strip_prefix("%global build_if").map(|r| r.trim().to_string()));
+    cond.map(|c| crate::sync::eval_build_if(&c, sub) != Some(false)).unwrap_or(true)
 }
 
 /// ISOs at the top of the stage. A build moves its ISO out when it delivers
@@ -5010,6 +5024,56 @@ mod tests {
         assert!(!got.iter().any(|p| p.contains("ToolChainUtils")), "{got:?}");
         assert!(!got.iter().any(|p| p.contains("README")), "{got:?}");
         let _ = fs::remove_file(&tmp);
+    }
+
+    /// Sync run 15: the subrelease-91 copy SPECS/91/mariadb (11.8.8-2) made
+    /// the purge delete mariadb 11.8.9-2, the build at 92's own package, and
+    /// mariadb was built a second time in the same gate.
+    #[test]
+    fn a_spec_this_subrelease_does_not_build_shadows_nothing() {
+        let tmp = std::env::temp_dir().join(format!("shk-shadow-sr-{}", std::process::id()));
+        let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
+        let _ = fs::remove_dir_all(&tmp);
+        crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
+        fs::create_dir_all(&rpms).unwrap();
+        for (dir, cond, ver, rel) in [
+            ("SPECS/mariadb", ">= 92", "11.8.9", "2"),
+            ("SPECS/91/mariadb", "== 91", "11.8.8", "2"),
+        ] {
+            let d = tmp.join("release/5.0").join(dir);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(
+                d.join("mariadb.spec"),
+                format!("%global build_if %{{photon_subrelease}} {cond}\nName:           mariadb\nVersion:        {ver}\nRelease:        {rel}%{{?dist}}\n%package server\n"),
+            )
+            .unwrap();
+        }
+        let spared = ["mariadb-11.8.9-2.ph5.x86_64.rpm", "mariadb-server-11.8.9-2.ph5.x86_64.rpm"];
+        // a real shadow of the spec 92 builds still goes
+        let doomed = ["mariadb-11.8.9-3.ph5.x86_64.rpm", "mariadb-server-11.9.0-1.ph5.x86_64.rpm"];
+        for f in doomed.iter().chain(spared.iter()) {
+            fs::write(rpms.join(f), b"x").unwrap();
+        }
+        // the variant patch touches both copies, as #57 does
+        let patch = tmp.join("variant.patch");
+        fs::write(&patch, "+++ b/SPECS/mariadb/mariadb.spec\n+++ b/SPECS/91/mariadb/mariadb.spec\n").unwrap();
+        let mut sp = BuildSpec::from_args(&tmp.join("release").to_string_lossy(), "common", "5.0", "/out", "minimal-iso", "prebuilt", None).unwrap();
+        sp.subrelease = Subrelease::Mainline;
+        sp.injections.push(Injection::TreePatch { tree: Tree::Release, patch });
+        {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            purge_shadowing_rpms(&mut c, &tmp.join("release/5.0/stage"));
+        }
+        for f in spared {
+            assert!(rpms.join(f).exists(), "{f} is what 92 builds and must survive");
+        }
+        for f in doomed {
+            assert!(!rpms.join(f).exists(), "{f} shadows the spec 92 builds and must go");
+        }
+        assert!(builds_at("%global build_if %{photon_subrelease} == 91\n", None), "an unknown subrelease decides nothing");
+        assert!(builds_at("%global build_if %{with_x}\n", Some(92)), "an unreadable condition decides nothing");
+        assert!(!builds_at("%global build_if %{photon_subrelease} <= 90\n", Some(92)));
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     /// The old prefix match `{pkg}-{ver}-` never covered a subpackage.
