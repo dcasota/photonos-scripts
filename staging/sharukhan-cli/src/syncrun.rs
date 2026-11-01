@@ -114,6 +114,8 @@ pub fn ensure_schema(c: &Connection) -> Result<(), String> {
         ("sync_pr", "upstream_pr", "INTEGER"),
         ("sync_run", "upstream_approved", "INTEGER NOT NULL DEFAULT 0"),
         ("sync_run", "rebase_all", "INTEGER NOT NULL DEFAULT 0"),
+        // added when children moved off staged parents: where REBASE found the PR's own commits to start
+        ("sync_pr", "own_from", "TEXT"),
     ] {
         let has: bool = c
             .prepare(&format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{col}'"))
@@ -478,8 +480,8 @@ fn rebase_stage(ctx: &Ctx) -> Result<Outcome, String> {
                 git(&ctx.repo, &["update-ref", &format!("refs/heads/{target}"), &r.head])?;
                 ctx.c
                     .execute(
-                        "UPDATE sync_pr SET new_head = ?1, state = 'rebased', detail = ?2 WHERE run_id = ?3 AND number = ?4",
-                        rusqlite::params![r.head, r.releases.iter().map(|(f, v)| format!("{f} {v}")).collect::<Vec<_>>().join(", "), ctx.run, n],
+                        "UPDATE sync_pr SET new_head = ?1, state = 'rebased', detail = ?2, own_from = ?5 WHERE run_id = ?3 AND number = ?4",
+                        rusqlite::params![r.head, r.releases.iter().map(|(f, v)| format!("{f} {v}")).collect::<Vec<_>>().join(", "), ctx.run, n, own_base.trim()],
                     )
                     .map_err(sql)?;
                 log.push(format!("#{n} {branch} -> {target} {}", &r.head[..12]));
@@ -776,28 +778,37 @@ fn gate(ctx: &Ctx) -> Result<Outcome, String> {
 
 /// The facts of PR `n` in this run: its root's bases, its parent's heads.
 fn row_facts(ctx: &Ctx, n: i64) -> Result<crate::prbody::Facts, String> {
-    let (root, old_head, new_head, parent): (String, String, String, Option<i64>) = ctx
+    let (root, old_head, new_head, parent, parent_branch, own_from): (String, String, String, Option<i64>, Option<String>, Option<String>) = ctx
         .c
         .query_row(
-            "SELECT p.root, p.gh_head, p.new_head, (SELECT q.number FROM sync_pr q WHERE q.run_id = p.run_id AND q.branch = p.parent) \
+            "SELECT p.root, p.gh_head, p.new_head, (SELECT q.number FROM sync_pr q WHERE q.run_id = p.run_id AND q.branch = p.parent), p.parent, p.own_from \
              FROM sync_pr p WHERE p.run_id = ?1 AND p.number = ?2",
             rusqlite::params![ctx.run, n],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<String>>(2)?.unwrap_or_default(), r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<String>>(2)?.unwrap_or_default(), r.get(3)?, r.get(4)?, r.get(5)?)),
         )
         .map_err(sql)?;
     if new_head.is_empty() {
         return Err(format!("#{n} has no candidate in run {}", ctx.run));
     }
     let (old_base, _) = ctx.bases.get(&root).ok_or_else(|| format!("#{n}: root {root} is not a base of the run"))?;
-    // a stacked PR's own commits start at its parent's head, before and after
+    // a stacked PR's own commits start at its parent's head, before and after;
+    // before, that is the head REBASE moved it from (a staged parent's, when a
+    // sync published the child on one), not the parent's own GitHub head
     let own: Option<(String, String)> = match parent {
         None => None,
         Some(p) => ctx
             .c
             .query_row("SELECT gh_head, coalesce(new_head, gh_head) FROM sync_pr WHERE run_id = ?1 AND number = ?2", rusqlite::params![ctx.run, p], |r| {
-                Ok((r.get(0)?, r.get(1)?))
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             })
-            .ok(),
+            .ok()
+            .map(|(old, new)| {
+                let from = own_from.filter(|f| !f.is_empty()).unwrap_or_else(|| {
+                    let staged = parent_branch.as_deref().map(|b| format!("refs/sync/staging/{b}"));
+                    nearest_ancestor(&ctx.repo, &old_head, &[Some(old.clone()), staged].into_iter().flatten().collect::<Vec<_>>()).unwrap_or(old)
+                });
+                (from, new)
+            }),
     };
     crate::prbody::gather(
         &ctx.repo,
@@ -808,6 +819,24 @@ fn row_facts(ctx: &Ctx, n: i64) -> Result<crate::prbody::Facts, String> {
         parent.map(|p| p as u64),
         own.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
     )
+}
+
+/// Of `candidates`, the ancestor of `head` fewest commits below it: the parent
+/// head a child was built on. None when no candidate is an ancestor.
+fn nearest_ancestor(repo: &Path, head: &str, candidates: &[String]) -> Option<String> {
+    candidates
+        .iter()
+        .filter_map(|c| {
+            let sha = git(repo, &["rev-parse", "--verify", "-q", &format!("{c}^{{commit}}")]).ok()?.trim().to_string();
+            let anc = Command::new("git").arg("-C").arg(repo).args(["merge-base", "--is-ancestor", &sha, head]).status().ok()?.success();
+            if !anc {
+                return None;
+            }
+            let n: u64 = git(repo, &["rev-list", "--count", &format!("{sha}..{head}")]).ok()?.trim().parse().ok()?;
+            Some((n, sha))
+        })
+        .min()
+        .map(|(_, sha)| sha)
 }
 
 /// One PR's description carried to its new head: (current, carried, lint
@@ -2265,6 +2294,40 @@ mod tests {
         // before PUBLISH an abort keeps nothing
         c.execute("UPDATE sync_stage SET state = 'failed' WHERE run_id = 1 AND name = 'PUBLISH'", []).unwrap();
         assert!(kept_after_publish(&c, 1).unwrap().0.is_empty());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// Sync run 15: #76 sat on its parent's staging branch, which carries a
+    /// newer base than the parent's fork head; measured from the fork head,
+    /// the base's files counted as the PR's own change.
+    #[test]
+    fn a_child_on_a_staged_parent_is_measured_from_the_staged_head() {
+        let d = std::env::temp_dir().join(format!("shk-near-anc-{}-{}", std::process::id(), crate::job::stamp()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        let g = |a: &[&str]| -> String {
+            let o = Command::new("git").arg("-C").arg(&d).args(a).output().unwrap();
+            assert!(o.status.success(), "{a:?}: {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        g(&["init", "-q", "-b", "5.0"]);
+        g(&["config", "user.email", "a@b"]);
+        g(&["config", "user.name", "A B"]);
+        g(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        g(&["commit", "-q", "--allow-empty", "-m", "parent on the old base"]);
+        let fork_head = g(&["rev-parse", "HEAD"]);
+        g(&["commit", "-q", "--allow-empty", "-m", "newer base, staged parent"]);
+        let staged = g(&["rev-parse", "HEAD"]);
+        g(&["update-ref", "refs/sync/staging/fix/parent", &staged]);
+        g(&["commit", "-q", "--allow-empty", "-m", "the child's own commit"]);
+        let child = g(&["rev-parse", "HEAD"]);
+        g(&["checkout", "-q", "-b", "other", &fork_head]);
+        g(&["commit", "-q", "--allow-empty", "-m", "unrelated"]);
+        let unrelated = g(&["rev-parse", "HEAD"]);
+        let cands = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(nearest_ancestor(&d, &child, &cands(&[&fork_head, "refs/sync/staging/fix/parent"])), Some(staged.clone()));
+        assert_eq!(nearest_ancestor(&d, &child, &cands(&[&fork_head, "refs/sync/staging/fix/gone"])), Some(fork_head.clone()));
+        assert_eq!(nearest_ancestor(&d, &child, &cands(&[&unrelated])), None);
         let _ = fs::remove_dir_all(&d);
     }
 
