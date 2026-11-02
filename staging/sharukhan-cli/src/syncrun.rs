@@ -260,8 +260,42 @@ pub fn start(c: &Connection, fork: &str, repo: &Path, roots: &[&str], publish: &
 
 // --- the input recheck ------------------------------------------------------
 
-/// Still the state ANALYZE planned for? The fork's base heads and every PR head.
+/// Still the state ANALYZE planned for? The fork's base heads and every PR
+/// head; before UPSTREAM only the heads that stage moves (see `upstream_scope`).
 pub fn inputs_moved(c: &Connection, run: i64, fork: &str, bases: &BTreeMap<String, (String, String)>) -> Result<Option<String>, String> {
+    inputs_moved_in(c, run, fork, bases, None)
+}
+
+/// The PRs UPSTREAM moves and the ones they stack on: after the gate and the
+/// fork's publish, a PR outside these stacks moving on GitHub changes nothing
+/// UPSTREAM pushes (run 16: #67 amended on the fork, no vmware PR).
+fn upstream_scope(c: &Connection, run: i64) -> Result<std::collections::BTreeSet<i64>, String> {
+    let rows: Vec<(i64, String, Option<String>, String)> = c
+        .prepare("SELECT number, branch, parent, state FROM sync_pr WHERE run_id = ?1")
+        .and_then(|mut s| s.query_map([run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map(|x| x.flatten().collect()))
+        .map_err(sql)?;
+    let mut scope = std::collections::BTreeSet::new();
+    for (n, _, parent, _) in rows.iter().filter(|r| r.3 == "staged") {
+        scope.insert(*n);
+        // up the stack; a parent already in the scope has its chain there too
+        let mut p = parent.clone();
+        while let Some(r) = p.as_deref().and_then(|b| rows.iter().find(|r| r.1 == b)) {
+            if !scope.insert(r.0) {
+                break;
+            }
+            p = r.2.clone();
+        }
+    }
+    Ok(scope)
+}
+
+fn inputs_moved_in(
+    c: &Connection,
+    run: i64,
+    fork: &str,
+    bases: &BTreeMap<String, (String, String)>,
+    only: Option<&std::collections::BTreeSet<i64>>,
+) -> Result<Option<String>, String> {
     let source: String = c
         .query_row("SELECT coalesce(against, fork) FROM sync_run WHERE id = ?1", [run], |r| r.get(0))
         .unwrap_or_else(|_| fork.to_string());
@@ -281,6 +315,9 @@ pub fn inputs_moved(c: &Connection, run: i64, fork: &str, bases: &BTreeMap<Strin
     }
     let current: BTreeMap<u64, String> = crate::sync::open_prs(fork)?.into_iter().map(|p| (p.number, p.gh_head)).collect();
     for (n, lease) in leases {
+        if only.is_some_and(|o| !o.contains(&n)) {
+            continue;
+        }
         match current.get(&(n as u64)) {
             Some(h) if *h == lease => {}
             Some(h) => return Ok(Some(format!("PR #{n} moved on GitHub to {} since ANALYZE", &h[..9]))),
@@ -1601,7 +1638,8 @@ pub fn drive(c: &Connection, run: i64, results: &Path, until: Option<&str>) -> R
             return Ok(format!("aborted before {name}"));
         }
         if *name != "ANALYZE" && *name != "DONE" {
-            if let Some(why) = inputs_moved(c, run, &ctx.fork, &ctx.bases)? {
+            let scope = if *name == "UPSTREAM" { Some(upstream_scope(c, run)?) } else { None };
+            if let Some(why) = inputs_moved_in(c, run, &ctx.fork, &ctx.bases, scope.as_ref())? {
                 set_run(c, run, "superseded", &why)?;
                 return Ok(format!("superseded: {why}"));
             }
@@ -2072,6 +2110,9 @@ pub fn cli(args: &[String]) -> Option<u8> {
             }
             "resume" => {
                 let id = num(1)?;
+                // a superseded run continues only when the check that stopped it
+                // passes now, for the stage it stopped at: drive checks again
+                c.execute("UPDATE sync_run SET state = 'paused' WHERE id = ?1 AND state = 'superseded'", [id]).map_err(sql)?;
                 let out = drive(&c, id, &results, until)?;
                 announce(&c, id, &out)?;
                 Ok(out)
@@ -2357,6 +2398,29 @@ mod tests {
         }
         let k = known_heads(&c).unwrap();
         assert_eq!(k["fix-selinux-relabel"], vec!["g1".to_string(), "run15staged".into(), "run8staged".into()]);
+    }
+
+    /// Sync run 16: #67 was amended on the fork after the gate; UPSTREAM moves
+    /// only the staged stacks, so its lease covers those and their parents.
+    #[test]
+    fn upstream_checks_only_the_stacks_it_moves() {
+        let c = db();
+        c.execute("INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'awaiting-approval', 'f', '/r', 'x=a..b', 'auto')", []).unwrap();
+        for (n, b, parent, st) in [
+            (24, "fix/a", None, "published"),
+            (29, "fix/b", Some("fix/a"), "staged"),
+            (36, "fix/c", Some("fix/b"), "staged"),
+            (67, "fix/other", None, "pending"),
+            (54, "fix/d", Some("fix/c"), "published"),
+        ] {
+            c.execute(
+                "INSERT INTO sync_pr (run_id, number, branch, root, parent, gh_head, action, state) VALUES (1, ?1, ?2, '5.0', ?3, 'h', 'keep', ?4)",
+                rusqlite::params![n, b, parent, st],
+            )
+            .unwrap();
+        }
+        let scope = upstream_scope(&c, 1).unwrap();
+        assert_eq!(scope.into_iter().collect::<Vec<_>>(), vec![24, 29, 36]);
     }
 
     /// Sync run 12: PREPARE failed after moving the refs, ran again, and saved
