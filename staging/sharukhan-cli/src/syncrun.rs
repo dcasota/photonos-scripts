@@ -362,6 +362,33 @@ fn child(ctx: &Ctx, name: &str, args: &[&str]) -> Result<bool, String> {
     Ok(st.success())
 }
 
+/// A stack moves as one: a PR stacked on one that is rebased moves with it,
+/// and so does the PR a rebased one stacks on - a child moved onto a parent
+/// left on the old base still conflicts with the new one (run 17: #29 on #24).
+/// The number of PRs this turned from keep to rebase.
+fn move_stacks(c: &Connection, run: i64) -> Result<usize, String> {
+    let mut moved = 0;
+    loop {
+        let n = c
+            .execute(
+                "UPDATE sync_pr SET action = 'rebase', detail = 'its parent is rebased' WHERE run_id = ?1 AND action = 'keep' \
+                 AND parent IN (SELECT branch FROM sync_pr WHERE run_id = ?1 AND action = 'rebase')",
+                [run],
+            )
+            .map_err(sql)?
+            + c.execute(
+                "UPDATE sync_pr SET action = 'rebase', detail = 'a PR stacked on it is rebased' WHERE run_id = ?1 AND action = 'keep' \
+                 AND branch IN (SELECT parent FROM sync_pr WHERE run_id = ?1 AND action = 'rebase' AND parent IS NOT NULL)",
+                [run],
+            )
+            .map_err(sql)?;
+        if n == 0 {
+            return Ok(moved);
+        }
+        moved += n;
+    }
+}
+
 fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
     let bases: BTreeMap<String, (String, String)> =
         ctx.bases.iter().map(|(k, (o, _))| (k.clone(), (o.clone(), format!("refs/sync/base/{k}")))).collect();
@@ -399,21 +426,7 @@ fn analyze(ctx: &Ctx) -> Result<Outcome, String> {
             .map_err(sql)?;
         lines.push(format!("#{} {} {verdict}", a.number, a.head_ref));
     }
-    // a PR stacked on one that is rebased must move with it
-    loop {
-        let n = ctx
-            .c
-            .execute(
-                "UPDATE sync_pr SET action = 'rebase', detail = 'its parent is rebased' WHERE run_id = ?1 AND action = 'keep' \
-                 AND parent IN (SELECT branch FROM sync_pr WHERE run_id = ?1 AND action = 'rebase')",
-                [ctx.run],
-            )
-            .map_err(sql)?;
-        if n == 0 {
-            break;
-        }
-        rebase += n;
-    }
+    rebase += move_stacks(ctx.c, ctx.run)?;
     fs::write(ctx.dir.join("ANALYZE.log"), lines.join("\n") + "\n").map_err(|e| format!("{e}"))?;
     Ok(Outcome::Done(format!("{} PR(s), {rebase} to rebase", res.len())))
 }
@@ -2454,6 +2467,37 @@ mod tests {
         }
         assert!(check_start_args(&a(&[])).is_ok());
         assert!(check_start_args(&a(&["--rebase-all", "--until", "GATE", "--fork", "o/r", "--repo", "/g", "--against", "v/p"])).is_ok());
+    }
+
+    /// Run 17: #29 conflicted with the new base, its parent #24 merged cleanly
+    /// and was kept, so #29 moved onto a parent still on the old base.
+    #[test]
+    fn a_stack_moves_as_one() {
+        let c = db();
+        c.execute("INSERT INTO sync_run (started_at, state, fork, repo, bases, publish) VALUES ('t', 'running', 'f', '/r', 'x=a..b', 'auto')", []).unwrap();
+        for (n, b, parent, action) in [
+            (24, "fix/a", None, "keep"),
+            (29, "fix/b", Some("fix/a"), "rebase"),
+            (36, "fix/c", Some("fix/b"), "keep"),
+            (25, "fix/sibling", Some("fix/a"), "keep"),
+            (67, "fix/other", None, "keep"),
+        ] {
+            c.execute(
+                "INSERT INTO sync_pr (run_id, number, branch, root, parent, gh_head, action, state) VALUES (1, ?1, ?2, '5.0', ?3, 'h', ?4, 'pending')",
+                rusqlite::params![n, b, parent, action],
+            )
+            .unwrap();
+        }
+        assert_eq!(move_stacks(&c, 1).unwrap(), 3);
+        let moved: Vec<i64> = c
+            .prepare("SELECT number FROM sync_pr WHERE run_id = 1 AND action = 'rebase' ORDER BY number")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .flatten()
+            .collect();
+        // the parent, the child above, and the parent's other child; not an unrelated PR
+        assert_eq!(moved, vec![24, 25, 29, 36]);
     }
 
     #[test]
