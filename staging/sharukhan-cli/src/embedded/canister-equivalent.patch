@@ -2,7 +2,7 @@
 +++ b/SPECS/92/linux/linux-6.12-changelog.inc
 @@ -1,4 +1,22 @@
  %changelog
-+* Tue Nov 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.114-4
++* Wed Nov 04 2026 Daniel Casota <dcasota@gmail.com> 6.12.115-3
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
@@ -20,9 +20,9 @@
 +  version cannot be tested by the conditional either: _isConditionTrue() runs
 +  eval() on the expanded text after lstrip("0"), which is a NameError for a
 +  version string. Hence a 0/1 flag plus a separate value macro.
- * Tue Nov 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.114-3
+ * Wed Nov 04 2026 Daniel Casota <dcasota@gmail.com> 6.12.115-2
  - Share canister_config.inc; build the canister against the current kernel
- * Tue Nov 03 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 6.12.114-2
+ * Tue Nov 03 2026 Gerrit Photon <svc.photon-ci@broadcom.com> 6.12.115-1
 --- a/SPECS/92/linux/linux-6.12.inc
 +++ b/SPECS/92/linux/linux-6.12.inc
 @@ -69,9 +69,16 @@
@@ -48,8 +48,8 @@
  %global canister_build 0
  %endif
  
--Release:        3%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
-+Release:        4%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
+-Release:        2%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
++Release:        3%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
  
  %define uname_r %{version}-%{release}
  %define _modulesdir /lib/modules/%{uname_r}
@@ -83,21 +83,21 @@
 +++ b/SPECS/92/linux/linux-esx-6.12-changelog.inc
 @@ -1,4 +1,8 @@
  %changelog
-+* Tue Nov 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.114-4
++* Wed Nov 04 2026 Daniel Casota <dcasota@gmail.com> 6.12.115-3
 +- Accept the same canister_equivalent / fips_canister_override pair as
 +  linux.spec, so this flavour - the one the ISO actually boots - can link a
 +  locally built canister too. It never builds one; it only links.
- * Tue Nov 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.114-3
+ * Wed Nov 04 2026 Daniel Casota <dcasota@gmail.com> 6.12.115-2
  - Share canister_config.inc; %%ghost the files depmod generates
- * Tue Nov 03 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 6.12.114-2
+ * Tue Nov 03 2026 Gerrit Photon <svc.photon-ci@broadcom.com> 6.12.115-1
 --- a/SPECS/92/linux/linux-esx-6.12.inc
 +++ b/SPECS/92/linux/linux-esx-6.12.inc
 @@ -38,7 +38,7 @@
  %global canister_usage 0
  %endif
  
--Release:        3%{?dist}
-+Release:        4%{?dist}
+-Release:        2%{?dist}
++Release:        3%{?dist}
  
  %define uname_r %{version}-%{release}-esx
  %define _modulesdir /lib/modules/%{uname_r}
