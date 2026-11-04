@@ -3159,6 +3159,36 @@ char *check_urlhealth(pr_task_t                       *task,
         };
         for (size_t i = 0; i < sizeof k_hard / sizeof k_hard[0]; i++) {
             if (!spec_eq(task->Spec, k_hard[i].spec)) continue;
+            /* M57 guard: a pinned version is an update only while it is
+             * NEWER than what the spec builds. The table is maintained by
+             * hand, so a spec moves past its pin (mpc 1.4.1 vs pin 1.3.1,
+             * libtiff 4.7.2 vs 4.7.1) or reaches it (cdrkit 1.1.11,
+             * python-ruamel-yaml 0.19.1); without this compare such a row
+             * reported the pin as UpdateAvailable -- an older or equal
+             * version presented as an update. Compared against the cut
+             * form (state.version), as every detection path above is. */
+            int hc = pr_version_compare(k_hard[i].ver,
+                                        state.version ? state.version : "");
+            if (hc != 1) {
+                if (k_hard[i].archdate[0]) {
+                    free(state.ArchivationDate);
+                    state.ArchivationDate = dup_or_empty(k_hard[i].archdate);
+                }
+                if (hc == 0) {
+                    free(state.UpdateAvailable);
+                    state.UpdateAvailable = dup_or_empty("(same version)");
+                    free(state.UpdateURL);
+                    state.UpdateURL = dup_or_empty("");
+                    free(state.HealthUpdateURL);
+                    state.HealthUpdateURL = dup_or_empty("");
+                    free(state.UpdateDownloadName);
+                    state.UpdateDownloadName = dup_or_empty("");
+                }
+                /* hc == -1: the spec is newer than the pin; the dynamic
+                 * detection result above stands. hc == -2: unparsable,
+                 * likewise. */
+                break;
+            }
             free(state.UpdateAvailable); state.UpdateAvailable = dup_or_empty(k_hard[i].ver);
             free(state.UpdateURL);       state.UpdateURL       = dup_or_empty(k_hard[i].url);
             free(state.HealthUpdateURL); state.HealthUpdateURL = dup_or_empty("200");

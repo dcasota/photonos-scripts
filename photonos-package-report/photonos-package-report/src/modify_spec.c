@@ -198,11 +198,29 @@ int pr_modify_spec_file(const pr_task_t *task,
         out_buf[out_used++] = '\n';                                      \
     } while (0)
 
-    int skip_next = 0;          /* PS $skip — skip one line after Source0: */
+    /* The PS port skipped "the line after Source0:" unconditionally
+     * ($skip), assuming it is the old `%define sha512 <name>=<hex>` line.
+     * Photon 5.0 specs put that define BEFORE Source0, so the skipped line
+     * was whatever followed Source0 -- sendmail.spec lost
+     * `Source1: %{name}.sysusers` and the rewritten spec no longer builds.
+     * Drop exactly the checksum defines the new sha_line replaces, wherever
+     * they are, and nothing else. */
+    const int replace_sha = (sha_line && sha_line[0]);
 
     for (size_t i = 0; i < task->content_lines; i++) {
         const char *line = task->content[i] ? task->content[i] : "";
-        if (skip_next) { skip_next = 0; continue; }
+        if (replace_sha) {
+            const char *l = line;
+            while (*l == ' ' || *l == '\t') l++;
+            if (strncmp(l, "%define sha1 ", 13) == 0
+                || strncmp(l, "%define sha256 ", 15) == 0
+                || strncmp(l, "%define sha512 ", 15) == 0
+                || strncmp(l, "%global sha1 ", 13) == 0
+                || strncmp(l, "%global sha256 ", 15) == 0
+                || strncmp(l, "%global sha512 ", 15) == 0) {
+                continue;
+            }
+        }
 
         if (ilike_contains(line, "Version:")) {
             char *v = replace_after_colon("Version:", version_value);
@@ -254,7 +272,6 @@ int pr_modify_spec_file(const pr_task_t *task,
             EMIT(src0_line);
             free(swapped);
             if (sha_line && sha_line[0]) EMIT(sha_line);
-            skip_next = 1;
         } else if (ilike_prefix(line, "%changelog")) {
             EMIT(line);
             EMIT(line1);
