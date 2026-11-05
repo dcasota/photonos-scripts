@@ -24,6 +24,9 @@ pub struct IsoRequest {
     /// A kernel profile (`sharukhan wrapper`), e.g. `7.3-rc4`; None builds
     /// the release's own kernel.
     pub kernel: Option<String>,
+    /// A systemd profile (`sharukhan systemd`), e.g. `262.2`; None builds the
+    /// release's own systemd.
+    pub systemd: Option<String>,
     /// `--compose-only`: compose the image from the phase-B kernels already
     /// in the stage, proven to be phase B's, instead of purging and
     /// rebuilding them. Only an equivalent build whose canister is already
@@ -50,8 +53,12 @@ impl IsoRequest {
     }
     pub fn key(&self) -> String {
         let base = format!("{}-poi{}-{}{}", self.iso_type, self.poi, self.canister, self.hyperv_suffix());
-        match &self.kernel {
+        let base = match &self.kernel {
             Some(k) => format!("{base}-k{k}"),
+            None => base,
+        };
+        match &self.systemd {
+            Some(s) => format!("{base}-s{s}"),
             None => base,
         }
     }
@@ -85,6 +92,10 @@ impl IsoRequest {
             .as_deref()
             .map(|k| format!(" --kernel {k}"))
             .unwrap_or_default();
+        let k = match &self.systemd {
+            Some(s) => format!("{k} --systemd {s}"),
+            None => k,
+        };
         let h = match self.hyperv.as_slice() {
             [] => String::new(),
             [only] if only == "linux" => " --hyperv".to_string(),
@@ -151,6 +162,10 @@ pub fn plan(
     force: bool,
     allow_build: bool,
 ) -> Result<Plan, String> {
+    if let Some(s) = &req.systemd {
+        let (sc, _, _) = crate::sdver::context(cfg, s, req.kernel.as_deref())?;
+        return plan_in(&sc, req, force, allow_build, None);
+    }
     match kernel_context(cfg, req)? {
         Some((kc, kb)) => plan_in(&kc, req, force, allow_build, Some(&kb)),
         None => plan_in(cfg, req, force, allow_build, None),
@@ -197,6 +212,10 @@ fn plan_in(
     let patch = cfg.variant_patches.join(format!("poi-{}.patch", req.poi));
     if !patch.is_file() {
         let k = kb.map(|k| format!(" --kernel {}", k.name)).unwrap_or_default();
+        let k = match &cfg.systemd {
+            Some(s) => format!("{k} --systemd {}", s.name),
+            None => k,
+        };
         return Err(format!(
             "no variant patch at {} - run `sharukhan variant-patches{k}`",
             patch.display()
@@ -411,6 +430,10 @@ pub fn build_inputs(
         let arch = crate::remaster::Arch::parse(std::env::consts::ARCH)?;
         out.push_str(&format!("azure-console {}\n", crate::remaster::poi::console_line(arch)));
     }
+    if let Some(s) = &cfg.systemd {
+        // the port branch's commit is already the release-base line
+        out.push_str(&format!("systemd-profile {} {}\n", s.name, s.profile_sha256));
+    }
     if let Some(kb) = kb {
         // The profile (and through it the rendered pin script, FIPS editor
         // included) and the release branch decide the kernel; the branch
@@ -478,6 +501,11 @@ pub fn resolve(
     allow_build: bool,
     log: &mut dyn FnMut(&str),
 ) -> Result<PathBuf, String> {
+    if let Some(s) = &req.systemd {
+        let (sc, p, source) = crate::sdver::context(cfg, s, req.kernel.as_deref())?;
+        log(&format!("systemd profile {}: {source} (branch {})", p.systemd, p.branch));
+        return resolve_in(&sc, req, force, allow_build, None, log);
+    }
     match kernel_context(cfg, req)? {
         Some((kc, kb)) => {
             log(&format!("kernel profile {}: {}", kb.name, kb.profile_source));
@@ -522,6 +550,14 @@ fn resolve_in(
         // sync stage runs, so a fresh build root (MC_BUILD_ROOT) must have
         // them cloned first.
         ensure_build_trees(cfg, log)?;
+    }
+    // A systemd port is built only once its branch passes the check: the
+    // profile's pins, both architectures, the spec checker, every patch at
+    // fuzz 0 and every meson option - refused here, not hours into %prep.
+    if let Some(s) = &cfg.systemd {
+        for l in crate::sdver::check(cfg, &s.name, log)? {
+            log(&format!("  ok  {l}"));
+        }
     }
     // The record names origin/<branch> of both trees, which the cascade's
     // sync stage merges. Fetch them first: when the base moved (a sync's
@@ -1303,6 +1339,42 @@ pub fn make_kernel_variant_patches(
     let kb = crate::kbuild::load(kernel)?;
     log(&format!("kernel profile {kernel}: {}", kb.profile_source));
     let kc = crate::kbuild::effective_cfg(cfg, &kb);
+    make_profile_variant_patches(
+        cfg,
+        &kc,
+        &kb.branch,
+        &is_kernel_path,
+        "kernel file(s) (SPECS/linux or SPECS/<n>/linux), which the profile owns",
+        log,
+    )
+}
+
+/// `variant-patches --systemd <release>`: the variants on the port branch,
+/// every PR that changes SPECS/systemd left out and named.
+pub fn make_systemd_variant_patches(cfg: &Config, release: &str, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+    let (sc, p, source) = crate::sdver::context(cfg, release, None)?;
+    log(&format!("systemd profile {}: {source}", p.systemd));
+    make_profile_variant_patches(
+        cfg,
+        &sc,
+        &p.branch,
+        &is_systemd_path,
+        "systemd file(s) (SPECS/systemd), which the port owns",
+        log,
+    )
+}
+
+/// The variant patches of a profile build (`--kernel`, `--systemd`): every
+/// variant built on the profile's branch, a PR that changes a path `owns`
+/// claims left out and named (`owned` says what those paths are).
+pub fn make_profile_variant_patches(
+    cfg: &Config,
+    kc: &Config,
+    pbranch: &str,
+    owns: &dyn Fn(&str) -> bool,
+    owned: &str,
+    log: &mut dyn FnMut(&str),
+) -> Result<(), String> {
     let clone = cfg.work.join("photon-variants");
     fs::create_dir_all(&kc.variant_patches)
         .map_err(|e| format!("{}: {e}", kc.variant_patches.display()))?;
@@ -1313,7 +1385,7 @@ pub fn make_kernel_variant_patches(
         ));
     }
     let vs = crate::variants::load_file(&cfg.variants_file)?;
-    let mut branches: Vec<&str> = vec![kc.release.as_str(), kc.build_common.as_str(), kb.branch.as_str()];
+    let mut branches: Vec<&str> = vec![kc.release.as_str(), kc.build_common.as_str(), pbranch];
     for b in vs.all_variant_branches() {
         if !branches.contains(&b) {
             branches.push(b);
@@ -1325,14 +1397,14 @@ pub fn make_kernel_variant_patches(
     }
     let mut failed = Vec::new();
     for v in &vs.variants {
-        log(&format!("variant poi-{} on {}", v.name, kb.branch));
-        if let Err(e) = build_kernel_variant(&kc, &clone, v, &kb.branch, log) {
+        log(&format!("variant poi-{} on {pbranch}", v.name));
+        if let Err(e) = build_kernel_variant(kc, &clone, v, pbranch, owns, owned, log) {
             log(&format!("  poi-{}: {e}", v.name));
             failed.push(v.name.as_str());
         }
     }
     log("common tree");
-    if let Err(e) = build_common_patch(&kc, &clone, &vs.common, log) {
+    if let Err(e) = build_common_patch(kc, &clone, &vs.common, log) {
         log(&format!("  common: {e}"));
         failed.push("common");
     }
@@ -1341,6 +1413,11 @@ pub fn make_kernel_variant_patches(
     } else {
         Err(format!("variant(s) {} could not be built", failed.join(", ")))
     }
+}
+
+/// A path of the systemd spec the mainline builds: SPECS/systemd/...
+pub fn is_systemd_path(f: &str) -> bool {
+    f.starts_with("SPECS/systemd/")
 }
 
 /// A path in a kernel spec directory: SPECS/linux/... or SPECS/<n>/linux/...
@@ -1384,6 +1461,8 @@ fn build_kernel_variant(
     clone: &Path,
     v: &Variant,
     kbranch: &str,
+    owns: &dyn Fn(&str) -> bool,
+    owned: &str,
     log: &mut dyn FnMut(&str),
 ) -> Result<(), String> {
     let branch = format!("variant-{}-{}", v.name, kbranch.replace('/', "-"));
@@ -1394,11 +1473,9 @@ fn build_kernel_variant(
             clone,
             &["diff", "--name-only", &format!("origin/{rel}...origin/{b}")],
         )?;
-        let kernel_files = touched.lines().filter(|f| is_kernel_path(f)).count();
-        if kernel_files > 0 {
-            log(&format!(
-                "  {b}: left out - it changes {kernel_files} kernel file(s) (SPECS/linux or SPECS/<n>/linux), which the profile owns"
-            ));
+        let n = touched.lines().filter(|f| owns(f)).count();
+        if n > 0 {
+            log(&format!("  {b}: left out - it changes {n} {owned}"));
             continue;
         }
         let commits = git(clone, &["rev-list", "--reverse", &format!("origin/{rel}..origin/{b}")])?;
@@ -1568,6 +1645,27 @@ fn build_variant(
 }
 
 #[cfg(test)]
+mod sd_tests {
+    use super::*;
+
+    #[test]
+    fn a_systemd_request_names_its_cache_slot_and_flags() {
+        let r = IsoRequest { iso_type: "full".into(), poi: "latest".into(), canister: "prebuilt".into(), kernel: None, systemd: Some("262.2".into()), compose_only: false, hyperv: Vec::new() };
+        assert_eq!(r.key(), "full-poilatest-prebuilt-s262.2");
+        assert_eq!(r.flags(), "--iso-type full --poi latest --canister prebuilt --systemd 262.2");
+    }
+
+    #[test]
+    fn the_port_owns_the_mainline_systemd_spec_only() {
+        assert!(is_systemd_path("SPECS/systemd/systemd.spec"));
+        assert!(is_systemd_path("SPECS/systemd/0006-x.patch"));
+        assert!(!is_systemd_path("SPECS/90/systemd/systemd.spec"), "subrelease 90 is not the port's");
+        assert!(!is_systemd_path("SPECS/systemd-rpm-macros/x.spec"));
+        assert!(!is_systemd_path("SPECS/systemdx/x"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1696,7 +1794,7 @@ mod tests {
     }
 
     fn plan_req() -> IsoRequest {
-        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into(), kernel: None, compose_only: false, hyperv: Vec::new() }
+        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into(), kernel: None, systemd: None, compose_only: false, hyperv: Vec::new() }
     }
 
     /// `run --dry-run --allow-build` once built an ISO: it called `resolve`,
@@ -1779,6 +1877,7 @@ mod tests {
             poi: "2.8".into(),
             canister: "prebuilt".into(),
             kernel: None,
+            systemd: None,
             compose_only: false,
             hyperv: Vec::new(),
         };
@@ -2105,6 +2204,7 @@ mod tests {
             poi: "2.8".into(),
             canister: "prebuilt".into(),
             kernel: None,
+            systemd: None,
             compose_only: false,
             hyperv: Vec::new(),
         };
@@ -2113,6 +2213,7 @@ mod tests {
             poi: "2.8".into(),
             canister: "build".into(),
             kernel: None,
+            systemd: None,
             compose_only: false,
             hyperv: Vec::new(),
         };
@@ -2130,6 +2231,7 @@ mod tests {
             poi: "latest".into(),
             canister: "equivalent".into(),
             kernel: Some("7.3".into()),
+            systemd: None,
             compose_only: false,
             hyperv: Vec::new(),
         };

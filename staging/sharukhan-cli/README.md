@@ -51,6 +51,7 @@ $S run --only k03 --allow-build                   # build the ISO if needed, ins
 - [Build mode](docs/builds/build-mode.md) - how sharukhan builds an ISO, and why one cascade
 - [Remaster mode](docs/builds/remaster-azure.md) - an Azure variant of an existing ISO
 - [Kernel wrappers](docs/builds/kernel-wrappers.md) - a build wrapper for a kernel.org kernel
+- [A systemd release](docs/builds/systemd-version.md) - the matrix with another systemd (`--systemd`)
 - [Kernel-profile builds](docs/builds/kernel-profiles.md) - `--kernel`
 - [Example: a kernel.org kernel to a tested ISO](docs/examples/kernel-iso.md) - from scratch, with `examples/kernel-iso.sh`
 
@@ -159,6 +160,7 @@ links into the old README still lead to the right page.
 | <a name="what-verify-reads-back-off-the-finished-iso"></a>&nbsp;&nbsp;&nbsp;&nbsp;What verify reads back off the finished ISO | [docs/builds/remaster-azure.md](docs/builds/remaster-azure.md#what-verify-reads-back-off-the-finished-iso) |
 | <a name="the-replacement-set-is-derived"></a>&nbsp;&nbsp;&nbsp;&nbsp;The replacement set is derived | [docs/builds/remaster-azure.md](docs/builds/remaster-azure.md#the-replacement-set-is-derived) |
 | <a name="a-config-change-must-change-the-nevr"></a>&nbsp;&nbsp;&nbsp;&nbsp;A config change must change the NEVR | [docs/builds/remaster-azure.md](docs/builds/remaster-azure.md#a-config-change-must-change-the-nevr) |
+| <a name="a-systemd-release---systemd"></a>A systemd release: `--systemd` | [docs/builds/systemd-version.md](docs/builds/systemd-version.md#a-systemd-release---systemd) |
 | <a name="kernel-wrappers-sharukhan-wrapper"></a>Kernel wrappers: `sharukhan wrapper` | [docs/builds/kernel-wrappers.md](docs/builds/kernel-wrappers.md#kernel-wrappers-sharukhan-wrapper) |
 | <a name="a-fips-canister-series-for-a-profile-kernel"></a>&nbsp;&nbsp;&nbsp;&nbsp;A FIPS canister series for a profile kernel | [docs/builds/kernel-wrappers.md](docs/builds/kernel-wrappers.md#a-fips-canister-series-for-a-profile-kernel) |
 | <a name="kernel-profile-builds-and-runs---kernel"></a>Kernel-profile builds and runs: `--kernel` | [docs/builds/kernel-profiles.md](docs/builds/kernel-profiles.md#kernel-profile-builds-and-runs---kernel) |

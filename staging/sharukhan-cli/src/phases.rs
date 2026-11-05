@@ -148,6 +148,7 @@ pub fn cmd_create_vm(
                 poi: p.poi.clone(),
                 canister: p.canister.clone(),
                 kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
+                systemd: cfg.systemd.as_ref().map(|s| s.name.clone()),
                 compose_only: false,
                 hyperv: Vec::new(),
             },
@@ -268,6 +269,7 @@ pub fn cmd_build_iso(
     poi: &str,
     canister: &str,
     kernel: Option<&str>,
+    systemd: Option<&str>,
     force: bool,
     allow_build: bool,
     compose_only: bool,
@@ -279,6 +281,7 @@ pub fn cmd_build_iso(
         poi: poi.to_string(),
         canister: canister.to_string(),
         kernel: kernel.map(str::to_string),
+        systemd: systemd.map(|s| s.trim_start_matches('v').to_string()),
         compose_only,
         hyperv,
     };
@@ -291,7 +294,13 @@ pub fn cmd_build_iso(
     Ok(())
 }
 
-pub fn cmd_variant_patches(cfg: &Config, kernel: Option<&str>) -> Result<(), String> {
+pub fn cmd_variant_patches(cfg: &Config, kernel: Option<&str>, systemd: Option<&str>) -> Result<(), String> {
+    if let Some(s) = systemd {
+        if let Some(k) = kernel {
+            return Err(format!("--systemd {s} with --kernel {k}: each has its own variant patches; make them separately"));
+        }
+        return build::make_systemd_variant_patches(cfg, s, &mut logger());
+    }
     match kernel {
         Some(k) => build::make_kernel_variant_patches(cfg, k, &mut logger()),
         None => build::make_variant_patches(cfg, &mut logger()),

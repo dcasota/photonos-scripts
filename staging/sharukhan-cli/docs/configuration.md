@@ -104,6 +104,8 @@ left out of the services by accident.
 | `MC_ISO_STORE` | none | where finished ISOs are moved; the cache keeps a link |
 | `SHARUKHAN_VARIANTS` | built in (`sharukhan-cli/config/variants.conf`) | installer variants and common branches |
 | `SHARUKHAN_CHECK_PRS` | built in (`sharukhan-cli/config/check-prs.tsv`) | check to PR attribution |
+| `SHARUKHAN_SYSTEMD_PROFILES` | built in (`sharukhan-cli/profiles/systemd/`) | systemd profiles and signers under review (`--systemd`) |
+| `SHARUKHAN_SYSTEMD_CACHE` | `$XDG_CACHE_HOME/sharukhan/systemd` | downloaded systemd tarballs and the tag repository |
 | `MC_FASTLOOP_ROWS` | `k03 c03` | rows of a sync's FASTLOOP (minimal ISOs of the default variant) |
 | `MC_STAGED_ROWS` | `k11` | rows of a sync's STAGEVM |
 | `MC_PUBLISH_DCASOTA` | `auto` | `auto`, `approve` or `preview` (see the sync chapter) |

@@ -20,6 +20,11 @@ pub fn profile(name: &str) -> Option<&'static str> {
     find(PROFILES, name)
 }
 
+/// The embedded systemd profile or signer file `name` (profiles/systemd/).
+pub fn systemd_file(name: &str) -> Option<&'static str> {
+    find(SYSTEMD_PROFILES, name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "source": "https://github.com/bluca.gpg",
+  "reviewed": "2026-11-05",
+  "keys_from": "https://keys.openpgp.org/vks/v1/by-fingerprint/",
+  "key_file": "{fpr40}",
+  "signers": [
+    {
+      "name": "Luca Boccassi (systemd stable releases)",
+      "fingerprint": "A9EA9081724FFAE0484C35A1A81CEA22BC8C7E2E"
+    }
+  ]
+}

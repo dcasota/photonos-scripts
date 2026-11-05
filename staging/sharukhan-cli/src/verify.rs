@@ -279,6 +279,7 @@ pub fn run(
             &p.net,
             &p.firmware,
             cfg.kernel.as_ref().map(|k| k.nevr.as_str()),
+            cfg.systemd.as_ref().map(|s| s.nevr.as_str()),
             &mut c,
         );
         oracle::harvest(&g, &harvest, cfg.guest_password().ok(), &mut c);

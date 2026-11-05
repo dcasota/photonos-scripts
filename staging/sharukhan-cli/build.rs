@@ -1,5 +1,6 @@
-//! Embeds the kernel wrapper bases (src/embedded/kernel-base/*.sh) and the
-//! kernel profiles (profiles/kernel/*.json) into the binary, so a kernel
+//! Embeds the kernel wrapper bases (src/embedded/kernel-base/*.sh), the
+//! kernel profiles (profiles/kernel/*.json) and the systemd profiles
+//! (profiles/systemd/*.json) into the binary, so a kernel
 //! build needs no file beside it. The tables are generated from the
 //! directories: a new profile or base is embedded by adding the file.
 
@@ -29,6 +30,7 @@ fn main() {
     let mut out = String::new();
     table("src/embedded/kernel-base", ".sh", "BASES", &mut out);
     table("profiles/kernel", ".json", "PROFILES", &mut out);
+    table("profiles/systemd", ".json", "SYSTEMD_PROFILES", &mut out);
     let dest = Path::new(&std::env::var("OUT_DIR").unwrap()).join("embedded_kernel.rs");
     std::fs::write(dest, out).unwrap();
 }

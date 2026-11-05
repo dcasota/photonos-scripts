@@ -2369,9 +2369,7 @@ fn specs_named(release_tree: &Path, name: &str, sub: Option<u32>) -> Option<Vec<
 
 /// The dist tag the release tree builds with (`photon-dist-tag`).
 fn dist_tag(release_tree: &Path) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(release_tree.join("build-config.json")).ok()?).ok()?;
-    let d = v["photon-build-param"]["photon-dist-tag"].as_str()?.trim().to_string();
-    (!d.is_empty()).then_some(d)
+    crate::specresolve::dist_tag_of(release_tree)
 }
 
 /// The specs whose RPMs make up the toolchain's package manager. Spec names

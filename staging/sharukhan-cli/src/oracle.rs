@@ -736,6 +736,21 @@ pub fn expected_selinux(shipped_config: Option<&str>, subrelease: Option<u32>) -
     }
 }
 
+/// `guest.systemd_version`: what `rpm -q systemd` reported against the
+/// profile's NEVR, or recorded when no profile applies.
+pub fn systemd_version(want: Option<&str>, got: &str, c: &mut Checks) {
+    match want {
+        Some(w) => c.check(
+            "guest.systemd_version",
+            if got == w { Status::Pass } else { Status::Fail },
+            w,
+            got,
+            "the systemd the media were built with is the one installed",
+        ),
+        None => c.check("guest.systemd_version", Status::Info, "", got, "installed systemd"),
+    }
+}
+
 pub fn guest(
     g: &Guest,
     stig: &str,
@@ -744,6 +759,7 @@ pub fn guest(
     net: &NetSpec,
     firmware: &str,
     kernel: Option<&str>,
+    systemd: Option<&str>,
     c: &mut Checks,
 ) {
     // --- firmware ----------------------------------------------------------
@@ -795,6 +811,11 @@ pub fn guest(
         }
         None => c.check("guest.kernel_release", Status::Info, "", &uname, "running kernel"),
     }
+
+    // The installed systemd. Under a systemd profile (`--systemd`) it is the
+    // point of the run, as the kernel is under `--kernel`; recorded otherwise.
+    let rpm_sd = g.run("rpm -q --qf '%{VERSION}-%{RELEASE}' systemd").value_or("unknown");
+    systemd_version(systemd, &rpm_sd, c);
 
     let v = g.run("findmnt -no FSTYPE /").value_or("unknown");
     c.expect(
@@ -1533,6 +1554,24 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
         &errs.to_string(),
         "harvested to journal-err.txt",
     );
+}
+
+#[cfg(test)]
+mod sd_tests {
+    use super::*;
+
+    /// Under --systemd the installed systemd must be the profile's; otherwise
+    /// it is recorded.
+    #[test]
+    fn the_installed_systemd_is_judged_only_under_a_profile() {
+        let d = std::env::temp_dir().join(format!("shk-sdoracle-{}", std::process::id()));
+        let mut c = Checks::init(&d, "k03", "20261105T000000Z").unwrap();
+        systemd_version(Some("262.2-1.ph5"), "262.2-1.ph5", &mut c);
+        systemd_version(Some("262.2-1.ph5"), "257.13-7.ph5", &mut c);
+        systemd_version(None, "257.13-7.ph5", &mut c);
+        assert_eq!((c.pass, c.fail, c.info), (1, 1, 1));
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }
 
 #[cfg(test)]

@@ -49,10 +49,16 @@ fn verify_err(
 
 /// Only `https://<kernel.org host>/<path>` with a plain path is fetched.
 pub fn check_url(url: &str) -> Result<()> {
+    check_url_in(url, &HOSTS)
+}
+
+/// [`check_url`] against another set of hosts: https only, one of `hosts`,
+/// and a path of plain characters without `..`.
+pub fn check_url_in(url: &str, hosts: &[&str]) -> Result<()> {
     let bad = |why: &str| {
         verify_err(
             format!("URL {url:?}"),
-            "https://{www,cdn,git}.kernel.org/...",
+            format!("https://{{{}}}/...", hosts.join(",")),
             why,
         )
     };
@@ -60,8 +66,8 @@ pub fn check_url(url: &str) -> Result<()> {
         .strip_prefix("https://")
         .ok_or_else(|| bad("not https"))?;
     let (host, path) = rest.split_once('/').ok_or_else(|| bad("no path"))?;
-    if !HOSTS.contains(&host) {
-        return Err(bad("host is not a kernel.org host"));
+    if !hosts.contains(&host) {
+        return Err(bad("host is not an allowed host"));
     }
     let ok = path
         .bytes()
@@ -72,13 +78,13 @@ pub fn check_url(url: &str) -> Result<()> {
     Ok(())
 }
 
-fn tool(name: &str) -> Command {
+pub(crate) fn tool(name: &str) -> Command {
     let mut c = Command::new(name);
     c.env("LC_ALL", "C");
     c
 }
 
-fn run(mut c: Command, what: &str) -> Result<Vec<u8>> {
+pub(crate) fn run(mut c: Command, what: &str) -> Result<Vec<u8>> {
     let out = c
         .stdin(Stdio::null())
         .output()
@@ -99,7 +105,12 @@ fn run(mut c: Command, what: &str) -> Result<Vec<u8>> {
 
 /// Download `url` to `dest` through a temporary file in the same directory.
 pub fn fetch(url: &str, dest: &Path) -> Result<()> {
-    check_url(url)?;
+    fetch_in(url, dest, &HOSTS)
+}
+
+/// [`fetch`] from one of `hosts`.
+pub fn fetch_in(url: &str, dest: &Path, hosts: &[&str]) -> Result<()> {
+    check_url_in(url, hosts)?;
     let tmp = dest.with_extension(format!("part.{}", std::process::id()));
     let mut c = tool("curl");
     c.args([
@@ -150,20 +161,41 @@ pub struct Trust {
     pub source: String,
     pub reviewed: String,
     pub keys_from: String,
+    /// The key file's name below `keys_from`: `{fpr16}` (the last 16 digits)
+    /// or `{fpr40}` (all of them), e.g. `{fpr16}.asc` (the default,
+    /// kernel.org's pgpkeys) or `{fpr40}` (keys.openpgp.org).
+    #[serde(default)]
+    pub key_file: Option<String>,
     pub signers: Vec<Signer>,
+    /// The hosts its URLs may name, and how its signers are called in
+    /// messages: kernel.org's unless a loader for another project sets them.
+    #[serde(skip, default = "kernel_hosts")]
+    pub hosts: Vec<&'static str>,
+    #[serde(skip, default = "kernel_label")]
+    pub label: &'static str,
+}
+
+fn kernel_hosts() -> Vec<&'static str> {
+    HOSTS.to_vec()
+}
+
+fn kernel_label() -> &'static str {
+    "kernel.org"
 }
 
 impl Trust {
     pub fn load(path: &Path) -> Result<Trust> {
         let text = std::fs::read_to_string(path).map_err(|e| io(path.display().to_string(), e))?;
-        let t: Trust = serde_json::from_str(&text).map_err(|e| {
-            io(
-                path.display().to_string(),
-                format!("not a valid trust file: {e}"),
-            )
-        })?;
-        t.validate()
-            .map_err(|why| io(path.display().to_string(), why))?;
+        Trust::parse(&text, &path.display().to_string(), &HOSTS, "kernel.org")
+    }
+
+    /// A trust file's text for a project whose URLs may name `hosts`.
+    pub fn parse(text: &str, source: &str, hosts: &[&'static str], label: &'static str) -> Result<Trust> {
+        let mut t: Trust = serde_json::from_str(text)
+            .map_err(|e| io(source.to_string(), format!("not a valid trust file: {e}")))?;
+        t.hosts = hosts.to_vec();
+        t.label = label;
+        t.validate().map_err(|why| io(source.to_string(), why))?;
         Ok(t)
     }
 
@@ -171,10 +203,17 @@ impl Trust {
         if self.schema != 1 {
             return Err(format!("schema {} is not 1", self.schema));
         }
-        check_url(&self.source).map_err(|e| e.to_string())?;
-        check_url(&self.keys_from).map_err(|e| e.to_string())?;
+        check_url_in(&self.source, &self.hosts).map_err(|e| e.to_string())?;
+        check_url_in(&self.keys_from, &self.hosts).map_err(|e| e.to_string())?;
         if !self.keys_from.ends_with('/') {
             return Err("keys_from must end with '/'".into());
+        }
+        if let Some(f) = &self.key_file {
+            let n = f.matches("{fpr16}").count() + f.matches("{fpr40}").count();
+            let rest = f.replace("{fpr16}", "").replace("{fpr40}", "");
+            if n != 1 || !rest.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b)) {
+                return Err(format!("key_file {f:?}: exactly one of {{fpr16}} / {{fpr40}} and plain characters"));
+            }
         }
         let r = self.reviewed.as_bytes();
         if !(r.len() == 10
@@ -212,7 +251,8 @@ impl Trust {
     }
 
     fn key_url(&self, fpr: &str) -> String {
-        format!("{}{}.asc", self.keys_from, &fpr[24..])
+        let name = self.key_file.as_deref().unwrap_or("{fpr16}.asc");
+        format!("{}{}", self.keys_from, name.replace("{fpr16}", &fpr[24..]).replace("{fpr40}", fpr))
     }
 }
 
@@ -286,7 +326,7 @@ pub fn judge_status(status: &str, trust: &Trust) -> Result<String> {
     if trust.signer(primary).is_none() {
         return Err(verify_err(
             "signer",
-            "a reviewed kernel.org signer",
+            format!("a reviewed {} signer", trust.label),
             primary.clone(),
         ));
     }
@@ -308,7 +348,7 @@ impl Keyring {
         let ring = Keyring { home };
         for s in &trust.signers {
             let file = dir.join(format!("{}.asc", s.fingerprint));
-            fetch(&trust.key_url(&s.fingerprint), &file)?;
+            fetch_in(&trust.key_url(&s.fingerprint), &file, &trust.hosts)?;
             let shown = ring.gpg(
                 &["--with-colons", "--import-options", "show-only", "--import"],
                 Some(&file),
@@ -547,7 +587,7 @@ impl TarWalk {
 }
 
 /// Run `producer`, hand every byte of its stdout to `sink`, require exit 0.
-fn stream(
+pub(crate) fn stream(
     mut producer: Command,
     what: &str,
     mut sink: impl FnMut(&[u8]) -> Result<()>,
@@ -1025,7 +1065,32 @@ mod tests {
                 name: "Linus Torvalds".into(),
                 fingerprint: "ABAF11C65A2970B130ABE3C479BE3E4300411886".into(),
             }],
+            key_file: None,
+            hosts: kernel_hosts(),
+            label: kernel_label(),
         }
+    }
+
+    /// Another project's trust file: its own hosts, a full-fingerprint key
+    /// file name, and its label in messages; kernel.org hosts are refused.
+    #[test]
+    fn a_trust_file_for_another_project_uses_its_own_hosts_and_key_names() {
+        let hosts: &[&'static str] = &["keys.openpgp.org", "github.com"];
+        let text = r#"{"schema":1,"source":"https://github.com/systemd/systemd/releases","reviewed":"2026-11-05",
+            "keys_from":"https://keys.openpgp.org/vks/v1/by-fingerprint/","key_file":"{fpr40}",
+            "signers":[{"name":"Luca Boccassi","fingerprint":"A9EA9081724FFAE0484C35A1A81CEA22BC8C7E2E"}]}"#;
+        let t = Trust::parse(text, "s.json", hosts, "systemd").unwrap();
+        assert_eq!(
+            t.key_url("A9EA9081724FFAE0484C35A1A81CEA22BC8C7E2E"),
+            "https://keys.openpgp.org/vks/v1/by-fingerprint/A9EA9081724FFAE0484C35A1A81CEA22BC8C7E2E"
+        );
+        assert!(Trust::parse(&text.replace("keys.openpgp.org", "www.kernel.org"), "s.json", hosts, "systemd").is_err());
+        for bad in [r#""{fpr40}{fpr16}""#, r#""key""#, r#""../{fpr40}""#] {
+            assert!(Trust::parse(&text.replace(r#""{fpr40}""#, bad), "s.json", hosts, "systemd").is_err(), "{bad}");
+        }
+        let status = "[GNUPG:] GOODSIG 0 x\n[GNUPG:] VALIDSIG a b c d e f g h i 0000000000000000000000000000000000000000\n".replace("\\n", "\n");
+        let e = judge_status(&status, &t).unwrap_err().to_string();
+        assert!(e.contains("reviewed systemd signer"), "{e}");
     }
 
     #[test]

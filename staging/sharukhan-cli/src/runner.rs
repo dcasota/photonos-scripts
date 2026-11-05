@@ -536,6 +536,7 @@ fn prepare_media(
                 poi: g.rows[0].poi.clone(),
                 canister: g.rows[0].canister.clone(),
                 kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
+                systemd: cfg.systemd.as_ref().map(|s| s.name.clone()),
                 compose_only: false,
                 hyperv: Vec::new(),
             };

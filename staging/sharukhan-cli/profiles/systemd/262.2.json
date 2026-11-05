@@ -1,0 +1,16 @@
+{
+  "branch": "experimental/systemd-262.2",
+  "rpm_release": 1,
+  "schema": 1,
+  "source": {
+    "commit": "63511d7283d7d0e2a2fc28075481afaf1a7be8f5",
+    "sha512": "111da2e78c999f299c40532a69d5ea7aa564e9f761e889d781777c90f771770767ba5625b79d7b4ae179830b191cae2f80dca85799dd5ad973144e82d0b3735d",
+    "url": "https://github.com/systemd/systemd/archive/refs/tags/v262.2.tar.gz",
+    "verified": {
+      "method": "signed-tag+git-archive",
+      "on": "2026-11-05",
+      "signer": "A9EA9081724FFAE0484C35A1A81CEA22BC8C7E2E"
+    }
+  },
+  "systemd": "262.2"
+}

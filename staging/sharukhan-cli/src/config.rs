@@ -26,6 +26,20 @@ pub struct KernelAxis {
     pub installer_release_bump: u32,
 }
 
+/// `--systemd <release>`: the rows run against that systemd profile's media.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SystemdAxis {
+    /// The release, `262.2`.
+    pub name: String,
+    /// What the guest's systemd package must report: Version-Release.dist.
+    pub nevr: String,
+    /// sha256 of the profile text, recorded with every ISO built from it.
+    pub profile_sha256: String,
+    /// The release branch the port is checked against (5.0): the build's own
+    /// `release` is the port branch.
+    pub base_release: String,
+}
+
 #[derive(Clone)]
 pub struct Config {
     // ---- host tooling ----------------------------------------------------
@@ -89,6 +103,7 @@ pub struct Config {
     /// Set by `--kernel <release>` on the test commands: the kernel profile
     /// whose media the rows are run against (see kbuild::apply).
     pub kernel: Option<KernelAxis>,
+    pub systemd: Option<SystemdAxis>,
 
     // ---- guest defaults --------------------------------------------------
     pub guest_vcpus: u32,
@@ -314,6 +329,7 @@ impl Config {
             fastloop_rows: s_or(get, "MC_FASTLOOP_ROWS", "k03 c03").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
             staged_rows: s_or(get, "MC_STAGED_ROWS", "k11").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
             kernel: None,
+            systemd: None,
 
             guest_vcpus: n_or(get, "GUEST_VCPUS", 2),
             guest_mem_mb: n_or(get, "GUEST_MEM_MB", 4096),

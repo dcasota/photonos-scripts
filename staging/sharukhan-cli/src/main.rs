@@ -11,6 +11,7 @@ mod branchguard;
 mod build;
 mod tslog;
 mod reuse;
+mod sdver;
 mod buildexec;
 mod builder;
 mod buildmode;
@@ -149,6 +150,8 @@ PHASES (the same code `run` calls, one step at a time)
     escalate            hand a refused PR to Claude under budgets (preflight | queue | ledger | --run --pr)
     wrapper             derive, check and verify build wrappers for any kernel.org
                         release (sharukhan wrapper --help)
+    systemd             verify a systemd release, start its port branch, check the
+                        port before a --systemd build (sharukhan systemd --help)
     ingest              fold the evidence files into the memory database (idempotent)
 
 OPTIONS:
@@ -203,6 +206,15 @@ OPTIONS:
                         phase A is skipped, and the result stays CMVP certified,
                         when one is already published at that kernel NEVR).
                         The matrix uses prebuilt and equivalent only.
+    --systemd <release> build-iso, variant-patches, and the test commands (plan,
+                        run, install, verify, ...): a systemd release other than
+                        the tree's own (profiles/systemd/<release>.json, e.g.
+                        262.2 or v262.2), ported on experimental/systemd-<release>
+                        (`sharukhan systemd profile-new|check`). The build runs
+                        in its own root under $MC_WORK/sbuild/<release>, PRs that
+                        change SPECS/systemd are left out of its variant patches,
+                        and the guest must run that systemd. Mainline only; not
+                        together with --kernel
     --force             rebuild even on a cache hit (build-iso)
     --compose-only      compose the image from the phase-B kernels already in
                         the stage, proven to be phase B's, instead of purging
@@ -277,6 +289,7 @@ struct Args {
     poi: Option<String>,
     canister: Option<String>,
     kernel: Option<String>,
+    systemd: Option<String>,
     timeout: Option<u64>,
     allow_build: bool,
     rebase_check: bool,
@@ -403,6 +416,7 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
         poi: None,
         canister: None,
         kernel: None,
+        systemd: None,
         timeout: None,
         allow_build: false,
         rebase_check: false,
@@ -476,6 +490,12 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
             "--poi" => out.poi = Some(a.next().ok_or("--poi needs a value")?),
             "--canister" => out.canister = Some(a.next().ok_or("--canister needs a value")?),
             "--kernel" => out.kernel = Some(a.next().ok_or("--kernel needs a value")?),
+            "--systemd" => {
+                let v = a.next().ok_or("--systemd needs a value")?;
+                // checked here, so a typo is refused before any profile is looked for
+                let r = crate::sdver::SystemdRelease::parse(&v)?;
+                out.systemd = Some(r.version());
+            }
             "--timeout" => {
                 let v = a.next().ok_or("--timeout needs a value")?;
                 out.timeout = Some(
@@ -621,6 +641,9 @@ fn main() -> ExitCode {
     if argv.first().map(String::as_str) == Some("wrapper") {
         return ExitCode::from(wrapper::cli::main(&argv[1..]));
     }
+    if argv.first().map(String::as_str) == Some("systemd") {
+        return ExitCode::from(sdver::cli(&argv[1..]));
+    }
     if argv.first().map(String::as_str) == Some("builder") {
         return ExitCode::from(builder::cli(&argv[1..]));
     }
@@ -695,6 +718,28 @@ fn main() -> ExitCode {
     let cfg = config::Config::load();
     // build-iso and variant-patches take --kernel themselves (a build request);
     // every other command that accepts it runs rows against that kernel.
+    // --systemd likewise: a build request for build-iso and variant-patches,
+    // the rows' media and expected systemd for the test commands
+    let cfg = match (&args.systemd, args.cmd.as_str()) {
+        (Some(_), "build-iso" | "variant-patches") | (None, _) => cfg,
+        (Some(s), "plan" | "run" | "install" | "verify" | "create-vm" | "kickstart" | "teardown" | "report") => {
+            if let Some(k) = &args.kernel {
+                eprintln!("sharukhan: --systemd {s} with --kernel {k}: each runs against media of its own");
+                return ExitCode::from(64);
+            }
+            match sdver::apply(&cfg, s) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("sharukhan: --systemd {s}: {e}");
+                    return ExitCode::from(64);
+                }
+            }
+        }
+        (Some(_), other) => {
+            eprintln!("sharukhan: --systemd does not apply to {other}");
+            return ExitCode::from(64);
+        }
+    };
     let cfg = match (&args.kernel, args.cmd.as_str()) {
         (Some(_), "build-iso" | "variant-patches") | (None, _) => cfg,
         (Some(k), "plan" | "run" | "install" | "verify" | "create-vm" | "kickstart" | "teardown" | "report") => {
@@ -777,6 +822,7 @@ fn main() -> ExitCode {
                 &poi,
                 args.canister.as_deref().unwrap_or("prebuilt"),
                 args.kernel.as_deref(),
+                args.systemd.as_deref(),
                 args.force,
                 args.allow_build,
                 args.compose_only,
@@ -787,7 +833,7 @@ fn main() -> ExitCode {
         "build" => cmd_build(&args, &cfg),
         "remaster" => cmd_remaster(&args),
         "azure-console" => azure::cli(args.input.as_deref(), args.out.as_deref(), args.arch.as_deref()),
-        "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
+        "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref(), args.systemd.as_deref()),
         "pkg-lifecycle" => need_id(&args).and_then(|id| {
             cmd_pkg_lifecycle(&cfg, id, args.iso.as_deref(), lifecycle.as_ref(), args.pkg_segments)
         }),
@@ -1364,6 +1410,7 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
             poi: p.to_string(),
             canister: c.to_string(),
             kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
+            systemd: cfg.systemd.as_ref().map(|s| s.name.clone()),
             compose_only: false,
             hyperv: Vec::new(),
         };

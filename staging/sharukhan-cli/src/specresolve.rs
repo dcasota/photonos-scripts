@@ -306,6 +306,13 @@ pub fn tree_dist_tag(tree: &Path) -> Option<String> {
     v["photon-build-param"]["photon-dist-tag"].as_str().map(|s| s.trim().to_string()).filter(|s| s.starts_with('.') && s.len() > 1)
 }
 
+/// The dist tag a tree builds with (`photon-dist-tag` of its build-config.json).
+pub fn dist_tag_of(tree: &Path) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(tree.join("build-config.json")).ok()?).ok()?;
+    let d = v["photon-build-param"]["photon-dist-tag"].as_str()?.trim().to_string();
+    (!d.is_empty()).then_some(d)
+}
+
 pub fn tree_subrelease(tree: &Path) -> Option<u32> {
     subrelease_in(&std::fs::read_to_string(tree.join("build-config.json")).ok()?)
 }
