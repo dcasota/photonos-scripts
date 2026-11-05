@@ -20,7 +20,6 @@ machine.
 | --- | --- |
 | `PHOTON_TREE` | `/root/5.0` |
 | `POI_TREE` | `/root/photon-os-installer` |
-| `PHOTON_SCRIPTS` | `/root` |
 | `SHARUKHAN_ROOT` | `/root/photonos-scripts/staging/mission-control` |
 | `SHARUKHAN_MATRIX` | `$SHARUKHAN_ROOT/config/permutations.tsv` |
 | `SHARUKHAN_DB` | `/root/photon-mc/memory.db` |

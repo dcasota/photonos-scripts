@@ -50,6 +50,9 @@ pub struct RunOpts {
     /// `--package-lifecycle`: after verify, install/test/remove every package
     /// the row's media offers (ADR-0008). None = off.
     pub lifecycle: Option<crate::pkglife::Opts>,
+    /// `--reuse-since`: a row whose passed result was recorded at or after
+    /// this stamp, with an identical fingerprint now, is not installed again.
+    pub reuse_since: Option<String>,
 }
 
 // ---------------------------------------------------------------- run ------
@@ -274,6 +277,16 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
                 say(&mut logf, halted.as_ref().unwrap());
                 println!("  {}", halted.as_ref().unwrap());
                 break 'outer;
+            }
+            if let Some(since) = o.reuse_since.as_deref() {
+                if let Some((checks, why)) = crate::reuse::find(cfg, p, &g.iso, since) {
+                    crate::reuse::point_latest(&checks)?;
+                    let line = format!("{}: {why}", p.id);
+                    say(&mut logf, &format!("--- {} ---", p.id));
+                    say(&mut logf, &line);
+                    println!("  {line}");
+                    continue;
+                }
             }
             attempted += 1;
             say(&mut logf, &format!("--- {} ---", p.id));

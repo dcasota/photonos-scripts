@@ -23,8 +23,8 @@ ANALYZE -> REBASE -> VERIFY -> PREPARE -> FASTLOOP -> GATE -> PUBLISH -> STAGEVM
 | `REBASE` | moves each PR onto its new base, parents first; a refused rebase stops the run as `needs-decision`. A changelog the PR moved from a spec into an included `*changelog*.inc` takes that spec's rebased changelog; files keep the PR's mode (executable, symlink) |
 | `VERIFY` | `rpmspec -P` per subrelease and arch, `check_spec`, and the one-changelog-entry rule against the new base |
 | `PREPARE` | points the gate repository at the candidates, resets the build trees and regenerates the variant patches |
-| `FASTLOOP` | builds the minimal ISO of the default variant and installs `MC_FASTLOOP_ROWS` (default `k03 c03`) |
-| `GATE` | `sharukhan run --all --allow-build`: every ISO, every unattended row |
+| `FASTLOOP` | builds the minimal ISO of the default variant and installs `MC_FASTLOOP_ROWS` (default `k03 c03`); a row that passes is recorded (`verify --record-reuse`) |
+| `GATE` | `sharukhan run --all --allow-build --reuse-since <FASTLOOP start>`: every ISO, every unattended row; a fast-loop row is not installed again when its ISO (sha256), row, kickstart and sharukhan binary are identical, and its evidence is reported instead |
 | `PUBLISH` | pushes with `--force-with-lease`, carries each description, checks GitHub shows both |
 | `STAGEVM` | for PRs held for the upstream stage: the staged code is the gated code, then `MC_STAGED_ROWS` (default `k11`) is installed from it |
 | `UPSTREAM` | waits for `sync approve-upstream`, then moves the shared branches and updates both descriptions in place |

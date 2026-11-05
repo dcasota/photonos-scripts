@@ -108,6 +108,11 @@ fn build_kickstart(cfg: &Config, p: &Permutation, secrets: Secrets) -> Result<St
 
 /// Write the kickstart where the evidence for this row lives, so what was
 /// installed can be read back beside what it produced.
+/// The kickstart's evidence form: the same structure, no secret.
+pub fn kickstart_evidence(cfg: &Config, p: &Permutation) -> Result<String, String> {
+    build_kickstart(cfg, p, Secrets::Redacted)
+}
+
 pub fn write_kickstart(cfg: &Config, p: &Permutation) -> Result<PathBuf, String> {
     // Evidence copy: same structure, no secret. What the guest is actually
     // given is built separately at the point of injection.
@@ -209,12 +214,23 @@ pub fn cmd_verify(
     ip: Option<&str>,
     lifecycle: Option<&crate::pkglife::Opts>,
     iso: Option<&str>,
+    record_reuse: bool,
 ) -> Result<(), String> {
     let p = row(cfg, id)?;
-    let v = verify::run(cfg, &p, ip, &crate::job::stamp(), lifecycle, iso.map(std::path::Path::new), &mut logger())?;
+    let stamp = crate::job::stamp();
+    let v = verify::run(cfg, &p, ip, &stamp, lifecycle, iso.map(std::path::Path::new), &mut logger())?;
     println!("evidence: {}", v.checks.path.display());
     println!("logs:     {}", v.harvest.display());
     if v.checks.fail == 0 {
+        if record_reuse {
+            // the medium verify read: the one given, or the row's cache entry
+            let media = match iso {
+                Some(i) => std::path::PathBuf::from(i),
+                None => cfg.iso_dir(&p.iso_type, &p.poi, &p.canister).join("photon.iso"),
+            };
+            let r = crate::reuse::record(cfg, &p, &media, &stamp, &v.checks.path)?;
+            println!("reuse:    {}", r.display());
+        }
         Ok(())
     } else {
         Err(format!("{id}: {} failing check(s)", v.checks.fail))

@@ -836,7 +836,13 @@ fn fastloop(ctx: &Ctx) -> Result<Outcome, String> {
         }
         let _ = child(ctx, "FASTLOOP", &["teardown", "--id", row]);
         for ph in ["create-vm", "install", "verify"] {
-            if !child(ctx, "FASTLOOP", &[ph, "--id", row])? {
+            // a passed fast-loop row is recorded, so the gate need not
+            // install it again on the identical medium
+            let mut a = vec![ph, "--id", row];
+            if ph == "verify" {
+                a.push("--record-reuse");
+            }
+            if !child(ctx, "FASTLOOP", &a)? {
                 return Ok(Outcome::NeedsDecision(format!("{row} failed at {ph}, see FASTLOOP.log")));
             }
         }
@@ -845,10 +851,43 @@ fn fastloop(ctx: &Ctx) -> Result<Outcome, String> {
 }
 
 fn gate(ctx: &Ctx) -> Result<Outcome, String> {
-    if child(ctx, "GATE", &["run", "--all", "--allow-build"])? {
+    // this run's fast-loop results count where everything that decides them
+    // is unchanged (reuse::find); none from before this run's fast loop
+    let since = fastloop_since(ctx)?;
+    let mut a = vec!["run", "--all", "--allow-build"];
+    if let Some(s) = since.as_deref() {
+        a.extend(["--reuse-since", s]);
+    }
+    if child(ctx, "GATE", &a)? {
         Ok(Outcome::Done("every admissible row passed".into()))
     } else {
         Ok(Outcome::NeedsDecision("the gate has failures, see GATE.log and the run's report".into()))
+    }
+}
+
+/// When this run's FASTLOOP started, as a `YYYYMMDDTHHMMSSZ` stamp; None
+/// when it has not run.
+fn fastloop_since(ctx: &Ctx) -> Result<Option<String>, String> {
+    let at: Option<String> = ctx
+        .c
+        .query_row(
+            "SELECT started_at FROM sync_stage WHERE run_id = ?1 AND name = 'FASTLOOP' AND state = 'done'",
+            [ctx.run],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(sql)?
+        .flatten();
+    Ok(at.map(|s| compact_stamp(&s)).transpose()?)
+}
+
+/// `2026-11-05T07:20:23Z` -> `20261105T072023Z`.
+fn compact_stamp(s: &str) -> Result<String, String> {
+    let c: String = s.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    if crate::reuse::valid_stamp(&c) {
+        Ok(c)
+    } else {
+        Err(format!("stage time {s} is not an ISO 8601 UTC time"))
     }
 }
 
@@ -2260,6 +2299,12 @@ mod tests {
         crate::watch::ensure_schema(&c).unwrap();
         ensure_schema(&c).unwrap();
         c
+    }
+
+    #[test]
+    fn a_stage_time_becomes_the_reuse_bound() {
+        assert_eq!(compact_stamp("2026-11-05T07:20:23Z").unwrap(), "20261105T072023Z");
+        assert!(compact_stamp("2026-11-05 07:20").is_err());
     }
 
     #[test]

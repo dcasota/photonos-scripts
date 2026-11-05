@@ -14,7 +14,7 @@ use crate::config::Config;
 use crate::{job, sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 #[derive(Clone)]
 pub struct IsoRequest {
@@ -426,8 +426,6 @@ pub fn build_inputs(
             "embedded-canister-equivalent {}\n",
             sha256::bytes(crate::buildmode::Embedded::CanisterEquivalent.patch().as_bytes())
         ));
-    } else {
-        out.push_str(&format!("driver {}\n", hash(&cfg.photon_scripts.join("runPh5_normal.sh"))?));
     }
     Ok(out)
 }
@@ -560,69 +558,8 @@ fn resolve_in(
     // gets its own patch instead, generated from the PR branches and verified
     // to apply to a pristine 5.0 before use.
     //
-    // runPh5_normal.sh resolves its patch relative to its OWN directory, so
-    // the variant is selected by staging a script directory rather than by
-    // editing the build script. SCRIPT_DIR is used for nothing else.
     // `plan` has already refused a missing patch, before the purge above.
     let patch = cfg.variant_patches.join(format!("poi-{}.patch", req.poi));
-    let stage_dir = cfg.work.join("scriptdir").join(req.key());
-    fs::create_dir_all(stage_dir.join("photonos-patches"))
-        .map_err(|e| format!("{}: {e}", stage_dir.display()))?;
-    let driver = cfg.photon_scripts.join("runPh5_normal.sh");
-    // A deployed copy that predates MC_POI_IMAGE ignores it silently and
-    // leaves poi-image at photon/installer:latest: job 42's first ISO was
-    // composed that way (PHOTON_SCRIPTS defaulted to /root). Refuse it here,
-    // hours before the post-build check below would.
-    let driver_text = fs::read_to_string(&driver).map_err(|e| format!("{}: {e}", driver.display()))?;
-    if !driver_text.contains("MC_POI_IMAGE") {
-        return Err(format!(
-            "{} does not honour MC_POI_IMAGE, so its media would be composed by whatever \
-             photon/installer:latest holds. Point PHOTON_SCRIPTS at a current copy \
-             (photonos-scripts/staging) or update it.",
-            driver.display()
-        ));
-    }
-    fs::copy(&driver, stage_dir.join("runPh5_normal.sh"))
-        .map_err(|e| format!("{}: {e}", driver.display()))?;
-    fs::copy(
-        &patch,
-        stage_dir.join("photonos-patches/downstream-fixes.patch"),
-    )
-    .map_err(|e| format!("{}: {e}", patch.display()))?;
-    log(&format!(
-        "staged build dir {} with poi-{}.patch ({} files)",
-        stage_dir.display(),
-        req.poi,
-        patched_files(&patch)
-    ));
-
-    // The common tree gets its own patch, staged beside the release one.
-    //
-    // Without this, a change to the package builder reaches a build only by
-    // being present in whatever /root/common happens to be checked out at -
-    // which is how `--canister equivalent` came to depend on an operator's
-    // working tree. A fresh clone (runPh5 clones `-b common`) does not carry
-    // it, and the build dies two hours in on a sans-snapshot BuildRequires
-    // that resolves against the published repo only.
-    //
-    // Absence is not fatal here: most builds need no tooling patch, and
-    // refusing to build for a missing one would be worse than the gap. runPh5
-    // says which case it is.
-    let common_patch = cfg.variant_patches.join("common-fixes.patch");
-    if common_patch.is_file() {
-        fs::copy(
-            &common_patch,
-            stage_dir.join("photonos-patches/common-fixes.patch"),
-        )
-        .map_err(|e| format!("{}: {e}", common_patch.display()))?;
-        log(&format!(
-            "staged common-fixes.patch ({} file(s)) for the {} tree",
-            patched_files(&common_patch),
-            cfg.build_common
-        ));
-    } else {
-        log("no common-fixes.patch staged: the common tree is used as checked out");
-    }
 
     // Each variant patch must land on a PRISTINE SPECS tree. runPh5 applies it
     // on top of whatever is already there, so one variant's files survive into
@@ -732,182 +669,32 @@ and none is built for {nevr}: phase A has to build it first. Run without --compo
             log(&format!("--- {phase} ---"));
         }
 
-        // --- equivalent runs the cascade, not the script ------------------
-        // Not a preference: the legacy driver CANNOT build these correctly.
-        // The canister-equivalent patch is test-only, compiled into
-        // src/embedded/ and applied as an injection, so only the cascade
-        // applies it - while `equivalent_kernel_nevr` above READS it to decide
-        // the NEVR. This path therefore expected linux at Release 4 and would
-        // have built Release 3, then purged on a NEVR its own build could not
-        // produce.
-        //
-        // The purge is the same code for the same reason. It has to run AFTER
-        // the injections, against patched specs: at this point in the script
-        // path the tree is still pristine, where both flavours read Release 1,
-        // so a per-flavour purge here would match nothing at all.
-        // Every non-equivalent phase runs the legacy script, which has no
-        // purge stage, so the stage's local repo must be made safe HERE or not
-        // at all. Inert when the stage holds the pinned canister or none.
-        if req.canister != "equivalent" {
-            if let Some(pin) = spec_canister_pin(cfg) {
-                for m in vault_mismatched_canisters(&cfg.photon_tree.join("stage"), &pin) {
-                    log(&format!(
-                        "moved aside {m}: this build consumes linux-fips-canister-{pin}, and a \
-mismatched canister in the stage outranks the pinned one for an unversioned tdnf install"
-                    ));
-                }
-            }
+        // Every mode builds through the cascade (buildexec), built in: the
+        // injections, the purge against the patched specs (kernel slot, the
+        // canister vault, the package-manager and shadowing RPMs, rebuilt
+        // content), the runtime-dependency pre-build and make, with make's
+        // output stamped into the build log. No external build script.
+        let mut spec = crate::buildmode::spec_for(
+            &cfg.build_root.to_string_lossy(),
+            &cfg.build_common,
+            &cfg.release,
+            &dest.to_string_lossy(),
+            img,
+            phase,
+            (!nevr.is_empty()).then(|| nevr.clone()),
+            &req.poi,
+            &cfg.variant_patches.to_string_lossy(),
+            None,
+            kb,
+        )?;
+        spec.poi_image = Some(composer.tag.clone());
+        spec.remote = Some(cfg.photon_remote.clone());
+        spec.compose_only = req.compose_only;
+        spec.make_log = Some(build_log.clone());
+        if !req.hyperv.is_empty() {
+            crate::buildmode::add_hyperv(&mut spec, std::env::consts::ARCH, &req.hyperv)?;
         }
-
-        // A kernel profile builds through the cascade in every mode: only the
-        // cascade runs its pin script.
-        if req.canister == "equivalent" || kb.is_some() || !req.hyperv.is_empty() {
-            let mut spec = crate::buildmode::spec_for(
-                &cfg.build_root.to_string_lossy(),
-                &cfg.build_common,
-                &cfg.release,
-                &dest.to_string_lossy(),
-                img,
-                phase,
-                Some(nevr.clone()),
-                &req.poi,
-                &cfg.variant_patches.to_string_lossy(),
-                None,
-                kb,
-            )?;
-            spec.poi_image = Some(composer.tag.clone());
-            spec.remote = Some(cfg.photon_remote.clone());
-            spec.compose_only = req.compose_only;
-            if !req.hyperv.is_empty() {
-                crate::buildmode::add_hyperv(&mut spec, std::env::consts::ARCH, &req.hyperv)?;
-            }
-            crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
-            continue;
-        }
-
-        // The kernel slot: kernels another build class left in the shared
-        // stage leave it (an equivalent kernel is in the kernel store; any
-        // other is parked), and this class's parked kernels come back,
-        // verified. Before the content check below, so a returned kernel is
-        // judged by it like any other RPM.
-        let slot_stage = cfg.photon_tree.join("stage");
-        let slot_class = crate::kernelslot::class_of(phase).to_string();
-        let slot_sub = crate::specresolve::tree_subrelease(&cfg.photon_tree);
-        let slot_fams = crate::kernelslot::kernel_families(
-            &cfg.photon_tree.join(crate::specresolve::kernel_dir(&cfg.photon_tree, slot_sub)?),
-            slot_sub,
-        );
-        crate::kernelslot::enter(
-            &slot_stage,
-            &crate::kernelslot::store_root(&cfg.build_root, &cfg.release),
-            &slot_class,
-            &slot_fams,
-            &|_: &str| false,
-            false,
-            &mut |l| log(l.trim()),
-        );
-
-        // the specs runPh5_normal.sh builds before the image (MC_PREBUILD_SPECS)
-        let prebuild: Vec<String>;
-        // RPMs at a patched NEVR that were built from other content (a branch
-        // amended after a gate built it) are removed so they are rebuilt.
-        // The tree is pristine here (runPh5_normal.sh applies the patch
-        // itself), so the variant's content is applied for the purge and the
-        // tree reset again afterwards.
-        {
-            git(&cfg.photon_tree, &["apply", &patch.to_string_lossy()])
-                .map_err(|e| format!("applying {} for the content check: {e}", patch.display()))?;
-            let specs: Vec<String> = fs::read_to_string(&patch)
-                .unwrap_or_default()
-                .lines()
-                .filter_map(|l| l.strip_prefix("+++ b/"))
-                .filter(|p| p.ends_with(".spec"))
-                .map(str::to_string)
-                .collect();
-            let sub = crate::specresolve::tree_subrelease(&cfg.photon_tree);
-            crate::buildexec::purge_rebuilt_content_at(
-                &cfg.photon_tree,
-                &cfg.photon_tree.join("stage"),
-                &specs,
-                sub,
-                &mut |l| log(l.trim()),
-            );
-            // The package builder skips an image package that is already built
-            // without looking at its Requires, so a runtime dependency the purge
-            // just removed (iptables, which minimal requires) is never built
-            // again and poi.py finds no provider. The script pre-builds them,
-            // as the cascade does; resolved here, against the patched specs.
-            let unbuilt = crate::buildmode::ImgType::parse(img).and_then(|t| {
-                crate::buildexec::unbuilt_runtime_specs_for(
-                    &cfg.build_root.join(&cfg.build_common),
-                    &cfg.photon_tree,
-                    &cfg.photon_tree.join("stage"),
-                    t,
-                    Vec::new(),
-                    &composer.tag,
-                    &mut |l| log(l.trim()),
-                )
-            });
-            let _ = git(&cfg.photon_tree, &["checkout", "--", "SPECS"]);
-            let _ = git(&cfg.photon_tree, &["clean", "-fdq", "SPECS"]);
-            prebuild = unbuilt?;
-        }
-        // An ISO left at the top of the stage by an interrupted delivery makes
-        // build.py refuse to build ("... .iso already exists ..."); gate 51
-        // lost both full ISOs to the one gate 48 left when it was stopped.
-        for iso in crate::buildexec::leftover_isos(&cfg.photon_tree.join("stage")) {
-            match fs::remove_file(&iso) {
-                Ok(()) => log(&format!(
-                    "removed leftover {}: an interrupted delivery; build.py would refuse to build over it",
-                    iso.display()
-                )),
-                Err(e) => {
-                    return Err(format!(
-                        "leftover {} blocks the build and cannot be removed: {e}",
-                        iso.display()
-                    ))
-                }
-            }
-        }
-        let logf = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&build_log)
-            .map_err(|e| format!("{}: {e}", build_log.display()))?;
-        let err = logf.try_clone().map_err(|e| format!("{e}"))?;
-        let script_args: Vec<std::ffi::OsString> = vec![
-            cfg.build_root.clone().into(),
-            cfg.build_common.clone().into(),
-            cfg.release.clone().into(),
-            dest.clone().into(),
-            img.into(),
-            (*phase).into(),
-        ];
-        let rc = crate::builder::script_command(
-            &stage_dir.join("runPh5_normal.sh"),
-            &script_args,
-            &[
-                ("MC_CANISTER_NEVR", nevr.as_str()),
-                ("MC_POI_IMAGE", composer.tag.as_str()),
-                ("MC_PREBUILD_SPECS", prebuild.join(" ").as_str()),
-            ],
-            &[dest.clone()],
-            log,
-        )?
-            .stdout(Stdio::from(logf))
-            .stderr(Stdio::from(err))
-            .status()
-            .map_err(|e| format!("running runPh5_normal.sh: {e}"))?;
-        if !rc.success() {
-            return Err(format!(
-                "build failed in {phase} (rc={}), see {}",
-                rc.code().unwrap_or(-1),
-                build_log.display()
-            ));
-        }
-        crate::kernelslot::record_unrecorded(&slot_stage, &slot_fams, &slot_class, &mut |l| {
-            log(l.trim())
-        });
+        crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
     }
 
     // Prove which image build.py was pointed at, not what was asked for.

@@ -104,7 +104,6 @@ pub const SETTINGS: &[&str] = &[
     "MC_VMX_TEMPLATE",
     "MC_WORK",
     "PHOTON_KERNEL_TREE",
-    "PHOTON_SCRIPTS",
     "PHOTON_TREE",
     "POI_TREE",
     "SERIAL_LOG_PREFIX",

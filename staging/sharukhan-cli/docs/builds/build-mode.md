@@ -141,10 +141,16 @@ Sharing the predicate would not have fixed it:
   pick the NEVR. The legacy path expected `linux` at Release 4, would have
   built Release 3, and purged on a NEVR its own build could not produce.
 
-So `equivalent` runs the cascade. `prebuilt` still runs `runPh5_normal.sh`: it
-applies no embedded patch and needs no inter-phase purge, so it has nothing to
-drift on. The delete rule lives once in `build::doomed_before_phase_b`, and the
-spec assembly once in `buildmode::spec_for`.
+So `equivalent` runs the cascade, and since 2026-11-05 so does every other
+mode: `build-iso` no longer runs `runPh5_normal.sh` or needs any script beside
+the binary (`PHOTON_SCRIPTS` is gone). The script path rebuilt rpm 6 and
+rpm-sequoia on every build because it purged every rpm 6.x RPM; the cascade's
+purge keeps the package-manager RPMs the specs building at the subrelease
+produce (`buildexec::rpm_toolchain_split`, every version read from the specs).
+make's output goes to the build log with each line stamped in UTC, and every
+cascade phase logs its start time and duration. The delete rule lives once in
+`build::doomed_before_phase_b`, and the spec assembly once in
+`buildmode::spec_for`.
 
 ### The embedded patch pins Release numbers, and 5.0 moves
 

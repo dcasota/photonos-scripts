@@ -124,7 +124,7 @@ pub fn run(
         o.packages = remaining.clone();
         o.resume = false;
         // A failing package fails verify's checks; the records are the result.
-        if let Err(e) = crate::phases::cmd_verify(cfg, id, None, Some(&o), Some(&iso_s)) {
+        if let Err(e) = crate::phases::cmd_verify(cfg, id, None, Some(&o), Some(&iso_s), false) {
             log(&format!("segment {seg}: verify reported: {e}"));
         }
         let file = latest(&cfg.results_dir, id);
@@ -196,7 +196,7 @@ pub fn run(
             let mut o = base.clone();
             o.packages = Some(vec![p.clone()]);
             o.resume = false;
-            if let Err(e) = crate::phases::cmd_verify(cfg, id, None, Some(&o), Some(&iso_s)) {
+            if let Err(e) = crate::phases::cmd_verify(cfg, id, None, Some(&o), Some(&iso_s), false) {
                 log(&format!("retest of {p}: verify reported: {e}"));
             }
             let f = latest(&cfg.results_dir, id);

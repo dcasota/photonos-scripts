@@ -59,18 +59,9 @@ pub struct Config {
     /// patches are copies of commits on that repository's PR branches, and a
     /// copy is a thing that can go stale.
     pub poi_tree: PathBuf,
-    /// runPh5_normal.sh resolves downstream-fixes.patch RELATIVE TO ITSELF
-    /// ($SCRIPT_DIR/photonos-patches/...). Two copies of both the script and
-    /// the patch exist on this host and they had diverged: the scripts-repo
-    /// copy carried a stale 8-file patch, /root the live 27-file one. Pointing
-    /// at the wrong pair fails the build guard with "does not apply", which
-    /// reads like a rebase problem rather than a path problem. `doctor`
-    /// asserts the two agree.
-    pub photon_scripts: PathBuf,
-    /// runPh5_normal.sh's positional contract: `<scripts root> <common dir>
-    /// <release> <dest> <img> <canister>`. The bash passed the first three as
-    /// literals; they are settings here so the harness is not pinned to one
-    /// machine, but the defaults are exactly what it passed.
+    /// The build root holding the common and release trees, and the common
+    /// tree's directory name: settings, so the harness is not pinned to one
+    /// machine.
     pub build_root: PathBuf,
     pub build_common: String,
     pub release: String,
@@ -263,7 +254,6 @@ impl Config {
 
             photon_tree: var_or(get, "PHOTON_TREE", "/root/5.0"),
             poi_tree: var_or(get, "POI_TREE", "/root/photon-os-installer"),
-            photon_scripts: var_or(get, "PHOTON_SCRIPTS", "/root"),
 
             build_root: var_or(get, "MC_BUILD_ROOT", "/root"),
             build_common: s_or(get, "MC_BUILD_COMMON", "common"),
@@ -327,7 +317,6 @@ impl Config {
             ("MC_BUILD_COMMON", self.build_common.clone()),
             ("MC_BUILD_ROOT", p(&self.build_root)),
             ("PHOTON_TREE", p(&self.photon_tree)),
-            ("PHOTON_SCRIPTS", p(&self.photon_scripts)),
             ("MC_WORK", p(&self.work)),
             ("MC_GATE_REPO", p(&self.gate_repo)),
             ("MC_PHOTON_REMOTE", self.photon_remote.clone()),

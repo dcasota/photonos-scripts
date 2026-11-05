@@ -14,6 +14,13 @@ whatever an earlier run left of that row's VM, and runs
 at a time, because ISO builds share `$PHOTON_TREE/stage` and the VM store cannot
 hold two installs.
 
+`--reuse-since <YYYYMMDDTHHMMSSZ>` skips a row whose passed result was recorded
+by `verify --record-reuse` at or after that time, when the fingerprint computed
+now is identical: the ISO's sha256, the row as the matrix defines it, the
+kickstart (its evidence form, no secret) and the sha256 of the sharukhan binary.
+`checks-latest.jsonl` then points at that evidence. Anything unreadable, a
+failed check, or any difference means the row runs.
+
 `--dry-run` runs every gate for real — real `df`, real `xorriso`, real process
 scan — and executes nothing:
 

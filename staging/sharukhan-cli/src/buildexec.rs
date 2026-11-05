@@ -1665,7 +1665,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
     } else {
         purge_phase_a_kernels(c, &stage);
     }
-    purge_toolchain_blockers(c, &stage);
+    purge_toolchain_blockers(c, &stage)?;
     purge_mismatched_canister(c, &stage);
     purge_shadowing_rpms(c, &stage);
     purge_rebuilt_content(c, &stage);
@@ -2164,8 +2164,10 @@ use crate::build::stale_flavour_rpm;
 
 /// Two package families that block the toolchain bootstrap if left behind.
 ///
-/// rpm 6.x: the bootstrap requires rpm 4.x, and a 6.x build left in the stage
-/// wins on version and breaks it. libcap: the tree has moved on and an older
+/// rpm: a package-manager RPM that is not what the specs building at this
+/// subrelease produce wins over the build or is stale ([`rpm_toolchain_split`]);
+/// the ones the specs produce are kept, so the core toolchain is not built
+/// again. libcap: the tree has moved on and an older
 /// one shadows the rebuild. Both also invalidate sandboxBase, which is why it
 /// goes with them - a sandbox built against the removed RPM is a sandbox that
 /// reintroduces it.
@@ -2175,20 +2177,22 @@ use crate::build::stale_flavour_rpm;
 /// `libcap-` and `libcap-debuginfo-`, missing `libcap-libs`, `-devel`,
 /// `-minimal` and `-doc`. A hand-maintained list of a spec's subpackages drifts
 /// from the spec the moment anyone adds one, so read the spec.
-fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
+fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) -> Result<(), String> {
     let rpms = stage.join("RPMS/x86_64");
-    let Ok(rd) = fs::read_dir(&rpms) else { return };
+    let Ok(rd) = fs::read_dir(&rpms) else { return Ok(()) };
     let names: Vec<String> = rd
         .flatten()
         .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
         .collect();
-    let specs = c.spec.tree(Tree::Release).join("SPECS");
+    let release_tree = c.spec.tree(Tree::Release);
+    let specs = release_tree.join("SPECS");
+    let sub = build_subrelease(c, &release_tree);
 
-    let rpm_fams = spec_families(&specs.join("rpm/rpm.spec"));
-    let rpm6: Vec<&String> = names
-        .iter()
-        .filter(|n| is_rpm6(n, rpm_fams.as_ref()))
-        .collect();
+    let (rpm_purge, kept) = rpm_toolchain_split(&release_tree, &names, sub).map_err(|e| format!("rpm toolchain RPMs: {e}"))?;
+    let rpm_purge: Vec<&String> = rpm_purge.iter().collect();
+    if !kept.is_empty() {
+        c.say(&format!("  kept {} rpm toolchain RPM(s) the specs produce: {}", kept.len(), kept.join(" ")));
+    }
 
     // libcap is keyed on "not the version the spec declares" rather than on a
     // named old version, so it keeps working when the tree moves past 2.77.
@@ -2203,7 +2207,7 @@ fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
     };
 
     for (label, set, why) in [
-        ("rpm 6.x", &rpm6, "the toolchain bootstrap requires rpm 4.x"),
+        ("rpm toolchain", &rpm_purge, "the specs building at this subrelease do not produce them"),
         ("stale libcap", &stale_libcap, libcap_why.as_str()),
     ] {
         if set.is_empty() {
@@ -2220,6 +2224,7 @@ fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
             let _ = fs::remove_dir_all(stage.join("images/sandboxBase"));
         }
     }
+    Ok(())
 }
 
 /// A spec's package name, its Version, and every binary package it declares.
@@ -2320,44 +2325,116 @@ pub(crate) fn parse_rpm_name(file: &str) -> Option<(String, String, String)> {
     Some((name.to_string(), version.to_string(), release.to_string()))
 }
 
-/// Is this an rpm 6.x package the bootstrap cannot tolerate?
-///
-/// Families come from the spec when it can be read. The literal list survives
-/// only as the fallback: silently purging NOTHING because a spec moved would
-/// be worse than an out-of-date list, and this runs before the tree is
-/// guaranteed readable.
-///
-/// Matched on the parsed VERSION field, not by looking for "-6." anywhere:
-/// `rpm-4.18.0-6.ph5.x86_64.rpm` has "-6." in its RELEASE, and deleting that
-/// removes the very rpm 4.x the toolchain bootstrap requires.
-fn is_rpm6(name: &str, fams: Option<&SpecFamilies>) -> bool {
-    if !name.ends_with(".rpm") {
-        return false;
+/// Every spec named `name` in the release tree (`SPECS/<name>` and
+/// `SPECS/<NN>/<name>`), resolved for `sub`: whether it builds at `sub`, its
+/// families, Version and Release without the dist. None when one of them
+/// cannot be read or has a Release behind a macro: nothing is then decided on
+/// a guess.
+fn specs_named(release_tree: &Path, name: &str, sub: Option<u32>) -> Option<Vec<(bool, SpecFamilies, String)>> {
+    let specs = release_tree.join("SPECS");
+    let mut dirs = vec![specs.join(name)];
+    let mut subs: Vec<PathBuf> = fs::read_dir(&specs)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| !n.is_empty() && n.chars().all(|x| x.is_ascii_digit())))
+        .map(|p| p.join(name))
+        .collect();
+    subs.sort();
+    dirs.extend(subs);
+    let file = format!("{name}.spec");
+    let mut out = Vec::new();
+    for d in dirs {
+        if !d.join(&file).is_file() {
+            continue;
+        }
+        let text = crate::specresolve::resolve(&crate::specresolve::dir_reader(&d), &file, sub)?;
+        let fams = spec_families_text(&text)?;
+        let rel = text
+            .lines()
+            .find(|l| l.starts_with("Release:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .map(|v| v.split('%').next().unwrap_or("").to_string())?;
+        let plain = !rel.is_empty()
+            && rel.chars().all(|x| x.is_ascii_digit() || x == '.')
+            && !rel.starts_with('.')
+            && !rel.ends_with('.');
+        if !plain {
+            return None;
+        }
+        out.push((builds_at(&text, sub), fams, rel));
     }
-    // rpm-sequoia is a separate spec, versioned independently, but it exists
-    // only to back rpm 6.x and must go with it.
-    if name.starts_with("rpm-sequoia-") {
-        return true;
+    Some(out)
+}
+
+/// The dist tag the release tree builds with (`photon-dist-tag`).
+fn dist_tag(release_tree: &Path) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(release_tree.join("build-config.json")).ok()?).ok()?;
+    let d = v["photon-build-param"]["photon-dist-tag"].as_str()?.trim().to_string();
+    (!d.is_empty()).then_some(d)
+}
+
+/// The specs whose RPMs make up the toolchain's package manager. Spec names
+/// only: every version and release is read from the specs.
+const TOOLCHAIN_RPM_SPECS: [&str; 2] = ["rpm", "rpm-sequoia"];
+
+/// Split the stage's RPM file names into the package-manager RPMs to purge
+/// and the ones to keep, from the specs alone - no version is written here.
+///
+/// For each spec name in [`TOOLCHAIN_RPM_SPECS`]:
+/// - an RPM at exactly the Version-Release of the spec that builds at this
+///   subrelease is what the build produces anyway: kept;
+/// - one higher than that wins over the build on version: purged (a pinned
+///   build of an older subrelease bootstraps with an older rpm);
+/// - one lower that another subrelease's spec produces is that subrelease's
+///   output, which a build here never picks over its own: kept;
+/// - anything else, and every RPM of a name no spec builds here, is stale:
+///   purged.
+/// Err when the specs or the dist cannot be read, or two specs of one name
+/// build at this subrelease: the caller refuses rather than guess.
+pub(crate) fn rpm_toolchain_split(release_tree: &Path, names: &[String], sub: Option<u32>) -> Result<(Vec<String>, Vec<String>), String> {
+    let dist = dist_tag(release_tree).ok_or_else(|| format!("{}: no photon-dist-tag", release_tree.join("build-config.json").display()))?;
+    let (mut purge, mut keep) = (Vec::new(), Vec::new());
+    let mut seen = std::collections::BTreeSet::new();
+    for spec in TOOLCHAIN_RPM_SPECS {
+        let all = specs_named(release_tree, spec, sub).ok_or_else(|| format!("SPECS/**/{spec}/{spec}.spec cannot be read without rpm"))?;
+        if all.is_empty() {
+            continue;
+        }
+        let building: Vec<&(bool, SpecFamilies, String)> = all.iter().filter(|x| x.0).collect();
+        if building.len() > 1 {
+            return Err(format!("{} specs named {spec} build at subrelease {sub:?}", building.len()));
+        }
+        let building = building.first().map(|(_, f, r)| (f.version.clone(), r.clone()));
+        for n in names {
+            if seen.contains(n) {
+                continue;
+            }
+            let Some((pkg, ver, rel)) = parse_rpm_name(n) else { continue };
+            if !all.iter().any(|(_, f, _)| f.families.iter().any(|x| *x == pkg)) {
+                continue;
+            }
+            seen.insert(n.clone());
+            let rel = rel.strip_suffix(dist.as_str()).map(str::to_string);
+            let decision = match (&building, &rel) {
+                (Some((bv, br)), Some(r)) if ver == *bv && r == br => true,
+                (Some((bv, br)), Some(r)) => {
+                    let higher = match vercmp(&ver, bv) {
+                        std::cmp::Ordering::Equal => vercmp(r, br) == std::cmp::Ordering::Greater,
+                        o => o == std::cmp::Ordering::Greater,
+                    };
+                    !higher && all.iter().any(|(b, f, fr)| !*b && f.version == ver && fr == r)
+                }
+                _ => false,
+            };
+            if decision {
+                keep.push(n.clone());
+            } else {
+                purge.push(n.clone());
+            }
+        }
     }
-    const FALLBACK: [&str; 9] = [
-        "rpm",
-        "rpm-build",
-        "rpm-build-libs",
-        "rpm-libs",
-        "rpm-devel",
-        "rpm-lang",
-        "rpm-sign-libs",
-        "rpm-debuginfo",
-        "rpm-plugin-systemd-inhibit",
-    ];
-    let Some((pkg, version, _)) = parse_rpm_name(name) else {
-        return false;
-    };
-    let known = match fams {
-        Some(f) => f.families.iter().any(|x| *x == pkg),
-        None => FALLBACK.iter().any(|x| *x == pkg),
-    };
-    known && (version == "6" || version.starts_with("6."))
+    Ok((purge, keep))
 }
 
 /// Does this RPM belong to `fams` at a version the spec no longer declares?
@@ -3281,11 +3358,15 @@ restored from the kernel store or left by an earlier phase A",
             crate::builder::mode()?
         ));
         let t0 = std::time::SystemTime::now();
-        let rc = crate::builder::make_command(&release, &args[1..], &mut |l| c.say(l))?
-            .status()
-            .map_err(|e| format!("running make: {e}"))?
-            .code()
-            .unwrap_or(-1);
+        let mut cmd = crate::builder::make_command(&release, &args[1..], &mut |l| c.say(l))?;
+        let status = match c.spec.make_log.clone() {
+            Some(log) => {
+                c.say(&format!("  make output -> {}", log.display()));
+                crate::tslog::run_to_log(&mut cmd, &log).map_err(|e| format!("running make: {e}"))?
+            }
+            None => cmd.status().map_err(|e| format!("running make: {e}"))?,
+        };
+        let rc = status.code().unwrap_or(-1);
         let secs = t0.elapsed().map(|d| d.as_secs()).unwrap_or(0);
         c.say(&format!(
             "  attempt {attempt}: make exited {rc} after {}m{:02}s",
@@ -3907,29 +3988,44 @@ fn run_cascade(c: &mut Ctx) -> Result<PathBuf, String> {
     let spec = c.spec;
     let mut produced = PathBuf::new();
     for stage in spec.cascade() {
-        c.say(&format!("[{}]", stage.name()));
-        match &stage {
-            Stage::Resolve => {
-                if let Subrelease::Pinned(n) = spec.subrelease {
-                    c.say(&format!("  subrelease pinned to {n}"));
+        // each phase stamped and timed, so a build's log shows where its
+        // minutes go
+        let t0 = std::time::SystemTime::now();
+        c.say(&format!("[{}] {} UTC", stage.name(), crate::tslog::hms(t0)));
+        let r: Result<(), String> = (|| {
+            match &stage {
+                Stage::Resolve => {
+                    if let Subrelease::Pinned(n) = spec.subrelease {
+                        c.say(&format!("  subrelease pinned to {n}"));
+                    }
+                }
+                Stage::Sync => sync(c)?,
+                Stage::Reset => reset(c)?,
+                Stage::Inject(i) => inject(c, i)?,
+                Stage::Sources => {
+                    report_subrelease(c)?;
+                    sources(c)?
+                }
+                Stage::Preflight => preflight(c)?,
+                Stage::Purge => purge(c)?,
+                Stage::Make => produced = make_and_deliver(c)?,
+                Stage::Post => {
+                    c.say(&format!("  produced {}", produced.display()));
+                    post_assert(c)?;
+                    slot_after(c);
                 }
             }
-            Stage::Sync => sync(c)?,
-            Stage::Reset => reset(c)?,
-            Stage::Inject(i) => inject(c, i)?,
-            Stage::Sources => {
-                report_subrelease(c)?;
-                sources(c)?
-            }
-            Stage::Preflight => preflight(c)?,
-            Stage::Purge => purge(c)?,
-            Stage::Make => produced = make_and_deliver(c)?,
-            Stage::Post => {
-                c.say(&format!("  produced {}", produced.display()));
-                post_assert(c)?;
-                slot_after(c);
-            }
-        }
+            Ok(())
+        })();
+        let secs = t0.elapsed().map(|d| d.as_secs()).unwrap_or(0);
+        c.say(&format!(
+            "  [{}] {} after {}m{:02}s",
+            stage.name(),
+            if r.is_ok() { "done" } else { "failed" },
+            secs / 60,
+            secs % 60
+        ));
+        r?;
     }
     Ok(produced)
 }
@@ -4274,6 +4370,7 @@ mod tests {
             packages: vec![],
             poi_image: None,
             remote: None,
+            make_log: None,
         }
     }
 
@@ -4431,62 +4528,89 @@ mod tests {
         let _ = fs::remove_file(&tmp);
     }
 
-    /// The same cases, run BOTH ways: against the literal fallback and against
-    /// families read from a spec. Neither path may delete rpm 4.x.
+    /// The package-manager RPMs are judged against the specs alone: kept at
+    /// exactly what the subrelease's specs produce or at what another
+    /// subrelease's spec produces below it; purged when higher, stale, or of a
+    /// spec that does not build here. Refused when the specs cannot decide.
     #[test]
-    fn the_rpm6_purge_matches_the_version_not_the_release() {
-        let spec = SpecFamilies {
-            name: "rpm".into(),
-            version: "6.1.0".into(),
-            families: [
-                "rpm",
-                "rpm-debuginfo",
-                "rpm-devel",
-                "rpm-libs",
-                "rpm-build-libs",
-                "rpm-sign-libs",
-                "rpm-build",
-                "rpm-lang",
-                "python3-rpm",
-                "rpm-plugin-systemd-inhibit",
-                "rpm-plugin-selinux",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+    fn the_rpm_toolchain_purge_follows_the_specs() {
+        let root = std::env::temp_dir().join(format!("shk-rpmtc-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("build-config.json"), r#"{"photon-build-param": {"photon-dist-tag": ".ph5", "photon-subrelease": "92"}}"#).unwrap();
+        let spec = |dir: &str, name: &str, cond: &str, ver: &str, rel: &str, extra: &str| {
+            let d = root.join("SPECS").join(dir);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(
+                d.join(format!("{name}.spec")),
+                format!("%global build_if %{{photon_subrelease}} {cond}\nName: {name}\nVersion: {ver}\nRelease: {rel}%{{?dist}}\n{extra}"),
+            )
+            .unwrap();
         };
-        for fams in [None, Some(&spec)] {
-            for keep in [
-                // "-6." appears in the RELEASE here; deleting these removes the
-                // rpm 4.x the bootstrap requires
-                "rpm-4.18.0-6.ph5.x86_64.rpm",
-                "rpm-libs-4.18.0-6.ph5.x86_64.rpm",
-                "rpm-build-4.18.0-16.ph5.x86_64.rpm",
-                "librpm-6.0.0-1.ph5.x86_64.rpm",
-                "rpm-6.1.0-1.ph5.x86_64.notrpm",
-            ] {
-                assert!(!is_rpm6(keep, fams), "{keep} must be KEPT");
-            }
-            for drop in [
-                "rpm-6.1.0-1.ph5.x86_64.rpm",
-                "rpm-build-6.1.0-1.ph5.x86_64.rpm",
-                "rpm-libs-6.1.0-1.ph5.x86_64.rpm",
-                "rpm-plugin-systemd-inhibit-6.1.0-1.ph5.x86_64.rpm",
-                "rpm-sequoia-1.10.0-1.ph5.x86_64.rpm",
-            ] {
-                assert!(is_rpm6(drop, fams), "{drop} must be REMOVED");
-            }
-        }
-        // the subpackage the hand-written list forgot: covered only via the spec
-        let missed = "rpm-plugin-selinux-6.1.0-1.ph5.x86_64.rpm";
-        assert!(
-            is_rpm6(missed, Some(&spec)),
-            "{missed} must be REMOVED via the spec"
-        );
-        assert!(
-            !is_rpm6(missed, None),
-            "the literal fallback is known to miss it"
-        );
+        let rpm_pkgs = "%package libs\nSummary: x\n%package -n python3-%{name}\nSummary: y\n";
+        spec("rpm", "rpm", ">= 92", "6.1.0", "5", rpm_pkgs);
+        spec("91/rpm", "rpm", "== 91", "4.18.2", "8.5", rpm_pkgs);
+        spec("rpm-sequoia", "rpm-sequoia", ">= 92", "1.10.0", "1", "");
+        let names: Vec<String> = [
+            // 0..4: what the specs building at 92 produce
+            "rpm-6.1.0-5.ph5.x86_64.rpm",
+            "rpm-libs-6.1.0-5.ph5.x86_64.rpm",
+            "python3-rpm-6.1.0-5.ph5.x86_64.rpm",
+            "rpm-sequoia-1.10.0-1.ph5.x86_64.rpm",
+            // 4..6: what SPECS/91/rpm produces
+            "rpm-4.18.2-8.5.ph5.x86_64.rpm",
+            "rpm-libs-4.18.2-8.5.ph5.x86_64.rpm",
+            // 6..11: stale or higher at 92
+            "rpm-6.1.0-4.ph5.x86_64.rpm",
+            "rpm-libs-6.0.1-2.ph5.x86_64.rpm",
+            "rpm-sequoia-1.9.0-1.ph5.x86_64.rpm",
+            "rpm-6.1.0-6.ph5.x86_64.rpm",
+            "rpm-4.18.0-6.ph5.x86_64.rpm",
+            // not a package-manager RPM at all
+            "rpmdevtools-9.6-1.ph5.x86_64.rpm",
+            "librpm-6.0.0-1.ph5.x86_64.rpm",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let sorted = |mut v: Vec<String>| {
+            v.sort();
+            v
+        };
+        let (purge, keep) = rpm_toolchain_split(&root, &names, Some(92)).unwrap();
+        assert_eq!(sorted(keep), sorted(names[..6].to_vec()), "92's own output and 91's lower output stay");
+        assert_eq!(sorted(purge), sorted(names[6..11].to_vec()), "higher, stale; nothing outside the families");
+
+        // at 91 rpm 6.1.0 wins over the 4.18.2 the build installs; rpm-sequoia does not build there
+        let (purge, keep) = rpm_toolchain_split(&root, &names, Some(91)).unwrap();
+        assert_eq!(sorted(keep), sorted(names[4..6].to_vec()));
+        let mut want = names[..4].to_vec();
+        want.extend(names[6..11].to_vec());
+        assert_eq!(sorted(purge), sorted(want));
+
+        // the Release is compared whole: 5.1 is not 5
+        spec("rpm", "rpm", ">= 92", "6.1.0", "5.1", rpm_pkgs);
+        let (_, keep) = rpm_toolchain_split(&root, &names, Some(92)).unwrap();
+        assert!(!keep.contains(&names[0]), "{keep:?}");
+        spec("rpm", "rpm", ">= 92", "6.1.0", "5", rpm_pkgs);
+
+        // a foreign dist is not this tree's output
+        let foreign = vec!["rpm-6.1.0-5.ph6.x86_64.rpm".to_string()];
+        let (purge, _) = rpm_toolchain_split(&root, &foreign, Some(92)).unwrap();
+        assert_eq!(purge, foreign);
+
+        // the specs cannot decide: refused, never guessed
+        spec("93/rpm", "rpm", ">= 92", "6.1.0", "5", rpm_pkgs);
+        assert!(rpm_toolchain_split(&root, &names, Some(92)).unwrap_err().contains("2 specs named rpm"));
+        fs::remove_dir_all(root.join("SPECS/93")).unwrap();
+        spec("rpm", "rpm", ">= 92", "6.1.0", "%{rel}", rpm_pkgs);
+        assert!(rpm_toolchain_split(&root, &names, Some(92)).is_err());
+        spec("rpm", "rpm", ">= 92", "6.1.0", "5", rpm_pkgs);
+        fs::write(root.join("build-config.json"), "{}").unwrap();
+        assert!(rpm_toolchain_split(&root, &names, Some(92)).unwrap_err().contains("photon-dist-tag"));
+        fs::write(root.join("build-config.json"), r#"{"photon-build-param": {"photon-dist-tag": ".ph5"}}"#).unwrap();
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// Filenames split on the last two dashes, not on a prefix.

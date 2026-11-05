@@ -323,6 +323,9 @@ pub struct BuildSpec {
     /// Where a missing tree is cloned from (MC_PHOTON_REMOTE). None: a
     /// missing tree is an error, never a guess.
     pub remote: Option<String>,
+    /// Where make's output goes, every line stamped with its UTC time. None:
+    /// make writes to this process's own stdout and stderr.
+    pub make_log: Option<PathBuf>,
 }
 
 impl BuildSpec {
@@ -361,6 +364,7 @@ impl BuildSpec {
             packages: Vec::new(),
             poi_image: None,
             remote: None,
+            make_log: None,
         })
     }
 

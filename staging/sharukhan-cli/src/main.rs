@@ -9,6 +9,8 @@ mod azure;
 mod b64;
 mod branchguard;
 mod build;
+mod tslog;
+mod reuse;
 mod buildexec;
 mod builder;
 mod buildmode;
@@ -240,6 +242,12 @@ OPTIONS:
     --jobs <n>          proposed parallel VM count (status); default is cpus/4
     --job <id>          a job table row id (stop, watch) - NOT --jobs
     --dry-run           run every gate, change nothing (run, stop)
+    --record-reuse      verify: when the row passes, record the fingerprint of its ISO
+                        (sha256), row, kickstart and sharukhan binary for --reuse-since
+    --reuse-since <stamp>
+                        run: a row with a passed result recorded at or after <stamp>
+                        (YYYYMMDDTHHMMSSZ) whose fingerprint is identical now is not
+                        installed again; its evidence is reported
     --keep              keep each VM after verifying (run); an installed one stays up,
                         one whose install did not finish is powered off with its disk kept
     --settle <sec>      minimum ISO age before the first VM (run); default 300
@@ -284,6 +292,8 @@ struct Args {
     deliver_only: bool,
     compose_only: bool,
     keep: bool,
+    record_reuse: bool,
+    reuse_since: Option<String>,
     once: bool,
     json: bool,
     base: Option<String>,
@@ -408,6 +418,8 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
         deliver_only: false,
         compose_only: false,
         keep: false,
+        record_reuse: false,
+        reuse_since: None,
         once: false,
         json: false,
         base: None,
@@ -492,6 +504,14 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
             "--all" => out.all = true,
             "--dry-run" => out.dry_run = true,
             "--keep" => out.keep = true,
+            "--record-reuse" => out.record_reuse = true,
+            "--reuse-since" => {
+                let v = a.next().ok_or("--reuse-since needs a value")?;
+                if !crate::reuse::valid_stamp(&v) {
+                    return Err(format!("--reuse-since: {v} is not a YYYYMMDDTHHMMSSZ stamp"));
+                }
+                out.reuse_since = Some(v);
+            }
             "--once" => out.once = true,
             "--json" => out.json = true,
             "--base" => out.base = Some(a.next().ok_or("--base needs a value")?),
@@ -720,6 +740,7 @@ fn main() -> ExitCode {
                 log: args.log.clone(),
                 allow_build: args.allow_build,
                 lifecycle: lifecycle.clone(),
+                reuse_since: args.reuse_since.clone(),
             },
         ),
         "card" => need_id(&args).and_then(|id| phases::cmd_card(&cfg, id)),
@@ -739,7 +760,7 @@ fn main() -> ExitCode {
         }),
         "verify" => need_id(&args)
             .and_then(|id| {
-                phases::cmd_verify(&cfg, id, args.ip.as_deref(), lifecycle.as_ref(), args.iso.as_deref())
+                phases::cmd_verify(&cfg, id, args.ip.as_deref(), lifecycle.as_ref(), args.iso.as_deref(), args.record_reuse)
             }),
         "teardown" => need_id(&args).and_then(|id| phases::cmd_teardown(&cfg, id, args.purge)),
         "build-iso" => args.poi.clone().map(Ok).unwrap_or_else(|| default_poi(&cfg)).and_then(|poi| {
@@ -1161,7 +1182,7 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     // It reported a FAIL for a stale Aug-31 copy while both live variant
     // patches applied cleanly - a false alarm on the one check whose whole job
     // is to catch a stale patch. Its companion "build resolves patch" compared
-    // cfg.photon_scripts.join("photonos-patches/downstream-fixes.patch")
+    // the scripts directory's photonos-patches/downstream-fixes.patch
     // against cfg.downstream_patch, which is the same path, so it could never
     // fail. Between them they proved nothing about the patch a build would use.
     let mut variants: Vec<std::path::PathBuf> = std::fs::read_dir(&cfg.variant_patches)
