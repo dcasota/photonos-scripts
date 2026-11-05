@@ -60,7 +60,7 @@ none of them: a missing ISO is listed as `would build <key> <path>`, and its
 rows as `[build ISO] -> kickstart -> ...`. Until 2026-09-26 it asked
 `build::resolve` instead of `build::plan`, and `resolve` knows nothing of dry
 runs - it created the cache directory, purged the cached photon-os-installer
-RPMs from `stage/RPMS` and started `runPh5_normal.sh`. `resolve` now takes its
+RPMs from `stage/RPMS` and started the build. `resolve` now takes its
 decision through `plan` as well, and refuses a missing variant patch before the
 purge rather than after it.
 

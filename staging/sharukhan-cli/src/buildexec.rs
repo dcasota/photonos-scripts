@@ -2763,7 +2763,6 @@ fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
 
 /// [`purge_rebuilt_content`] for any caller: `specs` are release-tree
 /// relative spec paths the build patches, `subrelease` the one it builds.
-/// The prebuilt path, which drives runPh5_normal.sh, calls this directly.
 pub fn purge_rebuilt_content_at(
     release_tree: &Path,
     stage: &Path,
@@ -3470,8 +3469,7 @@ fn unbuilt_runtime_specs(c: &mut Ctx, release: &Path, stage: &Path) -> Result<Ve
 
 /// [`unbuilt_runtime_specs`] for any build driver: the release tree as the
 /// build will see it (patched), its stage, the image type, extra roots, and
-/// the composer image whose STIG set reaches the media. The prebuilt path,
-/// which drives runPh5_normal.sh, hands the result to the script.
+/// the composer image whose STIG set reaches the media.
 pub fn unbuilt_runtime_specs_for(
     common: &Path,
     release: &Path,

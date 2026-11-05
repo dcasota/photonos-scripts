@@ -71,6 +71,9 @@ pub struct Checks {
 /// check one PR per installer variant proves names each), `#` comment lines.
 /// A malformed line, a label that is not PR#n/POI#n or a check listed twice is
 /// an error: attribution is what a failed check reports as implicated.
+/// An attribution file on disk (tests); everything else goes through
+/// [`load_attribution_file`].
+#[cfg(test)]
 pub fn load_attribution(path: &Path) -> Result<std::collections::BTreeMap<String, String>, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e} (SHARUKHAN_CHECK_PRS)", path.display()))?;
     parse_attribution(&text, &path.display().to_string())

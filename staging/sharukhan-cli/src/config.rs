@@ -190,7 +190,8 @@ impl DataFile {
         DataFile { setting, name, path, builtin }
     }
 
-    /// The file at `path` in place of the built-in copy.
+    /// The file at `path` in place of the built-in copy (tests).
+    #[cfg(test)]
     pub fn file(setting: &'static str, name: &'static str, path: PathBuf) -> DataFile {
         DataFile { setting, name, path: Some(path), builtin: "" }
     }

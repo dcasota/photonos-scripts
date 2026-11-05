@@ -374,6 +374,7 @@ pub enum Plan {
     Refuse { reason: String },
 }
 
+#[cfg(test)]
 pub fn plan(state: &State) -> Plan {
     plan_with_local(state, None)
 }

@@ -91,6 +91,7 @@ impl Arch {
     /// directory. x86 produces a compressed bzImage, arm64 a flat Image - which
     /// is also why ikconfig extraction is straightforward on arm64 and not on
     /// x86.
+    #[cfg(test)]
     pub fn boot_image(&self) -> &'static str {
         match self {
             Arch::X86_64 => "arch/x86/boot/bzImage",

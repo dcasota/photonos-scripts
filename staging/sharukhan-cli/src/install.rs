@@ -408,8 +408,6 @@ mod tests {
         assert!(!ssh_answers("", std::time::Duration::from_millis(100)));
     }
 
-    use super::*;
-
     #[test]
     fn facts_round_trip_in_the_format_the_operator_reads() {
         let d = std::env::temp_dir().join(format!("sharukhan-facts-{}", std::process::id()));

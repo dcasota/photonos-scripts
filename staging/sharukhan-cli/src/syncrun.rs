@@ -260,12 +260,6 @@ pub fn start(c: &Connection, fork: &str, repo: &Path, roots: &[&str], publish: &
 
 // --- the input recheck ------------------------------------------------------
 
-/// Still the state ANALYZE planned for? The fork's base heads and every PR
-/// head; before UPSTREAM only the heads that stage moves (see `upstream_scope`).
-pub fn inputs_moved(c: &Connection, run: i64, fork: &str, bases: &BTreeMap<String, (String, String)>) -> Result<Option<String>, String> {
-    inputs_moved_in(c, run, fork, bases, None)
-}
-
 /// The PRs UPSTREAM moves and the ones they stack on: after the gate and the
 /// fork's publish, a PR outside these stacks moving on GitHub changes nothing
 /// UPSTREAM pushes (run 16: #67 amended on the fork, no vmware PR).
@@ -289,6 +283,8 @@ fn upstream_scope(c: &Connection, run: i64) -> Result<std::collections::BTreeSet
     Ok(scope)
 }
 
+/// Still the state ANALYZE planned for? The fork's base heads and every PR
+/// head; before UPSTREAM only the heads that stage moves (see `upstream_scope`).
 fn inputs_moved_in(
     c: &Connection,
     run: i64,

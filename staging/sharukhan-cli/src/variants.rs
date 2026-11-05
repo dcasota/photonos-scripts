@@ -24,8 +24,6 @@
 //! instead of silently fetched from a stale ref.
 
 use std::collections::BTreeSet;
-use std::fs;
-use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variant {
@@ -146,8 +144,10 @@ pub fn parse(text: &str) -> Result<Variants, String> {
     Ok(out)
 }
 
-pub fn load(path: &Path) -> Result<Variants, String> {
-    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e} (SHARUKHAN_VARIANTS)", path.display()))?;
+/// A variants file on disk (tests); everything else goes through [`load_file`].
+#[cfg(test)]
+pub fn load(path: &std::path::Path) -> Result<Variants, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e} (SHARUKHAN_VARIANTS)", path.display()))?;
     parse(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
@@ -291,7 +291,7 @@ mod tests {
     /// into a build.
     #[test]
     fn the_shipped_file_parses() {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/variants.conf");
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/variants.conf");
         let v = load(&p).unwrap();
         assert!(v.variants.iter().any(|x| x.name == "2.8"));
     }

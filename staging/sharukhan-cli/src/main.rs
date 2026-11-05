@@ -1175,10 +1175,8 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
         t,
         format!("{} ({head})", cfg.photon_tree.display()),
     );
-    // What a build actually applies is a PER-VARIANT patch: build_iso stages
-    // variant-patches/poi-<variant>.patch into its own scriptdir as
-    // photonos-patches/downstream-fixes.patch, because runPh5_normal.sh
-    // resolves that name relative to its own directory.
+    // What a build actually applies is a PER-VARIANT patch: the cascade
+    // injects variant-patches/poi-<variant>.patch into the release tree.
     //
     // So checking the standing /root/photonos-patches/downstream-fixes.patch
     // validates a file no build has read since the variant mechanism landed.

@@ -262,16 +262,19 @@ the base or the profile and derive again; `sharukhan wrapper check` fails on any
 release starts with `sharukhan wrapper profile-new --kernel <release> --from 7.3-rc4`, which first
 verifies the tarball against kernel.org's signatures. See
 [sharukhan-cli/docs/builds/kernel-wrappers.md](sharukhan-cli/docs/builds/kernel-wrappers.md#kernel-wrappers-sharukhan-wrapper) and
-`sharukhan-cli/specs/features/kernel-wrapper.md`.
+`sharukhan-cli/specs/features/kernel-wrapper.md`. sharukhan carries the base and the
+profiles built in; after changing `runPh7-2-7.sh`, copy it to
+`sharukhan-cli/src/embedded/kernel-base/` (a test fails while the two differ).
 
 The base's own clean-up of older pins is version-neutral: it removes a `SpecData.py` compatibility
 wrap left by any release's standalone pin script, and restores any `c++.real*` / `g++.real*`
 rename in the sandboxes.
 
 ### mission-control/
-The matrix's evidence (`results/`). Its configuration - `permutations.tsv`, the
-installer variants, the check attribution and the VMX template - moved to
-`sharukhan-cli/config/` and is compiled into sharukhan. The bash harness that used to
+The matrix's configuration - `permutations.tsv`, the installer variants, the check
+attribution and the VMX template - moved to `sharukhan-cli/config/` and is compiled
+into sharukhan; what is left here is `config/mission-control.env` for the superseded
+scripts. The evidence lives under `MC_RESULTS_DIR`. The bash harness that used to
 live here has been absorbed into `sharukhan-cli` and is kept, unused, under
 `superseded-bash/` with a README naming what replaced each script — and six latent
 bugs found while porting.
@@ -290,6 +293,11 @@ test, because a stale ISO otherwise produces passes that mean nothing.
 `doctor`, `plan`, `run`, `stop`, `watch`, `report`, `findings`, `status`, `card`,
 `canister`, `build-iso`, `variant-patches`. Findings persist in SQLite so they outlive
 the session that produced them. See [sharukhan-cli/README.md](sharukhan-cli/README.md).
+
+The binary is standalone: it builds every ISO itself and runs none of the `runPh*.sh`
+scripts above, and its configuration, the kernel wrapper base (`runPh7-2-7.sh`, a
+byte-identical copy under `sharukhan-cli/src/embedded/kernel-base/`, kept equal by a
+test) and the kernel profiles are compiled in.
 
 What remains a subprocess is either a Windows binary (`vmrun.exe`,
 `vmware-vdiskmanager.exe`), the system under test (`make`/`build.py`), or a deliberate

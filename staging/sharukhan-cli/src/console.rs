@@ -263,7 +263,6 @@ pub fn leave_menu(console: &Console, vm_name: &str, started: Instant, log: &mut 
                 None => {}
                 Some(_) if f == menu => {
                     log("boot menu: the menu came back after the screen changed; not left");
-                    left_at = None;
                     break;
                 }
                 Some((at, first)) if at.elapsed() >= CONFIRM => {

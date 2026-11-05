@@ -14,6 +14,8 @@ The shell tooling worked but had three structural problems that a matrix runner 
 
 A compiled binary with typed errors, explicit inputs and real exit codes removes all three by construction.
 
+**Standalone.** The binary needs no script and no file beside it: every ISO build runs through the built-in cascade (`buildexec`), and the matrix, the installer variants, the check attribution, the VMX template, the kernel wrapper base and the kernel profiles are compiled in from `config/`, `src/embedded/` and `profiles/kernel/` (`build.rs` embeds whatever the last two hold). A setting naming a file replaces a built-in copy, for an edit under test before it is committed; see [the configuration](docs/configuration.md). What stays on disk is the work itself: the gate repository and build trees, variant patches, ISOs, results and the memory database.
+
 ## Layers
 
 ```
@@ -57,14 +59,14 @@ Every layer depends only downward. The domain layer never shells out directly; i
 
 | Layer | Modules | Responsibility |
 |---|---|---|
-| orchestration | `runner` | `run`, `stop`, `watch`: gates, serialisation, one row end to end |
+| orchestration | `runner`, `reuse` | `run`, `stop`, `watch`: gates, serialisation, one row end to end; a passed row's result reused when its ISO (sha256), row, kickstart and binary are identical (`--reuse-since`) |
 | orchestration | `job` | the `job` table: background work that outlives its shell |
 | orchestration | `matrix`, `identity` | the permutation matrix; deterministic per-row MAC, UUID and IP |
 | domain: preflight | `disk`, `proc`, `canister` | disk admission; process lookup that cannot match itself; which canister a kernel can have |
 | domain: iso | `build`, `buildmode`, `buildexec`, `media`, `specresolve` | resolving a tuple to an ISO and the variant patches; the build cascade and its execution; proving an ISO carries the packages under test; reading a spec as one subrelease sees it (subrelease conditionals decided, includes inlined) |
 | domain: iso | `builder`, `specdata`, `specparity` | the pinned builder container that runs Photon's tooling; parsing a SPECS tree as the package builder does, before a build; whether a reworked tree builds what a reference tree builds |
 | domain: iso | `poiimage`, `isoboot`, `caneq`, `kernelslot`, `subvault` | the installer image that composes the ISO, built from the variant under test; how an ISO boots, read from the ISO; the embedded canister-equivalent patch; the stage's kernel slot shared by prebuilt and equivalent builds; keeping another subrelease's RPMs out of a pinned build |
-| domain: kernel | `wrapper` (`base`, `branch`, `cli`, `derive`, `identity`, `kernelorg`, ...), `kbuild` | kernel wrappers and profiles for kernel.org kernels, verified against kernel.org's signatures; ISO builds and runs with a profile's kernel (`--kernel`) |
+| domain: kernel | `wrapper` (`base`, `branch`, `cli`, `derive`, `embedded`, `identity`, `kernelorg`, ...), `kbuild` | kernel wrappers and profiles for kernel.org kernels, verified against kernel.org's signatures, base and profiles built in; ISO builds and runs with a profile's kernel (`--kernel`) |
 | domain: iso | `kconfig` | Kconfig as data: the Hyper-V fragment, the tristate parser, the dependency closure a fragment implies, and the IKCONFIG blob inside a built kernel (with its own gzip/DEFLATE decoder) |
 | domain: iso | `remaster` (`buildroot`, `kernel`, `cc1`, `initrd`, `repo`, `iso`, `guard`) | making an Azure variant of an ISO that already exists: a build root bootstrapped from the input's own RPMs, the kernel rebuilt in it, the installer initrd and repo metadata reworked, and the medium rewritten by replaying its boot image |
 | domain: vm | `vm`, `vmx`, `kickstart`, `net` | the VM on disk and taking it back; the VMX template; the POI kickstart; the network axis |
@@ -72,7 +74,7 @@ Every layer depends only downward. The domain layer never shells out directly; i
 | domain: install | `install`, `leases`, `serial`, `card` | one install; the DHCP lease file and serial log as boot signals; the operator card |
 | domain: verify | `verify`, `oracle`, `evidence`, `report` | running the oracle and harvesting logs; the assertions; structured results; per-row report |
 | domain: verify | `pkglife` (`remote`, `parse`, `classify`, `policy`, `units`, `probe`, `record`, `media`) | opt-in package lifecycle after verify: the row's ISO as the repository, per-package install / test by content / remove / residue, controls, the reviewed safety policy (ADR-0008) |
-| adapters | `guest`, `vmware`, `winpath`, `sha256`, `sha512`, `b64` | ssh into the guest; vmrun; WSL to Windows paths; hashing and encoding without shelling out |
+| adapters | `guest`, `vmware`, `winpath`, `sha256`, `sha512`, `b64`, `tslog` | ssh into the guest; vmrun; WSL to Windows paths; hashing and encoding without shelling out; a child's output logged with every line stamped in UTC |
 | domain: specs | `branchguard` | guarding a PR branch against a base that has moved: the %changelog version it adds must not be one the target already publishes, the top entry must not predate the one beneath it, and enumerating a commit's paths must not collapse a rename to its destination and leave the source behind |
 | persistence | `memory`, `ingest` | the memory database; deriving it from the evidence files |
 | automation | `sync`, `syncrun`, `prbody`, `subrel`, `variants` | the fork sync: analysis, rebase and verify (`sync`), the resumable state machine and its stages (`syncrun`, ADR-0009, ADR-0011), PR descriptions carried and linted (`prbody`), subreleases from the tree, the variants file |
@@ -80,7 +82,7 @@ Every layer depends only downward. The domain layer never shells out directly; i
 | automation | `escalate`, `mcp` | the escalation queue, budgets and ledger; the stdio MCP server it works through (ADR-0010) |
 | host | `service`, `secret`, `author` | the host services, settings file and secret files (ADR-0012); the configured commit author |
 | persistence | `dbrender`, `doccheck` | `db render` (MEMORY.md as a view); the documentation tests (links, anchors, subcommands, profiles) |
-| cli | `main`, `phases`, `config` | the command surface; one entry point per phase; typed paths and defaults |
+| cli | `main`, `phases`, `config` | the command surface; one entry point per phase; typed paths and defaults, and the built-in configuration files (`DataFile`) |
 
 ## The axis model
 
@@ -134,4 +136,4 @@ The methodology is reconstructed from the maintainer's `vCenter-CVE-drift-analyz
 | 3 | `specs/adr/0001`–`0012` | Complete for the decisions taken so far: run/stop/watch, kernel wrappers (0002-0007), package lifecycle (0008), sync (0009), escalation (0010), upstream stage (0011), host services (0012) |
 | 4 | `specs/features/*.md` | Kernel wrapper, package lifecycle, Hyper-V/Azure remaster; the sync and the escalation are specified by their ADRs and `docs/automation/` |
 | 5 | `specs/tasks/NNN-task-*.md` + index | Tasks 001 (kernel wrapper) and 002 (package lifecycle); the `db` command the PRD planned is implemented (`sharukhan db render`) |
-| 6 | `src/`, `tests/` — one PR per task | Ahead of phases 2–5: the CLI predates the SDD layout. 195 unit tests; where the implementation disproved an assumption it is recorded under `specs/findings/` |
+| 6 | `src/`, `tests/` — one PR per task | Ahead of phases 2–5: the CLI predates the SDD layout. 773 unit tests; where the implementation disproved an assumption it is recorded under `specs/findings/` |

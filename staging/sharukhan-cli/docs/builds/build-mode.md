@@ -243,10 +243,11 @@ Before the image is used, sharukhan proves it:
 
 The tag, `sharukhan/photon-os-installer:<version>-<hash>`, is a content hash
 over the base ID and the prepped tree, so an unchanged variant reuses its image.
-The shared `photon/installer:latest` is never retagged. The legacy driver
-receives the tag as `MC_POI_IMAGE` and writes and re-reads `poi-image` itself.
-The cascade does the same in `preflight`, building the composer from the
-already-injected tree when no tag was passed.
+The shared `photon/installer:latest` is never retagged. The cascade writes the
+tag as `poi-image` in `preflight` (building the composer from the
+already-injected tree when no tag was passed), and `build-iso` reads it back
+after the build: media composed by another image are not evidence for the
+variant.
 
 ### How a medium boots: `iso-boot`
 

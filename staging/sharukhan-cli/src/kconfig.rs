@@ -144,10 +144,6 @@ impl Kconfig {
         self.map.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.map.is_empty()
-    }
-
     /// How the symbol reads in the file, for an error message that an operator
     /// can act on. "MISSING" rather than a guess when there is no line.
     pub fn describe(&self, sym: &str) -> String {

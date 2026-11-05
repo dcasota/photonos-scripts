@@ -88,21 +88,16 @@ fn pids() -> Vec<i32> {
         .unwrap_or_default()
 }
 
-/// Processes RUNNING one of the named scripts, excluding this process, its
+/// Processes whose command line passes `pred`, excluding this process, its
 /// ancestors, and any other sharukhan.
 ///
-/// The needle is matched against argv[0] and argv[1] only - the interpreter and
-/// the script it was handed - never the whole command line. `pgrep -f` matches
+/// A script needle is matched with [`head_matches`]: against argv[0] and
+/// argv[1] only - the interpreter and the script it was handed - never the
+/// whole command line. `pgrep -f` matches
 /// anywhere, so any shell whose command line merely mentions "mc-run.sh"
 /// (writing it, grepping it, editing it) is reported as running it. That was
 /// observed here: a shell that had just written a file of that name was
 /// counted as a build in flight.
-pub fn matching(needles: &[&str]) -> Vec<Proc> {
-    matching_by(|cmd| head_matches(cmd, needles))
-}
-
-/// [`matching`] with an arbitrary test on the command line; this process and
-/// its ancestors are still never reported.
 pub fn matching_by(pred: impl Fn(&str) -> bool) -> Vec<Proc> {
     let skip = self_and_ancestors();
     let mine = own_argv0();

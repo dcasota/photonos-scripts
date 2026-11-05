@@ -4,8 +4,6 @@
 //! Splitting on '\t' silently yields zero rows, so split on whitespace.
 
 use crate::net::NetSpec;
-use std::fs;
-use std::path::Path;
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -89,6 +87,7 @@ impl Permutation {
     /// deliberately keeps the WHOLE string, so a `+hyperv` row caches as a
     /// separate ISO - it is a different artefact, and reusing the plain one
     /// would report a verdict about media that was never built.
+    #[cfg(test)]
     pub fn build_variants(&self) -> Vec<&str> {
         self.canister
             .split('+')
@@ -98,6 +97,7 @@ impl Permutation {
     }
 
     /// The canister part alone, which is what `CanisterMode::parse` accepts.
+    #[cfg(test)]
     pub fn canister_mode(&self) -> &str {
         // `fips0-aarch64` names an ARCH as well as a mode; the arch half is
         // consumed by `arch()` and the remainder is a plain prebuilt build.
@@ -123,6 +123,7 @@ impl Permutation {
         }
     }
 
+    #[cfg(test)]
     pub fn wants_hyperv(&self) -> bool {
         self.build_variants().contains(&"hyperv")
     }
@@ -198,8 +199,10 @@ pub fn rows(cfg: &crate::config::Config) -> Result<Vec<Permutation>, String> {
     Ok(all)
 }
 
-pub fn load(path: &Path) -> Result<Vec<Permutation>, String> {
-    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+/// A matrix file on disk (tests); everything else goes through [`load_file`].
+#[cfg(test)]
+pub fn load(path: &std::path::Path) -> Result<Vec<Permutation>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     parse(&text, &path.display().to_string())
 }
 

@@ -17,7 +17,6 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// The driver, run with the package builder's directory on `sys.path`.
 const DRIVER: &str = r#"
@@ -400,6 +399,7 @@ pub fn builder_error(stdout: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     #[test]
     fn the_checker_is_called_as_build_py_calls_it() {

@@ -77,6 +77,16 @@ this process, and every one of those steps is also a subcommand of its own
 (`kickstart`, `create-vm`, `install`, `verify`, `teardown`, `build-iso`,
 `variant-patches`, `card`, `doctor`).
 
+Since 2026-11-05 it needs no script and no file beside the binary either. Every
+ISO is built by the built-in cascade (no `runPh5_normal.sh`); the matrix, the
+installer variants, the check attribution, the VMX template, the kernel wrapper
+base and the kernel profiles are compiled in from `config/`, `src/embedded/` and
+`profiles/kernel/`, and a setting naming a file replaces a built-in copy (see
+[Configuration](docs/configuration.md)). Build logs carry a UTC time on every
+line and the cascade times each phase; the sync's gate reuses a fast-loop row's
+passed result when its ISO, row, kickstart and binary are identical. The public
+`runPh*.sh` scripts in `staging/` remain for building without sharukhan.
+
 The bash is archived, not deleted, at
 [`../mission-control/superseded-bash/`](../mission-control/superseded-bash/README.md),
 whose README says what replaced each script, what is NOT replaced, and which

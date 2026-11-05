@@ -479,7 +479,10 @@ pub fn resolve(
     log: &mut dyn FnMut(&str),
 ) -> Result<PathBuf, String> {
     match kernel_context(cfg, req)? {
-        Some((kc, kb)) => resolve_in(&kc, req, force, allow_build, Some(&kb), log),
+        Some((kc, kb)) => {
+            log(&format!("kernel profile {}: {}", kb.name, kb.profile_source));
+            resolve_in(&kc, req, force, allow_build, Some(&kb), log)
+        }
         None => resolve_in(cfg, req, force, allow_build, None, log),
     }
 }
@@ -1298,6 +1301,7 @@ pub fn make_kernel_variant_patches(
     log: &mut dyn FnMut(&str),
 ) -> Result<(), String> {
     let kb = crate::kbuild::load(kernel)?;
+    log(&format!("kernel profile {kernel}: {}", kb.profile_source));
     let kc = crate::kbuild::effective_cfg(cfg, &kb);
     let clone = cfg.work.join("photon-variants");
     fs::create_dir_all(&kc.variant_patches)
@@ -2404,11 +2408,12 @@ pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
 /// Move every `linux-fips-canister` RPM that is not `want` out of the stage's
 /// local repo, into `stage/canister-aside`. Returns what it moved.
 ///
-/// Shared by both build paths, which is the whole point. The cascade's purge
-/// stage calls this through `buildexec::purge_mismatched_canister`; `resolve`
-/// calls it directly before dispatching, because everything except
-/// `--canister equivalent` runs the legacy `runPh5_normal.sh` and never enters
-/// the cascade at all. On 2026-09-11 the rule existed only in the cascade, so
+/// The cascade's purge stage calls this through
+/// `buildexec::purge_mismatched_canister`, for every canister mode. It once
+/// had to be called before dispatching too, while every mode except
+/// `--canister equivalent` still ran `runPh5_normal.sh`, which has no purge
+/// stage (the cascade has built every mode since 2026-11-05). On 2026-09-11
+/// the rule existed only in the cascade, so
 /// the first prebuilt build after an equivalent run died exactly as it had
 /// that morning:
 ///
