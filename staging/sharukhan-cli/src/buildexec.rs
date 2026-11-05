@@ -2567,16 +2567,32 @@ fn purge_leftover_isos(c: &mut Ctx, stage: &Path) {
     }
 }
 
-/// The work directories ISO builds leave in `stage/iso` (`photon-XXXXXXXX`,
-/// about 3.7 GB each): one per finished build is never removed, and 17 of
-/// them took 63 GB of the WSL root during gate 55 (finding
-/// stage-iso-workdirs-leak). Returns those `in_use` does not claim.
+/// The work directories ISO builds leave in the image output directories
+/// (`photon-XXXXXXXX`): one per finished build is never removed. 17 of them
+/// in `stage/iso` (full ISOs, about 3.7 GB each) took 63 GB of the WSL root
+/// during gate 55 (finding stage-iso-workdirs-leak); a minimal ISO is composed
+/// in `stage/minimal-iso`, which the purge did not look at, and 117 of those
+/// (about 350 MB each) filled the root during sync run 25. Every image output
+/// directory is scanned: `stage/iso` and `stage/<name>-iso`. Returns the work
+/// directories `in_use` does not claim.
 pub fn stale_iso_workdirs(stage: &Path, in_use: &dyn Fn(&str) -> bool) -> Vec<PathBuf> {
-    let Ok(rd) = fs::read_dir(stage.join("iso")) else {
+    let Ok(top) = fs::read_dir(stage) else {
         return Vec::new();
     };
-    let mut v: Vec<PathBuf> = rd
+    let mut outs: Vec<PathBuf> = top
         .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && !p.is_symlink())
+        .filter(|p| {
+            let n = basename(p);
+            n == "iso" || (n.ends_with("-iso") && n.len() > "-iso".len())
+        })
+        .collect();
+    outs.sort();
+    let mut v: Vec<PathBuf> = outs
+        .iter()
+        .filter_map(|o| fs::read_dir(o).ok())
+        .flat_map(|rd| rd.flatten())
         .map(|e| e.path())
         .filter(|p| p.is_dir() && !p.is_symlink())
         .filter(|p| {
@@ -2672,7 +2688,7 @@ fn purge_iso_workdirs(c: &mut Ctx, stage: &Path) {
     }
     if n > 0 {
         c.say(&format!(
-            "  removed {n} ISO work dir(s) no process uses from stage/iso: {:.1} GB reclaimed",
+            "  removed {n} ISO work dir(s) no process uses from the stage's image output directories: {:.1} GB reclaimed",
             freed as f64 / 1e9
         ));
     }
@@ -4199,6 +4215,16 @@ mod tests {
         let stale = stale_iso_workdirs(&t, &|n: &str| n == "photon-inuse01");
         let names: Vec<String> = stale.iter().map(|p| basename(p)).collect();
         assert_eq!(names, vec!["photon-aaaaaaaa", "photon-bbbbbbbb"]);
+        // the minimal ISO's output directory is scanned as well; a directory
+        // that is not an image output directory is not
+        for (dir, d) in [("minimal-iso", "photon-mmmmmmmm"), ("RPMS", "photon-notanimg"), ("-iso", "photon-noname00")] {
+            fs::create_dir_all(t.join(dir).join(d)).unwrap();
+            fs::File::open(t.join(dir).join(d)).unwrap().set_modified(old).unwrap();
+        }
+        fs::write(t.join("minimal-iso/minimal-iso.yaml"), "x").unwrap();
+        let stale = stale_iso_workdirs(&t, &|n: &str| n == "photon-inuse01");
+        let rel: Vec<String> = stale.iter().map(|p| p.strip_prefix(&t).unwrap().display().to_string()).collect();
+        assert_eq!(rel, vec!["iso/photon-aaaaaaaa", "iso/photon-bbbbbbbb", "minimal-iso/photon-mmmmmmmm"]);
         // negative control: a directory a live process has as its cwd is in use
         let held = iso.join("photon-heldcwd1");
         fs::create_dir_all(&held).unwrap();
