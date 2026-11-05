@@ -217,7 +217,7 @@ fn open_rw(path: &Path) -> Result<Connection, String> {
 /// `checks-latest.jsonl` is a symlink to one of them and is skipped, or every
 /// latest run would be counted twice.
 pub fn all(cfg: &Config) -> Result<Summary, String> {
-    let rows: BTreeMap<String, Permutation> = matrix::load(&cfg.matrix_tsv)
+    let rows: BTreeMap<String, Permutation> = matrix::load_file(&cfg.matrix_tsv)
         .unwrap_or_default()
         .into_iter()
         .map(|p| (p.id.clone(), p))
@@ -621,7 +621,7 @@ mod tests {
         let mut cfg = Config::defaults();
         cfg.results_dir = d.join("results");
         cfg.memory_db = db.clone();
-        cfg.matrix_tsv = d.join("none.tsv");
+        cfg.matrix_tsv = crate::config::DataFile::file("SHARUKHAN_MATRIX", "permutations.tsv", d.join("none.tsv"));
         let f = d.join("results/k01/checks-20261025T000000Z.jsonl");
         std::fs::write(&f, "{\"perm\":\"k01\",\"check\":\"a\",\"status\":\"pass\"}\n{\"perm\":\"k01\",\"check\":\"b\",\"status\":\"fail\"}\n").unwrap();
         let s = all(&cfg).unwrap();

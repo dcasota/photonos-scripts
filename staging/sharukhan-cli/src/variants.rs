@@ -151,6 +151,11 @@ pub fn load(path: &Path) -> Result<Variants, String> {
     parse(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// The variants of a configuration file: built in, or the file its setting names.
+pub fn load_file(f: &crate::config::DataFile) -> Result<Variants, String> {
+    parse(&f.text()?).map_err(|e| format!("{}: {e}", f.label()))
+}
+
 impl Variants {
     /// The default variant: the first section of the file.
     pub fn default_variant(&self) -> &Variant {
@@ -286,7 +291,7 @@ mod tests {
     /// into a build.
     #[test]
     fn the_shipped_file_parses() {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../mission-control/config/variants.conf");
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/variants.conf");
         let v = load(&p).unwrap();
         assert!(v.variants.iter().any(|x| x.name == "2.8"));
     }

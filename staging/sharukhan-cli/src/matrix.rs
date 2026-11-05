@@ -189,7 +189,7 @@ impl Permutation {
 /// row takes the canister axis `equivalent`: no canister of that kernel is
 /// published, so the media can only carry one built from its own tree.
 pub fn rows(cfg: &crate::config::Config) -> Result<Vec<Permutation>, String> {
-    let mut all = load(&cfg.matrix_tsv)?;
+    let mut all = load_file(&cfg.matrix_tsv)?;
     if cfg.kernel.is_some() {
         for p in &mut all {
             p.canister = "equivalent".into();
@@ -200,6 +200,16 @@ pub fn rows(cfg: &crate::config::Config) -> Result<Vec<Permutation>, String> {
 
 pub fn load(path: &Path) -> Result<Vec<Permutation>, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    parse(&text, &path.display().to_string())
+}
+
+/// The matrix of a configuration file: built in, or the file its setting names.
+pub fn load_file(f: &crate::config::DataFile) -> Result<Vec<Permutation>, String> {
+    parse(&f.text()?, &f.label())
+}
+
+/// The permutations of a matrix text; `source` names it in errors.
+pub fn parse(text: &str, source: &str) -> Result<Vec<Permutation>, String> {
     let mut out = Vec::new();
     for line in text.lines() {
         let t = line.trim();
@@ -225,13 +235,13 @@ pub fn load(path: &Path) -> Result<Vec<Permutation>, String> {
             // defaulting would run the row as plain DHCP and report a pass for
             // an axis that was never exercised.
             net: NetSpec::from_str(f.get(10).copied().unwrap_or(crate::net::DEFAULT))
-                .map_err(|e| format!("{}: row '{}': {e}", path.display(), f[0]))?,
+                .map_err(|e| format!("{}: row '{}': {e}", source, f[0]))?,
             firmware: parse_firmware(f.get(11).copied().unwrap_or("efi"))
-                .map_err(|e| format!("{}: row '{}': {e}", path.display(), f[0]))?,
+                .map_err(|e| format!("{}: row '{}': {e}", source, f[0]))?,
         });
     }
     if out.is_empty() {
-        return Err(format!("no permutations parsed from {}", path.display()));
+        return Err(format!("no permutations parsed from {}", source));
     }
     Ok(out)
 }

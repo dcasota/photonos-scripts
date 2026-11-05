@@ -35,8 +35,7 @@ pub struct Vm {
 
 /// Names and addresses for one row, computed and never guessed.
 pub fn plan(cfg: &Config, id: &str) -> Result<Vm, String> {
-    let tsv = fs::read_to_string(&cfg.matrix_tsv)
-        .map_err(|e| format!("{}: {e}", cfg.matrix_tsv.display()))?;
+    let tsv = cfg.matrix_tsv.text()?;
     let index = identity::perm_index(&tsv, id).map_err(|e| e.to_string())?;
     let name = cfg.vm_name(id);
     let dir = cfg.vm_dir(id);

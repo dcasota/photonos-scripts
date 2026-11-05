@@ -1167,7 +1167,7 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
         }
     }
 
-    let vs = crate::variants::load(&cfg.variants_file)?;
+    let vs = crate::variants::load_file(&cfg.variants_file)?;
     let mut branches: Vec<&str> = vec![cfg.release.as_str()];
     for b in vs.all_variant_branches() {
         if !branches.contains(&b) {
@@ -1308,7 +1308,7 @@ pub fn make_kernel_variant_patches(
             clone.display()
         ));
     }
-    let vs = crate::variants::load(&cfg.variants_file)?;
+    let vs = crate::variants::load_file(&cfg.variants_file)?;
     let mut branches: Vec<&str> = vec![kc.release.as_str(), kc.build_common.as_str(), kb.branch.as_str()];
     for b in vs.all_variant_branches() {
         if !branches.contains(&b) {

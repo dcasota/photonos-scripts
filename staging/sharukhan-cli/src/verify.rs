@@ -53,7 +53,7 @@ pub fn run(
     let serial = cfg.serial_log(&p.id);
 
     let mut c = Checks::init(&cfg.results_dir, &p.id, stamp)?;
-    c.attribution = crate::evidence::load_attribution(&cfg.check_prs)?;
+    c.attribution = crate::evidence::load_attribution_file(&cfg.check_prs)?;
     // Reports are versioned too: harvested logs live beside the checks file
     // that names them, and logs-latest is a pointer, never storage.
     let harvest = cfg.results_dir.join(&p.id).join(format!("logs-{stamp}"));
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn only_a_row_with_a_stranded_link_waits_for_wait_online_too() {
-        let m = crate::matrix::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../mission-control/config/permutations.tsv")).unwrap();
+        let m = crate::matrix::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/permutations.tsv")).unwrap();
         let longer: Vec<&str> = m.iter().filter(|p| ssh_ready_budget(p) > SSH_READY_BUDGET_SECS).map(|p| p.id.as_str()).collect();
         assert_eq!(longer, ["n05"], "the legacy VLAN row is the one whose wait-online cannot succeed here");
         let n05 = m.iter().find(|p| p.id == "n05").unwrap();

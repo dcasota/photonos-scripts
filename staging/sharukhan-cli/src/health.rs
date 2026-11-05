@@ -154,7 +154,7 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
         None => item("docker", Level::Fail, "the docker daemon does not answer"),
     });
     // the variants file against the fork's open PRs
-    v.push(match crate::variants::load(&cfg.variants_file) {
+    v.push(match crate::variants::load_file(&cfg.variants_file) {
         Err(e) => item("variants", Level::Fail, e),
         Ok(vs) => match crate::sync::open_prs(&cfg.fork) {
             Err(e) => item("variants", Level::Warn, format!("could not list {}'s PRs: {e}", cfg.fork)),
@@ -172,7 +172,7 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
         },
     });
     // the check -> PR attribution against what is still open
-    v.push(match crate::evidence::load_attribution(&cfg.check_prs) {
+    v.push(match crate::evidence::load_attribution_file(&cfg.check_prs) {
         Err(e) => item("check attribution", Level::Fail, e),
         Ok(attr) => {
             let open = |repo: &str| -> Option<Vec<u64>> { crate::sync::open_prs(repo).ok().map(|p| p.into_iter().map(|x| x.number).collect()) };
@@ -196,7 +196,7 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
                     if gone.is_empty() {
                         item("check attribution", Level::Ok, format!("{} checks attributed, every PR open", attr.len()))
                     } else {
-                        item("check attribution", Level::Warn, format!("not open any more: {} ({})", gone.join(" "), cfg.check_prs.display()))
+                        item("check attribution", Level::Warn, format!("not open any more: {} ({})", gone.join(" "), cfg.check_prs.label()))
                     }
                 }
                 _ => item("check attribution", Level::Warn, "could not list the open PRs"),

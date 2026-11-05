@@ -17,7 +17,7 @@ use crate::config::Config;
 use crate::matrix::Permutation;
 use std::borrow::Cow;
 
-pub const EMBEDDED: &str = include_str!("../../mission-control/config/photon-matrix.vmx.template");
+pub const EMBEDDED: &str = include_str!("../config/photon-matrix.vmx.template");
 
 /// The template actually in use. MC_VMX_TEMPLATE loads one from disk so a VMX
 /// experiment does not need a rebuild; without it the embedded copy is used,

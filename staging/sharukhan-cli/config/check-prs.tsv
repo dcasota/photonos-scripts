@@ -1,6 +1,6 @@
 # Which PR a check of the oracle proves: check id, then the PR (PR#n on the fork,
-# POI#n on the installer fork). Read by sharukhan (SHARUKHAN_CHECK_PRS, default
-# $SHARUKHAN_ROOT/config/check-prs.tsv); a check without a line is attributed to no
+# POI#n on the installer fork). Compiled into sharukhan; SHARUKHAN_CHECK_PRS names a
+# file that replaces it. A check without a line is attributed to no
 # PR. `sharukhan doctor` warns about a PR here that is no longer open.
 # A check one PR per installer variant proves names each (2.8 chain, then 2.9).
 # Successions, 2026-10-24: PR#9 was replaced by PR#31 (same branch); PR#90 was

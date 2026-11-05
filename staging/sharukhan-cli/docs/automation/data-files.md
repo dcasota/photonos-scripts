@@ -23,7 +23,8 @@ fix/experiment  # why it is in no variant (the reason is required)
 must be an open PR head and every open PR on the release or `common` branch
 must be covered: listed, excluded with a reason, or the parent of a listed
 branch (a listed child carries its parent's commits).
-`SHARUKHAN_VARIANTS` overrides the path.
+Compiled into sharukhan from `sharukhan-cli/config/`; `SHARUKHAN_VARIANTS` names a
+file that replaces it.
 
 ### `config/check-prs.tsv`: which PR a check proves
 
@@ -31,8 +32,8 @@ One line per oracle check id followed by one or more PR labels, separated by
 whitespace (`guest.selinux PR#31`, or `media.x PR#85 PR#86`; labels are
 `PR#<n>` or `POI#<n>`). A `check_result` carries those labels, so a failure
 reads as "PR#22 regressed". Comments are whole lines starting with `#`. `sharukhan doctor`
-warns when a label names a PR that is no longer open. `SHARUKHAN_CHECK_PRS`
-overrides the path.
+warns when a label names a PR that is no longer open. Compiled into
+sharukhan; `SHARUKHAN_CHECK_PRS` names a file that replaces it.
 
 ### `memory.db` and `MEMORY.md`
 

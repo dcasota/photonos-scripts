@@ -269,8 +269,9 @@ wrap left by any release's standalone pin script, and restores any `c++.real*` /
 rename in the sandboxes.
 
 ### mission-control/
-The matrix's configuration and evidence: `config/permutations.tsv` (the executable
-form of the matrix), the VMX template, and `results/`. The bash harness that used to
+The matrix's evidence (`results/`). Its configuration - `permutations.tsv`, the
+installer variants, the check attribution and the VMX template - moved to
+`sharukhan-cli/config/` and is compiled into sharukhan. The bash harness that used to
 live here has been absorbed into `sharukhan-cli` and is kept, unused, under
 `superseded-bash/` with a README naming what replaced each script — and six latent
 bugs found while porting.

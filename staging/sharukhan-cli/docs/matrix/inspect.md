@@ -15,7 +15,7 @@ hour: a missing `vmrun`, an empty ISO cache, a build stage with no headroom.
 $ sharukhan doctor
 environment
   [ok  ] photon tree            /root/5.0
-  [ok  ] matrix                 /root/photonos-scripts/staging/mission-control/config/permutations.tsv
+  [ok  ] matrix                 built-in config/permutations.tsv (28 rows)
   [ok  ] MC_GUEST_PASSWORD      set in the environment
 vmware tooling
   [ok  ] vmrun.exe              executable

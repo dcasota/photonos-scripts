@@ -462,7 +462,7 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
         Some(b) => b,
         None => format!("origin/{}", crate::specresolve::branch_of(&repo)?),
     };
-    let dflt = crate::variants::load(&cfg.variants_file)?.default_variant().name.clone();
+    let dflt = crate::variants::load_file(&cfg.variants_file)?.default_variant().name.clone();
     let variant = flag("--variant").map(PathBuf::from).unwrap_or_else(|| cfg.variant_patches.join(format!("poi-{dflt}.patch")));
     let common = flag("--common").map(PathBuf::from).unwrap_or_else(|| crate::builder::shared_root().join("work/common-check"));
     let date = match flag("--date") {

@@ -73,6 +73,17 @@ pub struct Checks {
 /// an error: attribution is what a failed check reports as implicated.
 pub fn load_attribution(path: &Path) -> Result<std::collections::BTreeMap<String, String>, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e} (SHARUKHAN_CHECK_PRS)", path.display()))?;
+    parse_attribution(&text, &path.display().to_string())
+}
+
+/// The check attribution of a configuration file: built in, or the file its
+/// setting names.
+pub fn load_attribution_file(f: &crate::config::DataFile) -> Result<std::collections::BTreeMap<String, String>, String> {
+    parse_attribution(&f.text()?, &f.label())
+}
+
+/// The attribution of a text; `source` names it in errors.
+pub fn parse_attribution(text: &str, source: &str) -> Result<std::collections::BTreeMap<String, String>, String> {
     let mut out = std::collections::BTreeMap::new();
     for (i, l) in text.lines().enumerate() {
         // full-line comments only: the labels themselves carry '#'
@@ -85,13 +96,13 @@ pub fn load_attribution(path: &Path) -> Result<std::collections::BTreeMap<String
             ["PR#", "POI#"].iter().any(|p| x.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())))
         };
         if f.len() < 2 || !f[1..].iter().all(|x| ok_label(x)) {
-            return Err(format!("{}:{}: expected 'check-id PR#n|POI#n ...', got '{l}'", path.display(), i + 1));
+            return Err(format!("{}:{}: expected 'check-id PR#n|POI#n ...', got '{l}'", source, i + 1));
         }
         if f[2..].iter().enumerate().any(|(k, x)| f[1..k + 2].contains(x)) {
-            return Err(format!("{}:{}: {} names a PR twice", path.display(), i + 1, f[0]));
+            return Err(format!("{}:{}: {} names a PR twice", source, i + 1, f[0]));
         }
         if out.insert(f[0].to_string(), f[1..].join(",")).is_some() {
-            return Err(format!("{}:{}: {} attributed twice", path.display(), i + 1, f[0]));
+            return Err(format!("{}:{}: {} attributed twice", source, i + 1, f[0]));
         }
     }
     Ok(out)
@@ -318,7 +329,7 @@ mod tests {
     /// The shipped attribution file must load.
     #[test]
     fn the_shipped_attribution_loads() {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../mission-control/config/check-prs.tsv");
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/check-prs.tsv");
         let a = load_attribution(&p).unwrap();
         assert_eq!(a.get("guest.selinux").map(String::as_str), Some("PR#31"));
         assert_eq!(a.get("guest.bios_boot").map(String::as_str), Some("PR#85,PR#86"));

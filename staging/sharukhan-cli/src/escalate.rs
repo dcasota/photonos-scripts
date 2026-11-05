@@ -511,7 +511,7 @@ pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn Fn
     let exe = std::env::current_exe().map_err(|e| format!("{e}"))?;
     let mut server_env: Vec<String> = vec!["-i".into(), "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(), "HOME=/root".into()];
     // the settings the server's own work needs, nothing secret
-    for k in ["SHARUKHAN_DB", "MC_RESULTS_DIR", "MC_AUTHOR", "MC_BUILDER", "MC_BUILDER_SHARED_ROOT", "MC_BUILDER_DIR", "SHARUKHAN_ROOT"] {
+    for k in ["SHARUKHAN_DB", "MC_RESULTS_DIR", "MC_AUTHOR", "MC_BUILDER", "MC_BUILDER_SHARED_ROOT", "MC_BUILDER_DIR", "SHARUKHAN_MATRIX", "SHARUKHAN_VARIANTS", "SHARUKHAN_CHECK_PRS"] {
         if let Ok(v) = std::env::var(k) {
             server_env.push(format!("{k}={v}"));
         }

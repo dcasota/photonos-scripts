@@ -3,10 +3,10 @@
 > **2026-09-01: the scripts described below have been superseded by
 > `sharukhan`.** `bin/` and `lib/` moved to `superseded-bash/` (the two names
 > here are now symlinks, for one in-flight build - see
-> [`superseded-bash/README.md`](superseded-bash/README.md)). `config/` is still
-> live: `permutations.tsv`, `variants.conf` (installer variants and common
-> branches) and `check-prs.tsv` (which PR a check proves) are read at runtime,
-> and `photon-matrix.vmx.template` is compiled into the binary. Everything
+> [`superseded-bash/README.md`](superseded-bash/README.md)). `config/` moved to
+> `../sharukhan-cli/config/` (`permutations.tsv`, `variants.conf`,
+> `check-prs.tsv`, `photon-matrix.vmx.template`), compiled into sharukhan;
+> `mission-control.env` stays here for the superseded scripts only. Everything
 > below still describes what the harness DOES; the commands are now
 > `sharukhan <phase>`. Installing the services, the fork sync, the escalation
 > and the settings are documented in

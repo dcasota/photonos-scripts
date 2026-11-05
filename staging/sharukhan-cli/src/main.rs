@@ -1037,7 +1037,7 @@ fn cmd_iso_boot(iso: Option<&str>, json: bool) -> Result<(), String> {
 /// variant's media with, built if needed and proven either way.
 /// `--poi` when it is not given: the default variant of the variants file.
 fn default_poi(cfg: &config::Config) -> Result<String, String> {
-    Ok(variants::load(&cfg.variants_file)?.default_variant().name.clone())
+    Ok(variants::load_file(&cfg.variants_file)?.default_variant().name.clone())
 }
 
 fn cmd_composer(cfg: &config::Config, poi: &str) -> Result<(), String> {
@@ -1084,8 +1084,11 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     println!("environment");
     let t = cfg.photon_tree.exists();
     check("photon tree", t, cfg.photon_tree.display().to_string());
-    let m = cfg.matrix_tsv.exists();
-    check("matrix", m, cfg.matrix_tsv.display().to_string());
+    // parsed, not only present: an unreadable override is as broken as a missing one
+    match matrix::load_file(&cfg.matrix_tsv) {
+        Ok(rows) => check("matrix", true, format!("{} ({} rows)", cfg.matrix_tsv.label(), rows.len())),
+        Err(e) => check("matrix", false, e),
+    }
     // Required, no default: it is the root password of every VM installed.
     match cfg.guest_password() {
         Ok(_) => check("MC_GUEST_PASSWORD", true, "set in the environment".into()),
@@ -1274,7 +1277,7 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     }
 
     println!("inputs");
-    match variants::load(&cfg.variants_file) {
+    match variants::load_file(&cfg.variants_file) {
         Ok(vs) => {
             let missing: Vec<String> = vs
                 .variants
@@ -1827,7 +1830,7 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
     // Release today, so any answers - but this command's whole job is to say
     // which canister a kernel can have, and silently answering for one
     // variant when they disagree would be the wrong kind of confident.
-    let vs = variants::load(&cfg.variants_file)?;
+    let vs = variants::load_file(&cfg.variants_file)?;
     let dflt = vs.default_variant().name.clone();
     let patch = cfg.variant_patches.join(format!("poi-{dflt}.patch"));
     let kernels: Vec<(String, String)> = vs
@@ -2315,7 +2318,7 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
 /// The variants file against the fork: a listed branch no open PR heads, or
 /// an open PR on the release or common line that no section lists.
 fn cmd_variants(cfg: &config::Config) -> Result<(), String> {
-    let vs = variants::load(&cfg.variants_file)?;
+    let vs = variants::load_file(&cfg.variants_file)?;
     for v in &vs.variants {
         println!("variant {}: {} branch(es), installer {}", v.name, v.branches.len(), variants::installer_branch(v).unwrap_or("-"));
     }
@@ -2327,7 +2330,7 @@ fn cmd_variants(cfg: &config::Config) -> Result<(), String> {
         println!("  [STALE] {b}: no open PR on {} has this head (merged, closed or renamed)", cfg.fork);
     }
     for (n, h, base) in &d.unlisted {
-        println!("  [NEW  ] #{n} {h} (on {base}) is in no section of {}", cfg.variants_file.display());
+        println!("  [NEW  ] #{n} {h} (on {base}) is in no section of {}", cfg.variants_file.label());
     }
     if d.not_open.is_empty() && d.unlisted.is_empty() {
         println!("every listed branch is an open PR head, and every open PR on {} or {} is listed", cfg.release, cfg.build_common);
@@ -2339,7 +2342,7 @@ fn cmd_variants(cfg: &config::Config) -> Result<(), String> {
 
 fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
     let mut stale = 0;
-    let vs = variants::load(&cfg.variants_file)?;
+    let vs = variants::load_file(&cfg.variants_file)?;
     for variant in vs.variants.iter() {
         let branch = build::installer_branch(variant)
             .ok_or_else(|| format!("variant {} has no installer branch", variant.name))?;

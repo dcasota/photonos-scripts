@@ -807,11 +807,11 @@ fn kernel_touched(ctx: &Ctx) -> Result<bool, String> {
 /// be a minimal ISO of the default variant; its canister is the matrix's.
 /// An equivalent-kernel row runs only when the sync touched a kernel spec.
 pub fn fastloop_rows(cfg: &crate::config::Config, kernel: bool) -> Result<Vec<(String, String, String)>, String> {
-    let matrix = crate::matrix::load(&cfg.matrix_tsv)?;
-    let dflt = crate::variants::load(&cfg.variants_file)?.default_variant().name.clone();
+    let matrix = crate::matrix::load_file(&cfg.matrix_tsv)?;
+    let dflt = crate::variants::load_file(&cfg.variants_file)?.default_variant().name.clone();
     let mut out = Vec::new();
     for id in &cfg.fastloop_rows {
-        let p = matrix.iter().find(|p| &p.id == id).ok_or_else(|| format!("MC_FASTLOOP_ROWS: {id} is not a row of {}", cfg.matrix_tsv.display()))?;
+        let p = matrix.iter().find(|p| &p.id == id).ok_or_else(|| format!("MC_FASTLOOP_ROWS: {id} is not a row of {}", cfg.matrix_tsv.label()))?;
         if p.iso_type != "minimal" || p.poi != dflt {
             return Err(format!("MC_FASTLOOP_ROWS: {id} is {}/{}, not a minimal ISO of the default variant {dflt}", p.iso_type, p.poi));
         }
@@ -1355,10 +1355,10 @@ fn stagevm(ctx: &Ctx) -> Result<Outcome, String> {
     }
     fs::write(ctx.dir.join("STAGEVM.checked"), log.join("\n") + "\n").map_err(|e| format!("{e}"))?;
     let cfg = crate::config::Config::load();
-    let matrix = crate::matrix::load(&cfg.matrix_tsv)?;
+    let matrix = crate::matrix::load_file(&cfg.matrix_tsv)?;
     for id in &cfg.staged_rows {
         if !matrix.iter().any(|p| &p.id == id) {
-            return Err(format!("MC_STAGED_ROWS: {id} is not a row of {}", cfg.matrix_tsv.display()));
+            return Err(format!("MC_STAGED_ROWS: {id} is not a row of {}", cfg.matrix_tsv.label()));
         }
     }
     if cfg.staged_rows.is_empty() {
@@ -2314,8 +2314,8 @@ mod tests {
         fs::write(d.join("m.tsv"), "k03 minimal 2.8 yes ext4 ks stigpkgs fails pass prebuilt\nc03 minimal 2.8 no ext4 ks fips untested pass equivalent\nf01 full 2.8 no ext4 ks none works pass prebuilt\nl01 minimal latest no ext4 ks none works pass prebuilt\n").unwrap();
         fs::write(d.join("v.conf"), "[variant 2.8]\nfix/poi-a\n[variant latest]\nfix/poi-b\n[common]\n").unwrap();
         let mut cfg = crate::config::Config::defaults();
-        cfg.matrix_tsv = d.join("m.tsv");
-        cfg.variants_file = d.join("v.conf");
+        cfg.matrix_tsv = crate::config::DataFile::file("SHARUKHAN_MATRIX", "permutations.tsv", d.join("m.tsv"));
+        cfg.variants_file = crate::config::DataFile::file("SHARUKHAN_VARIANTS", "variants.conf", d.join("v.conf"));
         cfg.fastloop_rows = vec!["k03".into(), "c03".into()];
         let ids = |k: bool| fastloop_rows(&cfg, k).unwrap().into_iter().map(|r| format!("{}:{}", r.0, r.2)).collect::<Vec<_>>();
         assert_eq!(ids(true), vec!["k03:prebuilt", "c03:equivalent"]);

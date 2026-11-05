@@ -47,11 +47,11 @@ pub struct Config {
     pub variant_patches: PathBuf,
     pub run_log_dir: PathBuf,
     pub memory_db: PathBuf,
-    pub matrix_tsv: PathBuf,
+    pub matrix_tsv: DataFile,
     /// The installer variants and the `common` branches (crate::variants).
-    pub variants_file: PathBuf,
+    pub variants_file: DataFile,
     /// Which PR each oracle check proves (evidence::load_attribution).
-    pub check_prs: PathBuf,
+    pub check_prs: DataFile,
 
     // ---- photon build tree -----------------------------------------------
     pub photon_tree: PathBuf,
@@ -167,6 +167,53 @@ pub struct Config {
     pub start_timeout_sec: u64,
 }
 
+/// The matrix, the installer variants and the check attribution, as committed
+/// in sharukhan-cli/config/ and compiled into the binary.
+pub const BUILTIN_MATRIX: &str = include_str!("../config/permutations.tsv");
+pub const BUILTIN_VARIANTS: &str = include_str!("../config/variants.conf");
+pub const BUILTIN_CHECK_PRS: &str = include_str!("../config/check-prs.tsv");
+
+/// A configuration file sharukhan carries built in: its setting names a file
+/// on disk that replaces it (an edit under test before it is committed and
+/// compiled in); unset or empty, the built-in copy is used.
+#[derive(Debug, Clone)]
+pub struct DataFile {
+    pub setting: &'static str,
+    pub name: &'static str,
+    pub path: Option<PathBuf>,
+    builtin: &'static str,
+}
+
+impl DataFile {
+    fn from_setting(get: Get, setting: &'static str, name: &'static str, builtin: &'static str) -> DataFile {
+        let path = get(setting).filter(|v| !v.trim().is_empty()).map(PathBuf::from);
+        DataFile { setting, name, path, builtin }
+    }
+
+    /// The file at `path` in place of the built-in copy.
+    pub fn file(setting: &'static str, name: &'static str, path: PathBuf) -> DataFile {
+        DataFile { setting, name, path: Some(path), builtin: "" }
+    }
+
+    /// Its text: the file's when one is set, else the built-in copy.
+    pub fn text(&self) -> Result<std::borrow::Cow<'static, str>, String> {
+        match &self.path {
+            Some(p) => std::fs::read_to_string(p)
+                .map(std::borrow::Cow::Owned)
+                .map_err(|e| format!("{}: {e} ({})", p.display(), self.setting)),
+            None => Ok(std::borrow::Cow::Borrowed(self.builtin)),
+        }
+    }
+
+    /// What it is, for messages: the file, or the built-in copy.
+    pub fn label(&self) -> String {
+        match &self.path {
+            Some(p) => p.display().to_string(),
+            None => format!("built-in config/{}", self.name),
+        }
+    }
+}
+
 /// Where settings come from: the process environment for `load`, nothing at
 /// all for the tests' `defaults`, so a unit test never depends on this host.
 type Get<'a> = &'a dyn Fn(&str) -> Option<String>;
@@ -225,7 +272,6 @@ impl Config {
                 eprintln!("sharukhan: {k} is set but has no effect (no phase reads it; installs use MC_INSTALL_TIMEOUT_SEC)");
             }
         }
-        let here = get("SHARUKHAN_ROOT").unwrap_or_else(|| "/root/photonos-scripts/staging/mission-control".to_string());
         let net_prefix = s_or(get, "MC_NET_PREFIX", "192.168.225");
         Config {
             vmrun: var_or(get, "VMRUN",
@@ -246,11 +292,9 @@ impl Config {
             variant_patches: var_or(get, "MC_VARIANT_PATCH_DIR", "/root/photon-mc/variant-patches"),
             run_log_dir: var_or(get, "MC_RUN_LOG_DIR", "/root/photon-mc/run-logs"),
             memory_db: var_or(get, "SHARUKHAN_DB", "/root/photon-mc/memory.db"),
-            matrix_tsv: var_or(get, "SHARUKHAN_MATRIX",
-                &format!("{here}/config/permutations.tsv"),
-            ),
-            variants_file: var_or(get, "SHARUKHAN_VARIANTS", &format!("{here}/config/variants.conf")),
-            check_prs: var_or(get, "SHARUKHAN_CHECK_PRS", &format!("{here}/config/check-prs.tsv")),
+            matrix_tsv: DataFile::from_setting(get, "SHARUKHAN_MATRIX", "permutations.tsv", BUILTIN_MATRIX),
+            variants_file: DataFile::from_setting(get, "SHARUKHAN_VARIANTS", "variants.conf", BUILTIN_VARIANTS),
+            check_prs: DataFile::from_setting(get, "SHARUKHAN_CHECK_PRS", "check-prs.tsv", BUILTIN_CHECK_PRS),
 
             photon_tree: var_or(get, "PHOTON_TREE", "/root/5.0"),
             poi_tree: var_or(get, "POI_TREE", "/root/photon-os-installer"),
@@ -330,8 +374,10 @@ impl Config {
             ("MC_BUILD_LOG_DIR", p(&self.build_log_dir)),
             ("MC_VM_ROOT_WSL", p(&self.vm_root)),
             ("SHARUKHAN_DB", p(&self.memory_db)),
-            ("SHARUKHAN_MATRIX", p(&self.matrix_tsv)),
-            ("SHARUKHAN_VARIANTS", p(&self.variants_file)),
+            // empty: the copy built into sharukhan
+            ("SHARUKHAN_MATRIX", self.matrix_tsv.path.as_ref().map(p).unwrap_or_default()),
+            ("SHARUKHAN_VARIANTS", self.variants_file.path.as_ref().map(p).unwrap_or_default()),
+            ("SHARUKHAN_CHECK_PRS", self.check_prs.path.as_ref().map(p).unwrap_or_default()),
             ("MC_FASTLOOP_ROWS", self.fastloop_rows.join(" ")),
             ("MC_STAGED_ROWS", self.staged_rows.join(" ")),
         ]
@@ -406,6 +452,37 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_configuration_files_are_built_in_unless_a_setting_names_one() {
+        let c = Config::defaults();
+        for f in [&c.matrix_tsv, &c.variants_file, &c.check_prs] {
+            assert!(f.path.is_none(), "{}", f.setting);
+            assert!(f.label().starts_with("built-in config/"), "{}", f.label());
+            assert!(!f.text().unwrap().is_empty());
+        }
+        // every built-in copy is valid as it is compiled in
+        assert!(crate::matrix::load_file(&c.matrix_tsv).unwrap().len() > 10);
+        crate::variants::load_file(&c.variants_file).unwrap();
+        assert!(!crate::evidence::load_attribution_file(&c.check_prs).unwrap().is_empty());
+
+        // an empty setting is unset; a set one replaces the built-in copy, and
+        // a missing file is an error that names the setting, never a fallback
+        let empty = Config::from(&|k: &str| (k == "SHARUKHAN_MATRIX").then(|| " ".to_string()));
+        assert!(empty.matrix_tsv.path.is_none());
+        let d = std::env::temp_dir().join(format!("shk-datafile-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("m.tsv");
+        std::fs::write(&f, "x").unwrap();
+        let fs = f.display().to_string();
+        let set = Config::from(&|k: &str| (k == "SHARUKHAN_MATRIX").then(|| fs.clone()));
+        assert_eq!(set.matrix_tsv.text().unwrap(), "x");
+        assert_eq!(set.matrix_tsv.label(), fs);
+        std::fs::remove_file(&f).unwrap();
+        let e = set.matrix_tsv.text().unwrap_err();
+        assert!(e.contains("SHARUKHAN_MATRIX"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn paths_are_derived_consistently() {

@@ -20,8 +20,7 @@ machine.
 | --- | --- |
 | `PHOTON_TREE` | `/root/5.0` |
 | `POI_TREE` | `/root/photon-os-installer` |
-| `SHARUKHAN_ROOT` | `/root/photonos-scripts/staging/mission-control` |
-| `SHARUKHAN_MATRIX` | `$SHARUKHAN_ROOT/config/permutations.tsv` |
+| `SHARUKHAN_MATRIX` | built in (`sharukhan-cli/config/permutations.tsv`) |
 | `SHARUKHAN_DB` | `/root/photon-mc/memory.db` |
 | `MC_RESULTS_DIR` | `/root/photon-mc/results` |
 | `MC_BUILD_LOG_DIR` | `/root/photon-mc/build-logs` |
@@ -61,6 +60,12 @@ machine.
 | `MC_SAMPLE_SEC` | no effect, as above |
 | `MC_START_TIMEOUT` | `240` |
 
+The matrix, the variants, the check attribution and the VMX template are
+compiled into the binary from `sharukhan-cli/config/`, so sharukhan needs no file
+beside it. An edit takes effect with the next build of sharukhan; to try one first,
+point `SHARUKHAN_MATRIX`, `SHARUKHAN_VARIANTS`, `SHARUKHAN_CHECK_PRS` or
+`MC_VMX_TEMPLATE` at the edited file (unset or empty: the built-in copy).
+
 ```
 SHARUKHAN_DB=/tmp/other.db sharukhan findings
 ```
@@ -97,8 +102,8 @@ left out of the services by accident.
 | `MC_BUILDER_SHARED_ROOT` | `/root/photon-mc/gate` | the shared bind mount of the builder container |
 | `MC_BUILDER_DIR` | `/root/photon-mc/gate/builder` | the builder image's context |
 | `MC_ISO_STORE` | none | where finished ISOs are moved; the cache keeps a link |
-| `SHARUKHAN_VARIANTS` | `$SHARUKHAN_ROOT/config/variants.conf` | installer variants and common branches |
-| `SHARUKHAN_CHECK_PRS` | `$SHARUKHAN_ROOT/config/check-prs.tsv` | check to PR attribution |
+| `SHARUKHAN_VARIANTS` | built in (`sharukhan-cli/config/variants.conf`) | installer variants and common branches |
+| `SHARUKHAN_CHECK_PRS` | built in (`sharukhan-cli/config/check-prs.tsv`) | check to PR attribution |
 | `MC_FASTLOOP_ROWS` | `k03 c03` | rows of a sync's FASTLOOP (minimal ISOs of the default variant) |
 | `MC_STAGED_ROWS` | `k11` | rows of a sync's STAGEVM |
 | `MC_PUBLISH_DCASOTA` | `auto` | `auto`, `approve` or `preview` (see the sync chapter) |

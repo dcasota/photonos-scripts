@@ -202,7 +202,7 @@ s02      minimal
     /// collision the cksum index produced.
     #[test]
     fn shipped_matrix_has_no_collisions() {
-        let tsv = include_str!("../../mission-control/config/permutations.tsv");
+        let tsv = include_str!("../config/permutations.tsv");
         let mut macs = Vec::new();
         for line in tsv.lines() {
             let t = line.trim();

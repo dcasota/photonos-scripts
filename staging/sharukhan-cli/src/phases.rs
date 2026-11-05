@@ -15,7 +15,7 @@ pub fn row(cfg: &Config, id: &str) -> Result<Permutation, String> {
     let all = matrix::rows(cfg)?;
     all.into_iter()
         .find(|p| p.id == id)
-        .ok_or_else(|| format!("permutation '{id}' is not in {}", cfg.matrix_tsv.display()))
+        .ok_or_else(|| format!("permutation '{id}' is not in {}", cfg.matrix_tsv.label()))
 }
 
 pub fn logger() -> impl FnMut(&str) {
