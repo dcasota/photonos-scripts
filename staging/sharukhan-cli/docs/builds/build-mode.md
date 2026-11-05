@@ -152,6 +152,31 @@ cascade phase logs its start time and duration. The delete rule lives once in
 `build::doomed_before_phase_b`, and the spec assembly once in
 `buildmode::spec_for`.
 
+### A NEVR is not an identity: the content ledger
+
+The package builder treats an RPM at a spec's Name-Version-Release as built.
+A PR that changes a spec keeps or sets a Release, and the release branch can
+later reach the same Release with other content: on 2026-11-05 5.0 took
+systemd to 257.13-6, while the stage still held the 257.13-6 a PR stack had
+built. A build without that PR would have shipped the PR's systemd under the
+release's name.
+
+So the stage keeps `.sharukhan-built-from.tsv`: for every NEVR a build
+patched, the hash of its spec directory (every file, by path and sha256).
+Before each build, `purge` removes the RPMs of a NEVR whose spec now has
+other content than the recorded one:
+
+- a spec the build patches is compared with its record, and an RPM of it
+  with no record at all is removed as well;
+- every other recorded NEVR is compared with the spec that builds it at this
+  subrelease now, pristine or patched differently; a NEVR no spec declares
+  any more is left alone, since nothing builds it.
+
+On the 2026-11-05 gate stage, the rule finds 31 such RPMs for a pristine 5.0
+build (measured on a copy of the stage's ledger and RPM names): the eleven
+systemd 257.13-6 packages, and calico, cloud-init, cri-tools, docker, glide,
+kubernetes and pmd-ng at NEVRs PR branches had built with other content.
+
 ### The embedded patch pins Release numbers, and 5.0 moves
 
 `src/embedded/canister-equivalent.patch` bumps the kernel Release on top of the

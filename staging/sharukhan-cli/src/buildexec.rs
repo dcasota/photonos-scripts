@@ -2788,6 +2788,7 @@ pub fn purge_rebuilt_content_at(
 ) {
     let ledger_path = stage.join(BUILT_FROM_LEDGER);
     let mut ledger = parse_ledger(&fs::read_to_string(&ledger_path).unwrap_or_default());
+    let mut handled = std::collections::BTreeSet::new();
     for spec in specs {
         let sp = Path::new(spec);
         let (Some(parent), Some(fname)) = (sp.parent(), sp.file_name()) else {
@@ -2831,12 +2832,97 @@ pub fn purge_rebuilt_content_at(
                 }
             }
         }
+        handled.insert(key.clone());
+        ledger.insert(key, now);
+    }
+    // A NEVR recorded by an earlier build that this build does not patch: the
+    // spec that declares it now is pristine, or patched differently, while the
+    // stage still holds the RPMs built from the recorded content. The package
+    // builder treats an RPM at the spec's NEVR as done, so a build without the
+    // PR would ship the PR's content under the release's name: on 2026-11-05
+    // 5.0 took systemd to 257.13-6 while the stage held the 257.13-6 a PR stack
+    // had built. Each such NEVR is checked against the spec that builds it at
+    // this subrelease; a NEVR no spec declares is left alone.
+    let recorded: Vec<(String, String)> = ledger
+        .iter()
+        .filter(|(k, _)| !handled.contains(*k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    for (key, was) in recorded {
+        let Some((dir, fams, rel)) = spec_declaring(release_tree, &key, subrelease) else {
+            continue;
+        };
+        let Some(now) = spec_dir_hash(&dir) else {
+            continue;
+        };
+        if now == was {
+            continue;
+        }
+        let rpms = stage_rpms_of(stage, &fams, &rel);
+        for p in &rpms {
+            if fs::remove_file(p).is_ok() {
+                say(&format!(
+                    "  removed {}: built from other content than {} declares at the same NEVR now",
+                    basename(p),
+                    dir.strip_prefix(release_tree).unwrap_or(&dir).display()
+                ));
+            }
+        }
         ledger.insert(key, now);
     }
     let text: String = ledger.iter().map(|(k, v)| format!("{k}\t{v}\n")).collect();
     if let Err(e) = fs::write(&ledger_path, text) {
         say(&format!("  could not write {}: {e}", ledger_path.display()));
     }
+}
+
+/// The spec directory whose spec builds at `subrelease` and declares exactly
+/// the ledger key `<name>-<version>-<release>`, with its families and plain
+/// Release. Looked for as `SPECS/<name>/<name>.spec` and
+/// `SPECS/<NN>/<name>/<name>.spec`; None when no such spec declares it, or
+/// more than one does (nothing is decided on an ambiguity).
+fn spec_declaring(release_tree: &Path, key: &str, subrelease: Option<u32>) -> Option<(PathBuf, SpecFamilies, String)> {
+    let (rest, rel) = key.rsplit_once('-')?;
+    let (name, version) = rest.rsplit_once('-')?;
+    if name.is_empty() || version.is_empty() || rel.is_empty() {
+        return None;
+    }
+    let specs = release_tree.join("SPECS");
+    let mut dirs = vec![specs.join(name)];
+    if let Ok(rd) = fs::read_dir(&specs) {
+        let mut subs: Vec<PathBuf> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| !n.is_empty() && n.chars().all(|x| x.is_ascii_digit())))
+            .map(|p| p.join(name))
+            .collect();
+        subs.sort();
+        dirs.extend(subs);
+    }
+    let file = format!("{name}.spec");
+    let mut found = Vec::new();
+    for dir in dirs {
+        if !dir.join(&file).is_file() {
+            continue;
+        }
+        let Some(text) = crate::specresolve::resolve(&crate::specresolve::dir_reader(&dir), &file, subrelease) else {
+            continue;
+        };
+        if !builds_at(&text, subrelease) {
+            continue;
+        }
+        let Some(fams) = spec_families_text(&text) else { continue };
+        let r = text
+            .lines()
+            .find(|l| l.starts_with("Release:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .map(|v| v.split('%').next().unwrap_or("").to_string())
+            .unwrap_or_default();
+        if fams.name == name && fams.version == version && r == rel {
+            found.push((dir, fams, r));
+        }
+    }
+    (found.len() == 1).then(|| found.pop()).flatten()
 }
 
 /// Compare two RPM version strings the way rpm does.
@@ -4634,6 +4720,59 @@ mod tests {
         assert!(rpm_toolchain_split(&root, &names, Some(92)).unwrap_err().contains("photon-dist-tag"));
         fs::write(root.join("build-config.json"), r#"{"photon-build-param": {"photon-dist-tag": ".ph5"}}"#).unwrap();
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A NEVR an earlier, patched build recorded is checked against the spec
+    /// that declares it now, even when this build does not patch that spec:
+    /// a pristine 257.13-6 must not take a PR's 257.13-6 from the stage.
+    #[test]
+    fn a_recorded_nevr_is_judged_against_the_spec_that_declares_it_now() {
+        let root = std::env::temp_dir().join(format!("shk-ledger-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let tree = root.join("5.0");
+        let stage = root.join("stage");
+        fs::create_dir_all(stage.join("RPMS/x86_64")).unwrap();
+        let spec = |dir: &str, name: &str, ver: &str, rel: &str, body: &str| {
+            let d = tree.join("SPECS").join(dir);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join(format!("{name}.spec")), format!("%global build_if %{{photon_subrelease}} >= 91\nName: {name}\nVersion: {ver}\nRelease: {rel}%{{?dist}}\n%package devel\nSummary: x\n{body}")).unwrap();
+        };
+        let rpm = |n: &str| fs::write(stage.join("RPMS/x86_64").join(n), b"x").unwrap();
+        let has = |n: &str| stage.join("RPMS/x86_64").join(n).exists();
+        // the release's own 257.13-6, pristine; the stage holds a PR's 257.13-6
+        spec("systemd", "systemd", "257.13", "6", "# upstream\n");
+        // a package whose recorded content is the content it has now
+        spec("same", "same", "1.0", "2", "# unchanged\n");
+        let same_now = spec_dir_hash(&tree.join("SPECS/same")).unwrap();
+        // a NEVR no spec declares any more (the spec moved on to -4)
+        spec("moved", "moved", "2.0", "4", "");
+        for n in ["systemd-257.13-6.ph5.x86_64.rpm", "systemd-devel-257.13-6.ph5.x86_64.rpm", "same-1.0-2.ph5.x86_64.rpm", "moved-2.0-3.ph5.x86_64.rpm"] {
+            rpm(n);
+        }
+        fs::write(
+            stage.join(BUILT_FROM_LEDGER),
+            format!("systemd-257.13-6\tpr-content\nsame-1.0-2\t{same_now}\nmoved-2.0-3\tolder\n"),
+        )
+        .unwrap();
+        let mut said = Vec::new();
+        purge_rebuilt_content_at(&tree, &stage, &[], Some(92), &mut |l| said.push(l.to_string()));
+        assert!(!has("systemd-257.13-6.ph5.x86_64.rpm") && !has("systemd-devel-257.13-6.ph5.x86_64.rpm"), "{said:?}");
+        assert!(said.iter().any(|l| l.contains("SPECS/systemd declares at the same NEVR")), "{said:?}");
+        assert!(has("same-1.0-2.ph5.x86_64.rpm"), "identical content is kept");
+        assert!(has("moved-2.0-3.ph5.x86_64.rpm"), "no spec declares 2.0-3: nothing to confuse it with");
+        let ledger = parse_ledger(&fs::read_to_string(stage.join(BUILT_FROM_LEDGER)).unwrap());
+        assert_eq!(ledger.get("systemd-257.13-6"), spec_dir_hash(&tree.join("SPECS/systemd")).as_ref(), "the record follows what is built now");
+
+        // at a subrelease the spec does not build, its NEVR is not judged
+        rpm("systemd-257.13-6.ph5.x86_64.rpm");
+        fs::write(stage.join(BUILT_FROM_LEDGER), "systemd-257.13-6\tpr-content\n").unwrap();
+        purge_rebuilt_content_at(&tree, &stage, &[], Some(90), &mut |_| {});
+        assert!(has("systemd-257.13-6.ph5.x86_64.rpm"));
+
+        // a NEVR this build patches is judged by the patched-spec check once
+        purge_rebuilt_content_at(&tree, &stage, &["SPECS/systemd/systemd.spec".to_string()], Some(92), &mut |_| {});
+        assert!(!has("systemd-257.13-6.ph5.x86_64.rpm"), "recorded content differs from the patched spec");
         let _ = fs::remove_dir_all(&root);
     }
 
