@@ -526,7 +526,7 @@ mod controls {
     }
 
     fn base() -> String {
-        std::fs::read_to_string(root().join("../runPh7-2-7.sh")).unwrap()
+        crate::wrapper::embedded::base("runPh7-2-7.sh").unwrap().to_string()
     }
 
     fn profile() -> Profile {

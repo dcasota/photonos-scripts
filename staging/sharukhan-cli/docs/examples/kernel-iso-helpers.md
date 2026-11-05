@@ -43,7 +43,9 @@ ISO=${ISO:-}                          # verify_media: this file instead of the c
 
 # --- where sharukhan and its settings are -----------------------------------
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-export SHARUKHAN_CLI_DIR=${SHARUKHAN_CLI_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}
+SHARUKHAN_CLI_DIR=${SHARUKHAN_CLI_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}
+# the profile this script writes is used before it is compiled into sharukhan
+export SHARUKHAN_WRAPPER_PROFILES=${SHARUKHAN_WRAPPER_PROFILES:-$SHARUKHAN_CLI_DIR/profiles/kernel}
 SHARUKHAN=${SHARUKHAN:-$(command -v sharukhan || echo /usr/local/libexec/sharukhan/sharukhan)}
 SETTINGS_FILE=${SETTINGS_FILE:-/etc/sharukhan/sharukhan.env}
 
@@ -58,8 +60,9 @@ STEPS=(preflight settings verify_kernel_release prepare_branch write_profile pro
   first.
 - Every `X=${X:-default}` line takes the value from the environment if set -
   `KERNEL=7.3 POI=2.8 examples/kernel-iso.sh` - and documents its default.
-- `SHARUKHAN_CLI_DIR` is exported: sharukhan reads the kernel profiles of the
-  checkout the script belongs to.
+- `SHARUKHAN_WRAPPER_PROFILES` is exported: sharukhan has the kernel profiles
+  built in, and this points it at the checkout's own directory, so a profile
+  the script has just written is used before it is compiled in.
 - `STEPS` is the order of the steps; `--step` and `--from` accept only these.
 
 ### `say`, `die`, `human`, `run`

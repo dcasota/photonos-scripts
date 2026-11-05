@@ -21,6 +21,15 @@ Run from `staging/sharukhan-cli` (profiles default to `./profiles/kernel`), or s
 `SHARUKHAN_WRAPPER_PROFILES`, `SHARUKHAN_WRAPPERS`, `SHARUKHAN_PHOTON_REPO` and
 `SHARUKHAN_KERNEL_CACHE`.
 
+**sharukhan needs no script.** The base (`src/embedded/kernel-base/runPh7-2-7.sh`) and every
+profile in `profiles/kernel/` are compiled into the binary (`build.rs` embeds whatever those
+directories hold). `build-iso --kernel <rel>` and `wrapper` use the built-in copies; a directory
+given explicitly (`SHARUKHAN_WRAPPERS`/`--wrappers` for the base, `SHARUKHAN_WRAPPER_PROFILES`
+for the profiles) takes precedence, which is how a profile under review is used before it is
+compiled in. The public `staging/runPh7-2-7.sh` must stay byte-identical to the embedded base
+(a test fails otherwise); the derived `runPh7-*.sh` are outputs for people who build without
+sharukhan.
+
 How it is built, in short (the full contract is [FRD-001](../../specs/features/kernel-wrapper.md)):
 
 - **The base marks its own kernel-specific regions.** `runPh7-2-7.sh` declares

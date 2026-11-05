@@ -32,7 +32,9 @@ ISO=${ISO:-}                          # verify_media: this file instead of the c
 
 # --- where sharukhan and its settings are -----------------------------------
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-export SHARUKHAN_CLI_DIR=${SHARUKHAN_CLI_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}
+SHARUKHAN_CLI_DIR=${SHARUKHAN_CLI_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}
+# the profile this script writes is used before it is compiled into sharukhan
+export SHARUKHAN_WRAPPER_PROFILES=${SHARUKHAN_WRAPPER_PROFILES:-$SHARUKHAN_CLI_DIR/profiles/kernel}
 SHARUKHAN=${SHARUKHAN:-$(command -v sharukhan || echo /usr/local/libexec/sharukhan/sharukhan)}
 SETTINGS_FILE=${SETTINGS_FILE:-/etc/sharukhan/sharukhan.env}
 

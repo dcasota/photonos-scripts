@@ -200,12 +200,13 @@ pub struct InstallerPatch {
 impl Profile {
     pub fn load(path: &Path) -> Result<Profile> {
         let text = std::fs::read_to_string(path).map_err(|e| io(path.display().to_string(), e))?;
-        let p: Profile = serde_json::from_str(&text).map_err(|e| {
-            perr(
-                path.display().to_string(),
-                format!("not a valid profile: {e}"),
-            )
-        })?;
+        Profile::parse(&text, &path.display().to_string())
+    }
+
+    /// A profile from its text; `source` names it in errors.
+    pub fn parse(text: &str, source: &str) -> Result<Profile> {
+        let p: Profile = serde_json::from_str(text)
+            .map_err(|e| perr(source.to_string(), format!("not a valid profile: {e}")))?;
         p.validate()?;
         Ok(p)
     }

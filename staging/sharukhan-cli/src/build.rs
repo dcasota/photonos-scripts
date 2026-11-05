@@ -418,7 +418,7 @@ pub fn build_inputs(
         out.push_str(&format!(
             "kernel-profile {} {}\nkernel-pins {}\n",
             kb.name,
-            hash(&kb.profile_path)?,
+            sha256::bytes(kb.profile_text.as_bytes()),
             sha256::bytes(kb.pins.as_bytes())
         ));
     } else if req.canister == "equivalent" {

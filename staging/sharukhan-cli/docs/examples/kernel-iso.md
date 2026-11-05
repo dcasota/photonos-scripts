@@ -131,7 +131,8 @@ nsenter --target 1 --mount -- env KERNEL=7.3 examples/kernel-iso.sh --from varia
 | `WAIT` | `1` | `1`: wait for a detached build or boot test; `0`: start it and return |
 | `ISO` | none | `verify_media`: verify this file instead of the cache's `photon.iso` (for an ISO moved or renamed in the store) |
 | `SHARUKHAN` | `sharukhan` on `PATH`, else the installed `/usr/local/libexec/sharukhan/sharukhan` | the binary |
-| `SHARUKHAN_CLI_DIR` | the `sharukhan-cli` directory the script is in | where the kernel profiles are |
+| `SHARUKHAN_CLI_DIR` | the `sharukhan-cli` directory the script is in | the checkout whose `profiles/kernel` the script reads and writes |
+| `SHARUKHAN_WRAPPER_PROFILES` | `$SHARUKHAN_CLI_DIR/profiles/kernel` | handed to sharukhan, which otherwise uses the profiles built into it |
 | `SETTINGS_FILE` | `/etc/sharukhan/sharukhan.env` | the settings `sharukhan service install` wrote |
 | `MC_*`, `SHARUKHAN_*` | from `sharukhan settings` | every path; see [the directory layout](../configuration.md#the-directory-layout) |
 

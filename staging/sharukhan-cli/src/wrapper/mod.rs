@@ -6,6 +6,7 @@ pub mod base;
 pub mod branch;
 pub mod cli;
 pub mod derive;
+pub mod embedded;
 pub mod error;
 pub mod escape;
 pub mod identity;

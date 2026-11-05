@@ -27,7 +27,9 @@ use crate::wrapper::profile::Profile;
 pub struct KernelBuild {
     /// The profile's release, e.g. `7.3`.
     pub name: String,
-    pub profile_path: PathBuf,
+    /// Where the profile came from (a file, or built in), and its text.
+    pub profile_source: String,
+    pub profile_text: String,
     pub profile: Profile,
     /// The release branch the profile's patches live on.
     pub branch: String,
@@ -42,12 +44,6 @@ pub struct KernelBuild {
     pub userland: String,
 }
 
-/// sharukhan-cli's own directory: profiles and the base wrapper live beside it.
-fn cli_dir() -> PathBuf {
-    std::env::var_os("SHARUKHAN_CLI_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
-}
 
 /// The heredoc body between `cat > "$PINOUT" << 'EMBEDPIN'` and `EMBEDPIN`.
 pub fn pin_script(wrapper: &str) -> Result<String, String> {
@@ -76,23 +72,36 @@ pub fn prebuild_packages(wrapper: &str) -> Result<Vec<String>, String> {
 }
 
 pub fn load(name: &str) -> Result<KernelBuild, String> {
-    let dir = cli_dir();
-    let profile_path = std::env::var_os("SHARUKHAN_WRAPPER_PROFILES")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| dir.join("profiles/kernel"))
-        .join(format!("{name}.json"));
-    let profile = Profile::load(&profile_path).map_err(|e| e.to_string())?;
+    // A profile directory given explicitly is the one under review; otherwise
+    // the profile compiled into the binary.
+    let file = format!("{name}.json");
+    let (profile_source, profile_text) = match std::env::var_os("SHARUKHAN_WRAPPER_PROFILES") {
+        Some(d) => {
+            let p = PathBuf::from(d).join(&file);
+            let t = fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+            (p.display().to_string(), t)
+        }
+        None => {
+            let t = crate::wrapper::embedded::profile(&file)
+                .ok_or_else(|| format!("no kernel profile {file} is built in (set SHARUKHAN_WRAPPER_PROFILES for one on disk)"))?;
+            (format!("built-in profiles/kernel/{file}"), t.to_string())
+        }
+    };
+    let profile = Profile::parse(&profile_text, &profile_source).map_err(|e| e.to_string())?;
     let target = profile.release().map_err(|e| e.to_string())?;
     if target.ksrc() != name {
-        return Err(format!(
-            "{} is the profile of {}, not {name}",
-            profile_path.display(),
-            target.ksrc()
-        ));
+        return Err(format!("{profile_source} is the profile of {}, not {name}", target.ksrc()));
     }
-    let base_path = dir.join("..").join(&profile.base.script);
-    let base_text =
-        fs::read_to_string(&base_path).map_err(|e| format!("{}: {e}", base_path.display()))?;
+    // Likewise the base wrapper: a directory given explicitly, else built in.
+    let base_text = match std::env::var_os("SHARUKHAN_WRAPPERS") {
+        Some(d) => {
+            let p = PathBuf::from(d).join(&profile.base.script);
+            fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?
+        }
+        None => crate::wrapper::embedded::base(&profile.base.script)
+            .ok_or_else(|| format!("the base wrapper {} is not built in (set SHARUKHAN_WRAPPERS for one on disk)", profile.base.script))?
+            .to_string(),
+    };
     let base = Base::parse(&base_text).map_err(|e| e.to_string())?;
     let derived = derive::derive_text(&base_text, &profile).map_err(|e| e.to_string())?;
     let pins = pin_script(&derived.script)?;
@@ -105,7 +114,8 @@ pub fn load(name: &str) -> Result<KernelBuild, String> {
     );
     Ok(KernelBuild {
         name: name.to_string(),
-        profile_path,
+        profile_source,
+        profile_text,
         branch: target.branch(),
         profile,
         nevr,

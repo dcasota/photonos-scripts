@@ -36,7 +36,8 @@ OPTIONS
     --profiles <dir>    profile directory; default $SHARUKHAN_WRAPPER_PROFILES,
                         else ./profiles/kernel
     --wrappers <dir>    directory holding the base and derived wrappers; default
-                        $SHARUKHAN_WRAPPERS, else <profiles>/../../..
+                        $SHARUKHAN_WRAPPERS, else the base built into sharukhan,
+                        and derived wrappers go to <profiles>/../../..
     --out <file>        derive: output path; default <wrappers>/<tag>.sh
     --check             derive: compare instead of writing
     --repo <dir>        photon clone whose origin/experimental/linux-<rel> is
@@ -141,6 +142,28 @@ fn wrappers_dir(o: &Opts, profile: &Path) -> Result<PathBuf> {
     w.canonicalize().map_err(|e| io(w.display().to_string(), e))
 }
 
+/// The base wrapper `name` and the path it stands at: read from the wrappers
+/// directory when one is given (--wrappers, SHARUKHAN_WRAPPERS), else the base
+/// built into the binary, standing at the default wrappers directory, which
+/// is then only where derived wrappers are written.
+fn base_for(o: &Opts, profile: &Path, name: &str) -> Result<(String, PathBuf)> {
+    let explicit = o.wrappers.clone().or_else(|| std::env::var_os("SHARUKHAN_WRAPPERS").map(PathBuf::from));
+    match explicit {
+        Some(dir) => {
+            let p = dir.join(name);
+            let text = std::fs::read_to_string(&p).map_err(|e| io(p.display().to_string(), e))?;
+            Ok((text, p))
+        }
+        None => {
+            let text = super::embedded::base(name).ok_or_else(|| {
+                io(name.to_string(), "no such base wrapper is built in; pass --wrappers <dir> for one on disk")
+            })?;
+            let dir = wrappers_dir(o, profile).unwrap_or_else(|_| PathBuf::from("."));
+            Ok((text.to_string(), dir.join(name)))
+        }
+    }
+}
+
 fn trust_path(o: &Opts, profile_dir: &Path) -> PathBuf {
     o.trust
         .clone()
@@ -189,10 +212,7 @@ fn derive_one(o: &Opts, path: &Path) -> Result<Outcome> {
             found: v.signer.clone(),
         });
     }
-    let wdir = wrappers_dir(o, path)?;
-    let base_path = wdir.join(&profile.base.script);
-    let base_text =
-        std::fs::read_to_string(&base_path).map_err(|e| io(base_path.display().to_string(), e))?;
+    let (base_text, base_path) = base_for(o, path, &profile.base.script)?;
     let target = profile.release()?;
     let out = o
         .out
@@ -550,10 +570,7 @@ fn cmd_profile_new(o: &Opts) -> Result<()> {
         ));
     }
     // The base as it is now: the new profile is reviewed against it.
-    let wdir = wrappers_dir(o, &from_path)?;
-    let base_path = wdir.join(&from.base.script);
-    let base_text =
-        std::fs::read_to_string(&base_path).map_err(|e| io(base_path.display().to_string(), e))?;
+    let (base_text, _) = base_for(o, &from_path, &from.base.script)?;
     let base = super::base::Base::parse(&base_text)?;
     let v = run_verify(o, &new, &trust_path(o, &pdir))?;
     let (y, m, d, iso) = today()?;
@@ -694,8 +711,13 @@ mod tests {
             ..Default::default()
         };
         let out = derive_one(&o, &root.join("profiles/kernel/7.3-rc4.json")).unwrap();
-        let committed = std::fs::read_to_string(root.join("../runPh7-3-RC4.sh")).unwrap();
-        derive::check_against(&out.derived.script, &out.out).unwrap();
+        // the public wrapper lives in the scripts repository, not in sharukhan:
+        // compared where the checkout has it
+        let Ok(committed) = std::fs::read_to_string(root.join("../runPh7-3-RC4.sh")) else {
+            eprintln!("no ../runPh7-3-RC4.sh beside this checkout: nothing to compare against");
+            return;
+        };
+        derive::check_against(&out.derived.script, &root.join("../runPh7-3-RC4.sh")).unwrap();
         assert_eq!(out.derived.script, committed);
         assert!(out.derived.renames.iter().all(|r| r.count > 0));
     }
@@ -713,9 +735,12 @@ mod tests {
             let _ = std::fs::remove_dir_all(&dir);
             let prof = dir.join("sharukhan-cli/profiles/kernel");
             std::fs::create_dir_all(&prof).unwrap();
-            for f in ["runPh7-2-7.sh", "runPh7-3-RC4.sh"] {
-                std::fs::copy(root.join("..").join(f), dir.join(f)).unwrap();
-            }
+            // the base as sharukhan has it built in, and the 7.3-rc4 wrapper it
+            // derives, laid out as in the scripts repository
+            let base = crate::wrapper::embedded::base("runPh7-2-7.sh").unwrap();
+            std::fs::write(dir.join("runPh7-2-7.sh"), base).unwrap();
+            let p = Profile::load(&root.join("profiles/kernel/7.3-rc4.json")).unwrap();
+            std::fs::write(dir.join("runPh7-3-RC4.sh"), derive::derive_text(base, &p).unwrap().script).unwrap();
             for f in ["7.3-rc4.json", "kernel-org-signers.json"] {
                 std::fs::copy(root.join("profiles/kernel").join(f), prof.join(f)).unwrap();
             }
