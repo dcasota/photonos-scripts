@@ -139,6 +139,9 @@ pub fn variant_spec_dir(release_tree: &Path, patch: &Path, work: &Path) -> Resul
     }
     // Outside any repository on purpose: inside one, `git apply` resolves
     // paths against that repository's root and ignores everything else.
+    if crate::build::is_empty_patch(patch) {
+        return Ok(root.join(SPEC_DIR));
+    }
     let parent = root.parent().unwrap_or(&root).to_string_lossy().to_string();
     let include = format!("--include={SPEC_DIR}/*");
     let out = Command::new("git")

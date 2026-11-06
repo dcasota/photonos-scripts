@@ -104,6 +104,9 @@ pub struct Config {
     /// whose media the rows are run against (see kbuild::apply).
     pub kernel: Option<KernelAxis>,
     pub systemd: Option<SystemdAxis>,
+    /// `--baseline`: the release as upstream has it, without any PR; the
+    /// gate's stage it is seeded from.
+    pub baseline: Option<std::path::PathBuf>,
 
     // ---- guest defaults --------------------------------------------------
     pub guest_vcpus: u32,
@@ -330,6 +333,7 @@ impl Config {
             staged_rows: s_or(get, "MC_STAGED_ROWS", "k11").split([' ', ',']).filter(|r| !r.is_empty()).map(str::to_string).collect(),
             kernel: None,
             systemd: None,
+            baseline: None,
 
             guest_vcpus: n_or(get, "GUEST_VCPUS", 2),
             guest_mem_mb: n_or(get, "GUEST_MEM_MB", 4096),

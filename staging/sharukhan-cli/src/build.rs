@@ -16,6 +16,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// An existing, empty patch file: a variant that changes nothing, the tree
+/// as it is (`--baseline`). `git apply` refuses an empty input ("No valid
+/// patches in input"), so every consumer of a variant patch checks this
+/// first.
+pub fn is_empty_patch(p: &Path) -> bool {
+    p.metadata().map(|m| m.is_file() && m.len() == 0).unwrap_or(false)
+}
+
 #[derive(Clone)]
 pub struct IsoRequest {
     pub iso_type: String,
@@ -430,6 +438,9 @@ pub fn build_inputs(
         let arch = crate::remaster::Arch::parse(std::env::consts::ARCH)?;
         out.push_str(&format!("azure-console {}\n", crate::remaster::poi::console_line(arch)));
     }
+    if cfg.baseline.is_some() {
+        out.push_str("baseline the release and common trees without any PR\n");
+    }
     if let Some(s) = &cfg.systemd {
         // the port branch's commit is already the release-base line
         out.push_str(&format!("systemd-profile {} {}\n", s.name, s.profile_sha256));
@@ -558,6 +569,11 @@ fn resolve_in(
         for l in crate::sdver::check(cfg, &s.name, log)? {
             log(&format!("  ok  {l}"));
         }
+    }
+    // A baseline builds in its own stage, seeded with what the pristine specs
+    // produce, never with the gate's PR builds.
+    if let Some(gate_stage) = &cfg.baseline {
+        crate::baseline::prepare(cfg, gate_stage, log)?;
     }
     // The record names origin/<branch> of both trees, which the cascade's
     // sync stage merges. Fetch them first: when the base moved (a sync's
@@ -1042,7 +1058,7 @@ fn kernel_nevr_from_index(
     };
     let result = (|| {
         run(&["read-tree", &format!("origin/{}", cfg.release)])?;
-        if patch.is_file() {
+        if patch.is_file() && !is_empty_patch(patch) {
             run(&["apply", "--cached", &patch.to_string_lossy()])?;
         }
         if with_embedded {

@@ -12,6 +12,7 @@ mod build;
 mod tslog;
 mod reuse;
 mod sdver;
+mod baseline;
 mod buildexec;
 mod builder;
 mod buildmode;
@@ -215,6 +216,13 @@ OPTIONS:
                         change SPECS/systemd are left out of its variant patches,
                         and the guest must run that systemd. Mainline only; not
                         together with --kernel
+    --baseline          build-iso and the test commands (plan, run, install, verify,
+                        pkg-lifecycle, ...): the release and common trees as
+                        upstream has them, without any PR, in a build root,
+                        stage, ISO cache and variant patches of their own. The
+                        stage is seeded with the gate stage's RPMs that the
+                        pristine specs produce, never its PR builds. The
+                        reference a package PR is judged against
     --force             rebuild even on a cache hit (build-iso)
     --compose-only      compose the image from the phase-B kernels already in
                         the stage, proven to be phase B's, instead of purging
@@ -290,6 +298,7 @@ struct Args {
     canister: Option<String>,
     kernel: Option<String>,
     systemd: Option<String>,
+    baseline: bool,
     timeout: Option<u64>,
     allow_build: bool,
     rebase_check: bool,
@@ -417,6 +426,7 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
         canister: None,
         kernel: None,
         systemd: None,
+        baseline: false,
         timeout: None,
         allow_build: false,
         rebase_check: false,
@@ -490,6 +500,7 @@ fn parse_from(mut a: impl Iterator<Item = String>) -> Result<Args, String> {
             "--poi" => out.poi = Some(a.next().ok_or("--poi needs a value")?),
             "--canister" => out.canister = Some(a.next().ok_or("--canister needs a value")?),
             "--kernel" => out.kernel = Some(a.next().ok_or("--kernel needs a value")?),
+            "--baseline" => out.baseline = true,
             "--systemd" => {
                 let v = a.next().ok_or("--systemd needs a value")?;
                 // checked here, so a typo is refused before any profile is looked for
@@ -718,6 +729,26 @@ fn main() -> ExitCode {
     let cfg = config::Config::load();
     // build-iso and variant-patches take --kernel themselves (a build request);
     // every other command that accepts it runs rows against that kernel.
+    // --baseline: the pristine release, for a build and for the rows run on it
+    let cfg = if args.baseline {
+        if args.kernel.is_some() || args.systemd.is_some() {
+            eprintln!("sharukhan: --baseline is the release as upstream has it; not with --kernel or --systemd");
+            return ExitCode::from(64);
+        }
+        if !matches!(args.cmd.as_str(), "build-iso" | "plan" | "run" | "install" | "verify" | "create-vm" | "kickstart" | "teardown" | "report" | "pkg-lifecycle") {
+            eprintln!("sharukhan: --baseline does not apply to {}", args.cmd);
+            return ExitCode::from(64);
+        }
+        let b = baseline::effective_cfg(&cfg);
+        // the empty variant patches, so plan and the media gate see the pristine tree
+        if let Err(e) = baseline::write_patches(&b, &mut |_| {}) {
+            eprintln!("sharukhan: --baseline: {e}");
+            return ExitCode::from(64);
+        }
+        b
+    } else {
+        cfg
+    };
     // --systemd likewise: a build request for build-iso and variant-patches,
     // the rows' media and expected systemd for the test commands
     let cfg = match (&args.systemd, args.cmd.as_str()) {

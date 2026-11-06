@@ -596,6 +596,13 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
         );
         return Ok(());
     }
+    if crate::build::is_empty_patch(patch) {
+        c.skip(
+            &format!("patch[{}]", tree.as_str()),
+            &format!("{} is empty: the {} tree as it is (a baseline)", patch.display(), tree.as_str()),
+        );
+        return Ok(());
+    }
     if c.dry {
         c.say(&format!(
             "  would apply {} to the {} tree",
@@ -2529,7 +2536,7 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
 
 /// False only when the spec's `%global build_if` decides it is not built at
 /// `sub`; an unknown subrelease or an expression that cannot be read builds.
-fn builds_at(spec: &str, sub: Option<u32>) -> bool {
+pub(crate) fn builds_at(spec: &str, sub: Option<u32>) -> bool {
     let Some(sub) = sub else { return true };
     let cond = spec.lines().find_map(|l| l.trim().strip_prefix("%global build_if").map(|r| r.trim().to_string()));
     cond.map(|c| crate::sync::eval_build_if(&c, sub) != Some(false)).unwrap_or(true)

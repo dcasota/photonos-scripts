@@ -36,6 +36,19 @@ comparison fails on a regression (pass or skip turned fail), a new failure (a pa
 media carries, failing), a missing package, or an incomplete one (not reached on either side).
 Failures present in both runs are reported as unchanged; their reasons are shown when they differ.
 
+**Is a package PR still needed: `--baseline`.** A PR is needed only while the defect it fixes
+shows on the release without it. `sharukhan build-iso --baseline --iso-type full --allow-build`
+builds the media of the release and common trees as upstream has them, without any PR, in a root
+of its own (`$MC_WORK/baseline-root`, ISO cache and variant patches `baseline`); every variant
+patch is an empty file, so every expectation is the pristine tree's. Its stage is seeded with hard
+links to the gate stage's RPMs that a pristine spec produces at that Version-Release and whose
+content the gate's ledger does not record as other - never the PR builds, which sit at higher
+Releases and would win on version - and the build makes the rest; the gate's stage is not written.
+`sharukhan pkg-lifecycle --baseline --id k09` then runs the lifecycle on it, and `pkg-compare`
+against the same row on the gated media shows, per package, what the PRs change. On 2026-11-06 the
+seeding linked 2268 RPMs and left out 941 (PR builds, other subreleases) and 31 (pristine NEVRs a PR
+had built with other content); 53 PR-changed packages had no pristine build and are built.
+
 **Every package, even when one takes the guest down.** `sharukhan pkg-lifecycle --id <row>
 [--iso <path>] [--pkg-budget s] [--pkg-segments n]` runs the lifecycle on a freshly installed guest
 (create-vm --recreate, install, verify --package-lifecycle, teardown) and, when a package leaves the
