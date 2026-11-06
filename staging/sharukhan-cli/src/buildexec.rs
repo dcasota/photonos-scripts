@@ -3956,6 +3956,19 @@ pub(crate) fn store_iso(dest: &Path, store: &Path) -> Result<PathBuf, String> {
     if !store.is_dir() {
         return Err(format!("{} is not a directory", store.display()));
     }
+    // Already stored: the cache name is a link into the store. Storing it
+    // again moved the link itself into the store under a time-stamped name
+    // (2026-11-06, when the cascade's delivery and build-iso both stored the
+    // same ISO), leaving a dangling-looking file beside the ISOs. The stored
+    // file is the answer; nothing moves.
+    if dest.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        let real = fs::canonicalize(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+        let store_real = fs::canonicalize(store).map_err(|e| format!("{}: {e}", store.display()))?;
+        if real.starts_with(&store_real) && real.is_file() {
+            return Ok(real);
+        }
+        return Err(format!("{} is a link to {}, not an ISO in {}", dest.display(), real.display(), store.display()));
+    }
     // The checksum is taken before and compared after, whether the move was a
     // rename or a copy: the store is on another filesystem (drvfs) as often as not.
     let before = sha256::file(dest)?;
@@ -4285,6 +4298,13 @@ mod tests {
         let again = cache.join("z.iso");
         fs::write(&again, b"z").unwrap();
         assert!(store_iso(&again, &root.join("missing")).unwrap_err().contains("is not a directory"));
+        // a cache name that is already a link into the store is stored: the
+        // link is not moved into the store a second time
+        let before: Vec<_> = fs::read_dir(&store).unwrap().flatten().map(|e| e.file_name()).collect();
+        let real = store_iso(&iso, &store).unwrap();
+        assert!(real.is_file() && real.starts_with(fs::canonicalize(&store).unwrap()));
+        let after: Vec<_> = fs::read_dir(&store).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(before.len(), after.len(), "storing a stored ISO adds nothing to the store");
         fs::remove_dir_all(&root).ok();
     }
 
