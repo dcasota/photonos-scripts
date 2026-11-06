@@ -326,6 +326,11 @@ pub struct BuildSpec {
     /// Where make's output goes, every line stamped with its UTC time. None:
     /// make writes to this process's own stdout and stderr.
     pub make_log: Option<PathBuf>,
+    /// A build in a root of its own (a baseline, a systemd port): the gate's
+    /// stage, whose RPMs seed this build's stage right before the purge -
+    /// after every patch and fixup, so the ledger compares the spec content
+    /// that is built. None: the stage is the tree's own.
+    pub seed_from: Option<PathBuf>,
 }
 
 impl BuildSpec {
@@ -365,6 +370,7 @@ impl BuildSpec {
             poi_image: None,
             remote: None,
             make_log: None,
+            seed_from: None,
         })
     }
 

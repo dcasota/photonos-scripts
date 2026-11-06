@@ -800,6 +800,77 @@ fn basename(p: &Path) -> String {
         .to_string()
 }
 
+/// `common-branch-path` as the release tree's build-config.json must say it
+/// for this layout: relative to the release tree, which the Makefile's
+/// `pushd` resolves. A release branch with a slash in its name
+/// (`experimental/systemd-262.2`) sits one directory deeper than the common
+/// tree's sibling, so the tracked `../common` would miss it.
+pub(crate) fn common_path_for(release: &str, common: &str) -> String {
+    let depth = Path::new(release).components().filter(|c| matches!(c, std::path::Component::Normal(_))).count();
+    format!("{}{common}", "../".repeat(depth))
+}
+
+/// Point the release tree's `common-branch-path` at the common tree this
+/// build uses, when the tracked value resolves elsewhere. The reset restores
+/// build-config.json first, so every run starts from the tracked value.
+fn point_common_tree(c: &mut Ctx) -> Result<(), String> {
+    let rel = c.spec.tree(Tree::Release);
+    let cfg = rel.join("build-config.json");
+    let want = common_path_for(&c.spec.release, &c.spec.common_branch);
+    if c.dry {
+        c.say(&format!("  would check common-branch-path resolves to {want}"));
+        return Ok(());
+    }
+    let text = fs::read_to_string(&cfg).map_err(|e| format!("{}: {e}", cfg.display()))?;
+    let mut v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", cfg.display()))?;
+    let have = v.get("common-branch-path").and_then(|x| x.as_str()).map(str::to_string);
+    let Some(have) = have else {
+        return Ok(());
+    };
+    let common = c.spec.tree(Tree::Common);
+    let resolves = |p: &str| -> Option<PathBuf> {
+        let q = Path::new(p);
+        let full = if q.is_absolute() { q.to_path_buf() } else { rel.join(q) };
+        fs::canonicalize(full).ok()
+    };
+    let target = fs::canonicalize(&common).map_err(|e| format!("{}: {e}", common.display()))?;
+    if resolves(&have).as_deref() == Some(target.as_path()) {
+        return Ok(());
+    }
+    if resolves(&want).as_deref() != Some(target.as_path()) {
+        return Err(format!("{}: common-branch-path {have:?} misses {}, and {want:?} does too", cfg.display(), common.display()));
+    }
+    v["common-branch-path"] = serde_json::Value::String(want.clone());
+    let out = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())? + "\n";
+    fs::write(&cfg, out).map_err(|e| format!("{}: {e}", cfg.display()))?;
+    c.say(&format!("  common-branch-path {have:?} -> {want:?}: the release tree {} is {} level(s) below the build root", c.spec.release, want.matches("../").count()));
+    Ok(())
+}
+
+/// Seed this build's stage from `gate` (see `BuildSpec::seed_from`).
+fn seed_stage(c: &mut Ctx, gate: &Path) -> Result<(), String> {
+    let rel = c.spec.tree(Tree::Release);
+    if c.dry {
+        c.say(&format!("  would seed the stage from {}", gate.display()));
+        return Ok(());
+    }
+    let sub = crate::specresolve::tree_subrelease(&rel);
+    let s = crate::baseline::seed(gate, &rel, sub, &rel.join("stage"))?;
+    c.say(&format!(
+        "  stage seeded from {}: {} RPM(s) linked, {} already there, {} not what the tree's specs produce, {} at the tree's NEVR built from other content, {} source(s) linked",
+        gate.display(),
+        s.linked,
+        s.present,
+        s.not_produced,
+        s.other_content.len(),
+        s.sources
+    ));
+    for n in &s.other_content {
+        c.say(&format!("    not linked, other content at the tree's NEVR: {n}"));
+    }
+    Ok(())
+}
+
 /// Pin `photon-subrelease` in build-config.json.
 ///
 /// This was two entire scripts - `runPh5_pinned90.sh` and
@@ -4118,14 +4189,22 @@ fn run_cascade(c: &mut Ctx) -> Result<PathBuf, String> {
                     }
                 }
                 Stage::Sync => sync(c)?,
-                Stage::Reset => reset(c)?,
+                Stage::Reset => {
+                    reset(c)?;
+                    point_common_tree(c)?
+                }
                 Stage::Inject(i) => inject(c, i)?,
                 Stage::Sources => {
                     report_subrelease(c)?;
                     sources(c)?
                 }
                 Stage::Preflight => preflight(c)?,
-                Stage::Purge => purge(c)?,
+                Stage::Purge => {
+                    if let Some(gate) = &spec.seed_from {
+                        seed_stage(c, gate)?;
+                    }
+                    purge(c)?
+                }
                 Stage::Make => produced = make_and_deliver(c)?,
                 Stage::Post => {
                     c.say(&format!("  produced {}", produced.display()));
@@ -4489,6 +4568,38 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    #[test]
+    fn a_release_branch_with_a_slash_finds_the_common_tree() {
+        assert_eq!(common_path_for("5.0", "common"), "../common");
+        assert_eq!(common_path_for("experimental/systemd-262.2", "common"), "../../common");
+
+        let tmp = std::env::temp_dir().join(format!("shk-commonpath-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let rel = tmp.join("experimental/systemd-262.2");
+        fs::create_dir_all(&rel).unwrap();
+        fs::create_dir_all(tmp.join("common")).unwrap();
+        let cfgf = rel.join("build-config.json");
+        fs::write(&cfgf, "{\n  \"common-branch-path\": \"../common\",\n  \"photon-build-param\": {\"photon-subrelease\": \"92\"}\n}\n").unwrap();
+        let mut sp = spec_at(&tmp);
+        sp.release = "experimental/systemd-262.2".into();
+        let mut seen = Vec::new();
+        let mut c = Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+        point_common_tree(&mut c).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&cfgf).unwrap()).unwrap();
+        assert_eq!(v["common-branch-path"], "../../common");
+        assert_eq!(v["photon-build-param"]["photon-subrelease"], "92");
+        // already right: left as it is
+        let before = fs::read_to_string(&cfgf).unwrap();
+        point_common_tree(&mut c).unwrap();
+        assert_eq!(fs::read_to_string(&cfgf).unwrap(), before);
+        // no common tree where either path points: refused, never guessed
+        fs::remove_dir_all(tmp.join("common")).unwrap();
+        assert!(point_common_tree(&mut c).unwrap_err().contains(&tmp.join("common").display().to_string()));
+        drop(c);
+        assert!(seen.iter().any(|l| l.contains("\"../common\" -> \"../../common\"")), "{seen:?}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     fn spec_at(base: &Path) -> BuildSpec {
         BuildSpec {
             base_dir: base.to_path_buf(),
@@ -4506,6 +4617,7 @@ mod tests {
             poi_image: None,
             remote: None,
             make_log: None,
+            seed_from: None,
         }
     }
 

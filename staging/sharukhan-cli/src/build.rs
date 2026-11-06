@@ -569,14 +569,11 @@ fn resolve_in(
         for l in crate::sdver::check(cfg, &s.name, log)? {
             log(&format!("  ok  {l}"));
         }
-        if cfg.baseline.is_none() {
-            crate::baseline::seed_stage(cfg, &s.gate_stage, &format!("systemd {}", s.name), log)?;
-        }
     }
-    // A baseline builds in its own stage, seeded with what the pristine specs
-    // produce, never with the gate's PR builds.
-    if let Some(gate_stage) = &cfg.baseline {
-        crate::baseline::prepare(cfg, gate_stage, log)?;
+    // A baseline builds with empty variant patches; its stage, like a systemd
+    // port's, is seeded in the cascade right before the purge.
+    if cfg.baseline.is_some() {
+        crate::baseline::write_patches(cfg, log)?;
     }
     // The record names origin/<branch> of both trees, which the cascade's
     // sync stage merges. Fetch them first: when the base moved (a sync's
@@ -749,6 +746,7 @@ and none is built for {nevr}: phase A has to build it first. Run without --compo
         spec.remote = Some(cfg.photon_remote.clone());
         spec.compose_only = req.compose_only;
         spec.make_log = Some(build_log.clone());
+        spec.seed_from = cfg.baseline.clone().or_else(|| cfg.systemd.as_ref().map(|s| s.gate_stage.clone()));
         if !req.hyperv.is_empty() {
             crate::buildmode::add_hyperv(&mut spec, std::env::consts::ARCH, &req.hyperv)?;
         }

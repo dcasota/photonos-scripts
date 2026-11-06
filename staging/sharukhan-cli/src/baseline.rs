@@ -189,36 +189,6 @@ pub fn seed(gate: &Path, tree: &Path, sub: Option<u32>, dest: &Path) -> Result<S
     Ok(s)
 }
 
-/// Before a baseline build: the empty variant patches, then the stage
-/// seeded from the gate's (`gate_stage`).
-pub fn prepare(b: &Config, gate_stage: &Path, log: &mut dyn FnMut(&str)) -> Result<(), String> {
-    write_patches(b, log)?;
-    seed_stage(b, gate_stage, "baseline", log)
-}
-
-/// Seed the stage of `b`'s release tree from `gate_stage` with only what
-/// that tree's specs produce, and log the counts under `label`. A build in a
-/// root of its own (a baseline, a systemd port) then rebuilds what its tree
-/// changes, never what it shares with the gate.
-pub fn seed_stage(b: &Config, gate_stage: &Path, label: &str, log: &mut dyn FnMut(&str)) -> Result<(), String> {
-    let sub = crate::specresolve::tree_subrelease(&b.photon_tree);
-    let dest = b.photon_tree.join("stage");
-    let s = seed(gate_stage, &b.photon_tree, sub, &dest)?;
-    log(&format!(
-        "{label} stage seeded from {}: {} RPM(s) linked, {} already there, {} not what the tree's specs produce, {} at the tree's NEVR built from other content, {} source(s) linked",
-        gate_stage.display(),
-        s.linked,
-        s.present,
-        s.not_produced,
-        s.other_content.len(),
-        s.sources
-    ));
-    for n in &s.other_content {
-        log(&format!("  not linked, other content at the release's NEVR: {n}"));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

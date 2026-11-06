@@ -40,8 +40,8 @@ Failures present in both runs are reported as unchanged; their reasons are shown
 shows on the release without it. `sharukhan build-iso --baseline --iso-type full --allow-build`
 builds the media of the release and common trees as upstream has them, without any PR, in a root
 of its own (`$MC_WORK/baseline-root`, ISO cache and variant patches `baseline`); every variant
-patch is an empty file, so every expectation is the pristine tree's. Its stage is seeded with hard
-links to the gate stage's RPMs that a pristine spec produces at that Version-Release and whose
+patch is an empty file, so every expectation is the pristine tree's. Right before the purge, after
+the fixups, its stage is seeded with hard links to the gate stage's RPMs that a pristine spec produces at that Version-Release and whose
 content the gate's ledger does not record as other - never the PR builds, which sit at higher
 Releases and would win on version - and the build makes the rest; the gate's stage is not written.
 `sharukhan pkg-lifecycle --baseline --id k09` then runs the lifecycle on it, and `pkg-compare`

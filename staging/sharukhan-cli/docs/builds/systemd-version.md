@@ -68,10 +68,13 @@ A port branch behind the release branch is reported: rebase it to test today's t
 ### What a `--systemd` build is
 
 It builds in its own root (`$MC_WORK/sbuild/<release>`), whose release tree is the port branch, with
-its own variant patches and ISO cache (`s<release>`). Its stage is seeded with hard links from the
-gate's stage, with only the RPMs the port branch's specs produce at their Version-Release and that the
-gate's ledger records as built from the same spec content (as for a baseline); systemd itself, and
-every spec a PR changes, is built. PRs that change `SPECS/systemd` are left out of
+its own variant patches and ISO cache (`s<release>`). Right before the purge - after the variant
+patches and fixups - its stage is seeded with hard links from the gate's stage: only the RPMs the
+port tree's specs produce at their Version-Release and that the gate's ledger records as built from
+the same spec content. A PR build the gate made from the same spec is reused; systemd, and every spec
+whose content differs from the gate's, is built. The port tree sits one level deeper than the common
+tree (`experimental/systemd-<release>`), so its `common-branch-path` is pointed at the common tree
+(`../../common`) for the build. PRs that change `SPECS/systemd` are left out of
 its variant patches and named in the log (`left out - it changes N systemd file(s) (SPECS/systemd),
 which the port owns`); every other PR is applied. The ISO's input record names the profile. Every row
 run with `--systemd` checks `guest.systemd_version`: the installed systemd must be the profile's
