@@ -13,6 +13,7 @@ mod tslog;
 mod reuse;
 mod sdver;
 mod baseline;
+mod bootstrap;
 mod buildexec;
 mod builder;
 mod buildmode;

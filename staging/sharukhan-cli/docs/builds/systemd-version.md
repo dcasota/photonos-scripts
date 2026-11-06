@@ -74,7 +74,15 @@ port tree's specs produce at their Version-Release and that the gate's ledger re
 the same spec content. A PR build the gate made from the same spec is reused; systemd, and every spec
 whose content differs from the gate's, is built. The port tree sits one level deeper than the common
 tree (`experimental/systemd-<release>`), so its `common-branch-path` is pointed at the common tree
-(`../../common`) for the build. PRs that change `SPECS/systemd` are left out of
+(`../../common`) for the build.
+
+A spec that needs one of its own subpackages to be built - `%define ExtraBuildRequires
+systemd-rpm-macros` in systemd.spec, which rpm-build requires - finds none in a stage seeded for a new
+release. As the spec says, the published RPM is consumed: the highest NEVR the release's repositories
+publish (`tdnf repoquery --location`), fetched over https, accepted only with `rpm -K` reporting
+`digests signatures OK`, and recorded in `stage/.sharukhan-bootstrap.tsv`. It is removed as soon as
+the pre-build has made the tree's own RPM of that package; if it has not, the build stops before any
+media is composed. PRs that change `SPECS/systemd` are left out of
 its variant patches and named in the log (`left out - it changes N systemd file(s) (SPECS/systemd),
 which the port owns`); every other PR is applied. The ISO's input record names the profile. Every row
 run with `--systemd` checks `guest.systemd_version`: the installed systemd must be the profile's

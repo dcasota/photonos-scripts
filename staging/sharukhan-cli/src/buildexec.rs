@@ -868,6 +868,7 @@ fn seed_stage(c: &mut Ctx, gate: &Path) -> Result<(), String> {
     for n in &s.other_content {
         c.say(&format!("    not linked, other content at the tree's NEVR: {n}"));
     }
+    crate::bootstrap::provide(&rel, &rel.join("stage"), &mut |l| c.say(l))?;
     Ok(())
 }
 
@@ -3504,6 +3505,15 @@ restored from the kernel store or left by an earlier phase A",
                 if prc != 0 {
                     c.say(&format!("  attempt {attempt}: pre-build of {p} exited {prc}"));
                     break;
+                }
+            }
+            if prc == 0 {
+                let left = crate::bootstrap::retire(&stage, &mut |l| c.say(l))?;
+                if !left.is_empty() {
+                    return Err(format!(
+                        "the pre-build did not build the tree's own {}: the published bootstrap RPM would reach the media",
+                        left.join(", ")
+                    ));
                 }
             }
             if prc != 0 {

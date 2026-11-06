@@ -64,6 +64,34 @@ type Produced = BTreeMap<String, (String, String, String, PathBuf)>;
 /// trusted and the build makes them. A package two specs claim at this
 /// subrelease is dropped for the same reason.
 pub fn produced(tree: &Path, sub: Option<u32>) -> Produced {
+    let mut out: Produced = BTreeMap::new();
+    let mut doubled = std::collections::BTreeSet::new();
+    for (dir, text) in spec_texts(tree, sub) {
+        let Some(fams) = crate::buildexec::spec_families_text(&text) else { continue };
+        let rel = text
+            .lines()
+            .find(|l| l.starts_with("Release:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .map(|v| v.split('%').next().unwrap_or("").to_string())
+            .unwrap_or_default();
+        if rel.is_empty() || !rel.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            continue;
+        }
+        for pkg in &fams.families {
+            if out.insert(pkg.clone(), (fams.version.clone(), rel.clone(), fams.name.clone(), dir.clone())).is_some() {
+                doubled.insert(pkg.clone());
+            }
+        }
+    }
+    for d in doubled {
+        out.remove(&d);
+    }
+    out
+}
+
+/// Every spec under `<tree>/SPECS` (and its subrelease directories) that
+/// builds at `sub`, as that subrelease reads it: (its directory, its text).
+pub fn spec_texts(tree: &Path, sub: Option<u32>) -> Vec<(PathBuf, String)> {
     let specs = tree.join("SPECS");
     let children = |d: &Path| -> Vec<PathBuf> {
         fs::read_dir(d).map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default()
@@ -77,38 +105,18 @@ pub fn produced(tree: &Path, sub: Option<u32>) -> Produced {
     for s in &subdirs {
         dirs.extend(children(s));
     }
-    let mut out: Produced = BTreeMap::new();
-    let mut doubled = std::collections::BTreeSet::new();
+    dirs.sort();
+    let mut out = Vec::new();
     for dir in dirs.iter().filter(|d| !subdirs.contains(d)) {
         let Ok(rd) = fs::read_dir(dir) else { continue };
-        for e in rd.flatten() {
-            let file = e.file_name().to_string_lossy().into_owned();
-            if !file.ends_with(".spec") {
-                continue;
-            }
+        let mut files: Vec<String> = rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|f| f.ends_with(".spec")).collect();
+        files.sort();
+        for file in files {
             let Some(text) = crate::specresolve::resolve(&crate::specresolve::dir_reader(dir), &file, sub) else { continue };
-            if !crate::buildexec::builds_at(&text, sub) {
-                continue;
-            }
-            let Some(fams) = crate::buildexec::spec_families_text(&text) else { continue };
-            let rel = text
-                .lines()
-                .find(|l| l.starts_with("Release:"))
-                .and_then(|l| l.split_whitespace().nth(1))
-                .map(|v| v.split('%').next().unwrap_or("").to_string())
-                .unwrap_or_default();
-            if rel.is_empty() || !rel.chars().all(|c| c.is_ascii_digit() || c == '.') {
-                continue;
-            }
-            for pkg in &fams.families {
-                if out.insert(pkg.clone(), (fams.version.clone(), rel.clone(), fams.name.clone(), dir.clone())).is_some() {
-                    doubled.insert(pkg.clone());
-                }
+            if crate::buildexec::builds_at(&text, sub) {
+                out.push((dir.clone(), text));
             }
         }
-    }
-    for d in doubled {
-        out.remove(&d);
     }
     out
 }
