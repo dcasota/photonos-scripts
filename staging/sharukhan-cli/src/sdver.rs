@@ -960,6 +960,7 @@ pub fn effective_cfg(cfg: &crate::config::Config, p: &Profile, r: &SystemdReleas
         nevr: p.nevr(&dist),
         profile_sha256: crate::sha256::bytes(profile_text.as_bytes()),
         base_release: cfg.release.clone(),
+        gate_stage: cfg.photon_tree.join("stage"),
     });
     let root = cfg.work.join("sbuild").join(r.version());
     s.build_root = root.clone();
@@ -1159,6 +1160,9 @@ mod tests {
         let axis = s.systemd.clone().unwrap();
         assert_eq!((axis.name.as_str(), axis.nevr.as_str(), axis.base_release.as_str()), ("262.2", "262.2-1.ph5", "5.0"));
         assert_eq!(axis.profile_sha256, crate::sha256::bytes(profile_text().as_bytes()));
+        // the port's stage is seeded from the gate's, never from its own
+        assert_eq!(axis.gate_stage, cfg.photon_tree.join("stage"));
+        assert_ne!(axis.gate_stage, s.photon_tree.join("stage"));
         // applied twice, the paths are derived once, never nested
         assert_eq!(effective_cfg(&s, &p, &r, &profile_text()).unwrap().build_root, s.build_root);
         match context(&cfg, "262.2", Some("7.3")) {

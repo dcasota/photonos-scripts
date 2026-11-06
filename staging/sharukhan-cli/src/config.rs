@@ -38,6 +38,9 @@ pub struct SystemdAxis {
     /// The release branch the port is checked against (5.0): the build's own
     /// `release` is the port branch.
     pub base_release: String,
+    /// The stage of the tree the port branch was checked out beside: it
+    /// seeds the port's own stage with what the port's specs produce.
+    pub gate_stage: std::path::PathBuf,
 }
 
 #[derive(Clone)]

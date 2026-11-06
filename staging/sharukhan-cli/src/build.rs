@@ -569,6 +569,9 @@ fn resolve_in(
         for l in crate::sdver::check(cfg, &s.name, log)? {
             log(&format!("  ok  {l}"));
         }
+        if cfg.baseline.is_none() {
+            crate::baseline::seed_stage(cfg, &s.gate_stage, &format!("systemd {}", s.name), log)?;
+        }
     }
     // A baseline builds in its own stage, seeded with what the pristine specs
     // produce, never with the gate's PR builds.
