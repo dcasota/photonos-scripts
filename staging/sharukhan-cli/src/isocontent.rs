@@ -440,6 +440,28 @@ fn cache_entry(cfg: &Config, iso: &Path) -> Option<PathBuf> {
     found.map(|(d, _)| d)
 }
 
+/// The sha256 of `iso`, from `<work>/iso-content-sha256.tsv` when the file
+/// is the one hashed before (same name, size and modification time), else
+/// computed and recorded there.
+fn sha_of(cfg: &Config, iso: &Path, meta: &fs::Metadata) -> Result<String, String> {
+    let name = iso.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| format!("{}.{:09}", d.as_secs(), d.subsec_nanos())).unwrap_or_default();
+    let key = format!("{name}\t{}\t{mtime}", meta.len());
+    let cache = cfg.work.join("iso-content-sha256.tsv");
+    let text = fs::read_to_string(&cache).unwrap_or_default();
+    if let Some(sha) = text.lines().find_map(|l| l.rsplit_once('\t').filter(|(k, _)| *k == key).map(|(_, v)| v.to_string())) {
+        if sha.len() == 64 {
+            return Ok(sha);
+        }
+    }
+    let sha = crate::sha256::file(iso)?;
+    let mut kept: Vec<&str> = text.lines().filter(|l| !l.starts_with(&format!("{name}\t"))).collect();
+    let line = format!("{key}\t{sha}");
+    kept.push(&line);
+    fs::write(&cache, kept.join("\n") + "\n").map_err(|e| format!("{}: {e}", cache.display()))?;
+    Ok(sha)
+}
+
 /// The build log of `iso`: the log of the build that a driver log (a build
 /// log itself, a sync stage's log, or a run log) names last before the line
 /// that stored `iso`; that driver log when it names no build log.
@@ -570,7 +592,10 @@ pub struct Report {
     pub kernel_bound: BTreeMap<String, Vec<String>>,
     pub base_unknown: bool,
     pub inputs: Option<String>,
-    pub sha256: Option<String>,
+    /// The sha256 of the ISO file, computed from it.
+    pub sha256: String,
+    /// What a cache entry that links to it recorded, if one does.
+    pub recorded_sha256: Option<String>,
     pub log: Option<String>,
 }
 
@@ -583,7 +608,15 @@ impl Report {
         m.push_str(&format!("| Architecture | {} |\n", if self.name.arch.is_empty() { "-" } else { &self.name.arch }));
         m.push_str(&format!("| Size | {:.2} GB |\n", self.size as f64 / 1e9));
         m.push_str(&format!("| Written | {} |\n", self.modified));
-        m.push_str(&format!("| sha256 | {} |\n", self.sha256.as_deref().map(|s| format!("`{s}`")).unwrap_or_else(|| "not recorded (no cache entry links to this file)".into())));
+        m.push_str(&format!("| sha256 | `{}` |\n", self.sha256));
+        m.push_str(&format!(
+            "| sha256 check | {} |\n",
+            match &self.recorded_sha256 {
+                Some(r) if *r == self.sha256 => "computed from the file; equals the cache record".to_string(),
+                Some(r) => format!("computed from the file; the cache record says `{r}` - DIFFERENT"),
+                None => "computed from the file; no cache entry records it".to_string(),
+            }
+        ));
         m.push_str(&format!("| Build log | {} |\n", self.log.as_deref().map(|s| format!("`{s}`")).unwrap_or_else(|| "not found".into())));
         m.push_str(&format!("| RPMs | {} |\n\n", self.rpms.len()));
 
@@ -775,12 +808,13 @@ fn report(
     }
     let entry = cache_entry(cfg, iso);
     let inputs = entry.as_ref().and_then(|d| fs::read_to_string(d.join(crate::build::INPUTS_FILE)).ok());
-    let sha256 = entry.as_ref().and_then(|d| {
+    let recorded_sha256 = entry.as_ref().and_then(|d| {
         let cur = fs::canonicalize(d.join("photon.iso")).ok()?;
         (cur == fs::canonicalize(iso).ok()?).then(|| fs::read_to_string(d.join("photon.iso.sha256")).ok()).flatten()
     }).and_then(|t| t.split_whitespace().next().map(str::to_string));
     let log = build_log(cfg, iso).map(|p| p.display().to_string());
-    Ok(Report { file, size: meta.len(), modified, name, base, base_note, rpms, from_sources, unattributed, kernel_bound, base_unknown, inputs, sha256, log })
+    let sha256 = sha_of(cfg, iso, &meta)?;
+    Ok(Report { file, size: meta.len(), modified, name, base, base_note, rpms, from_sources, unattributed, kernel_bound, base_unknown, inputs, sha256, recorded_sha256, log })
 }
 
 fn index_markdown(rows: &[Report], dir: &Path) -> String {
@@ -951,7 +985,8 @@ mod tests {
             kernel_bound: BTreeMap::new(),
             base_unknown: false,
             inputs: Some("release-base abc\n".into()),
-            sha256: None,
+            sha256: "a".repeat(64),
+            recorded_sha256: Some("b".repeat(64)),
             log: None,
         };
         let m = r.markdown();
@@ -960,5 +995,7 @@ mod tests {
         assert!(m.contains("90: strongswan \\| fix"), "a pipe in a subject must not break the table");
         assert!(m.contains("declared by no PR head or port branch known here (1): foo-1-2"));
         assert!(m.contains("release-base abc"));
+        assert!(m.contains(&format!("| sha256 | `{}` |", "a".repeat(64))));
+        assert!(m.contains("DIFFERENT"), "a cache record that disagrees with the file is said");
     }
 }
