@@ -3150,9 +3150,21 @@ fn patched_specs(c: &mut Ctx) -> Vec<String> {
             _ => {}
         }
     }
+    let release_tree = c.spec.tree(Tree::Release);
+    // A port branch's own commits change specs no variant patch touches
+    // (systemd.spec on experimental/systemd-*): amended in review at the same
+    // NEVR, they must be judged by the ledger too, or the old build ships.
+    if let Some(base) = c.spec.port_base.clone() {
+        match git(&release_tree, &["merge-base", &base, "HEAD"]).and_then(|mb| git(&release_tree, &["diff", "--name-only", mb.trim(), "HEAD", "--", "SPECS"])) {
+            Ok(names) => {
+                let as_diff: String = names.lines().filter(|l| !l.trim().is_empty()).map(|l| format!("+++ b/{}\n", l.trim())).collect();
+                scan(&as_diff, &mut add, &mut other_dirs);
+            }
+            Err(e) => c.say(&format!("  [warn] the specs the port branch changes against {base} are unknown ({e}): they are not in the purge floor")),
+        }
+    }
     // A patch in a subdirectory (SPECS/linux/6.1/CVE/x.patch) belongs to the
     // specs of the nearest directory up that has any.
-    let release_tree = c.spec.tree(Tree::Release);
     for dir in &other_dirs {
         let mut d = dir.as_str();
         loop {
@@ -4600,6 +4612,39 @@ mod tests {
     }
 
     #[test]
+    fn a_port_branchs_own_specs_are_in_the_purge_floor() {
+        let tmp = std::env::temp_dir().join(format!("shk-portfloor-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let rel = tmp.join("experimental/systemd-262.2");
+        fs::create_dir_all(rel.join("SPECS/systemd")).unwrap();
+        fs::create_dir_all(rel.join("SPECS/bash")).unwrap();
+        let g = |a: &[&str]| {
+            let o = Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t"]).args(a).current_dir(&rel).output().unwrap();
+            assert!(o.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
+        };
+        g(&["init", "-q", "-b", "5.0"]);
+        fs::write(rel.join("SPECS/systemd/systemd.spec"), "Version: 257.13\n").unwrap();
+        fs::write(rel.join("SPECS/bash/bash.spec"), "Version: 5\n").unwrap();
+        g(&["add", "-A"]);
+        g(&["commit", "-qm", "base"]);
+        g(&["checkout", "-qb", "experimental/systemd-262.2"]);
+        fs::write(rel.join("SPECS/systemd/systemd.spec"), "Version: 262.2\n").unwrap();
+        fs::write(rel.join("SPECS/systemd/0004.patch"), "x\n").unwrap();
+        g(&["add", "-A"]);
+        g(&["commit", "-qm", "port"]);
+        let mut sp = spec_at(&tmp);
+        sp.release = "experimental/systemd-262.2".into();
+        let mut seen = Vec::new();
+        let without = patched_specs(&mut Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) });
+        assert!(!without.iter().any(|p| p == "SPECS/systemd/systemd.spec"));
+        sp.port_base = Some("5.0".into());
+        let with = patched_specs(&mut Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) });
+        assert!(with.iter().any(|p| p == "SPECS/systemd/systemd.spec"), "{with:?}");
+        assert!(!with.iter().any(|p| p == "SPECS/bash/bash.spec"), "only what the port changes: {with:?}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn a_rewritten_port_branch_is_followed_only_when_the_build_says_so() {
         let tmp = std::env::temp_dir().join(format!("shk-rewrite-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
@@ -4697,6 +4742,7 @@ mod tests {
             make_log: None,
             seed_from: None,
             release_follows_rewrites: false,
+            port_base: None,
         }
     }
 

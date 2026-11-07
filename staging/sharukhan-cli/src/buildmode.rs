@@ -336,6 +336,10 @@ pub struct BuildSpec {
     /// branch with `reset --keep` instead of refusing the merge. sharukhan
     /// never commits there, so the branch, not a merge, is the content.
     pub release_follows_rewrites: bool,
+    /// The ref the release branch was ported from (`origin/5.0` for a systemd
+    /// port): the specs the branch changes against it are the build's own
+    /// content, and the stage's ledger judges them like patched ones.
+    pub port_base: Option<String>,
 }
 
 impl BuildSpec {
@@ -377,6 +381,7 @@ impl BuildSpec {
             make_log: None,
             seed_from: None,
             release_follows_rewrites: false,
+            port_base: None,
         })
     }
 
