@@ -15,6 +15,7 @@ mod sdver;
 mod baseline;
 mod bootstrap;
 mod cachecheck;
+mod isocontent;
 mod buildexec;
 mod builder;
 mod buildmode;
@@ -125,6 +126,9 @@ PHASES (the same code `run` calls, one step at a time)
     pkg-rejudge         replay the recorded CLI probes of a lifecycle file under the
                         current (or --pkg-policy) policy, without a guest; prints what
                         changes, --out writes the re-judged file (--new <pkglife-*.jsonl>)
+    iso-content         what every ISO of a directory carries, as <iso>.md beside it and
+                        README.md: base commit, key packages, each RPM that differs from the
+                        base with its PR or branch (--dir, default the ISO store; --out)
     iso-boot            how an ISO boots, read from its El Torito catalogue: BIOS
                         image and loader (syslinux or GRUB), EFI image, and the
                         mkisofs boot options that reproduce it (--iso, --json)
@@ -656,6 +660,9 @@ fn main() -> ExitCode {
     }
     if argv.first().map(String::as_str) == Some("systemd") {
         return ExitCode::from(sdver::cli(&argv[1..]));
+    }
+    if argv.first().map(String::as_str) == Some("iso-content") {
+        return ExitCode::from(isocontent::cli(&argv[1..]));
     }
     if argv.first().map(String::as_str) == Some("builder") {
         return ExitCode::from(builder::cli(&argv[1..]));

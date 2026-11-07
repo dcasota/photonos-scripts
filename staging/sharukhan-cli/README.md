@@ -53,6 +53,7 @@ $S run --only k03 --allow-build                   # build the ISO if needed, ins
 - [Kernel wrappers](docs/builds/kernel-wrappers.md) - a build wrapper for a kernel.org kernel
 - [A systemd release](docs/builds/systemd-version.md) - the matrix with another systemd (`--systemd`)
 - [Kernel-profile builds](docs/builds/kernel-profiles.md) - `--kernel`
+- [What an ISO carries](docs/builds/iso-content.md) - `iso-content`, per ISO: base commit, kernel, systemd, PRs
 - [Example: a kernel.org kernel to a tested ISO](docs/examples/kernel-iso.md) - from scratch, with `examples/kernel-iso.sh`
 
 **Keeping the fork's PRs current**
