@@ -142,6 +142,27 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
             c.say(&format!("  {branch}: {behind} commit(s) behind, merging"));
         }
         let head_before = git(&dir, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
+        let rewritten = !ok(&dir, "git", &["merge-base", "--is-ancestor", "HEAD", &format!("origin/{branch}")]);
+        if rewritten && t == Tree::Release && c.spec.release_follows_rewrites {
+            let only_old = git(&dir, &["rev-list", "--count", &format!("origin/{branch}..HEAD")]).unwrap_or_default();
+            // the last build's variant patch is still on SPECS; the reset stage
+            // restores it right after this one anyway
+            reset(c)?;
+            if let Err(e) = git(&dir, &["reset", "--keep", &format!("origin/{branch}")]) {
+                return Err(format!(
+                    "{branch}: the reviewed branch was rewritten and {} cannot follow it without overwriting uncommitted paths: {e}",
+                    dir.display()
+                ));
+            }
+            let head_after = git(&dir, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
+            c.say(&format!(
+                "  {branch}: rewritten in review - {} -> {} ({} commit(s) only in the old history, reset --keep)",
+                head_before.trim(),
+                head_after.trim(),
+                only_old.trim()
+            ));
+            continue;
+        }
         if git(&dir, &["merge", "--autostash", &format!("origin/{branch}")]).is_err() {
             let _ = git(&dir, &["merge", "--abort"]);
             return Err(format!(
@@ -4579,6 +4600,53 @@ mod tests {
     }
 
     #[test]
+    fn a_rewritten_port_branch_is_followed_only_when_the_build_says_so() {
+        let tmp = std::env::temp_dir().join(format!("shk-rewrite-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let g = |dir: &Path, a: &[&str]| {
+            let o = Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]).args(a).current_dir(dir).output().unwrap();
+            assert!(o.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        let src = tmp.join("src");
+        fs::create_dir_all(src.join("SPECS")).unwrap();
+        g(&src, &["init", "-q"]);
+        fs::write(src.join("SPECS/a.spec"), "v1\n").unwrap();
+        fs::write(src.join("build-config.json"), "{}\n").unwrap();
+        g(&src, &["add", "-A"]);
+        g(&src, &["commit", "-qm", "base"]);
+        g(&src, &["branch", "-q", "common"]);
+        g(&src, &["checkout", "-qb", "experimental/systemd-262.2"]);
+        fs::write(src.join("SPECS/a.spec"), "port1\n").unwrap();
+        g(&src, &["commit", "-qam", "port"]);
+        let base = tmp.join("root");
+        fs::create_dir_all(base.join("experimental")).unwrap();
+        g(&base, &["clone", "-q", "-b", "common", &src.to_string_lossy(), "common"]);
+        g(&base.join("experimental"), &["clone", "-q", "-b", "experimental/systemd-262.2", &src.to_string_lossy(), "systemd-262.2"]);
+        let rel = base.join("experimental/systemd-262.2");
+        // amended in review, as the port branch is
+        fs::write(src.join("SPECS/a.spec"), "port2\n").unwrap();
+        g(&src, &["commit", "-q", "--amend", "-am", "port"]);
+        let want = g(&src, &["rev-parse", "HEAD"]);
+        // and the last build left its variant patch on SPECS
+        fs::write(rel.join("SPECS/a.spec"), "patched\n").unwrap();
+
+        let mut sp = spec_at(&base);
+        sp.release = "experimental/systemd-262.2".into();
+        let mut seen = Vec::new();
+        let r = sync(&mut Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) });
+        assert!(r.unwrap_err().contains("cannot merge"), "a release branch is never reset");
+
+        sp.release_follows_rewrites = true;
+        let mut seen = Vec::new();
+        sync(&mut Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) }).unwrap();
+        assert_eq!(g(&rel, &["rev-parse", "HEAD"]), want);
+        assert_eq!(fs::read_to_string(rel.join("SPECS/a.spec")).unwrap(), "port2\n");
+        assert!(seen.iter().any(|l| l.contains("rewritten in review") && l.contains("1 commit(s) only in the old history")), "{seen:?}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn a_release_branch_with_a_slash_finds_the_common_tree() {
         assert_eq!(common_path_for("5.0", "common"), "../common");
         assert_eq!(common_path_for("experimental/systemd-262.2", "common"), "../../common");
@@ -4628,6 +4696,7 @@ mod tests {
             remote: None,
             make_log: None,
             seed_from: None,
+            release_follows_rewrites: false,
         }
     }
 

@@ -747,6 +747,7 @@ and none is built for {nevr}: phase A has to build it first. Run without --compo
         spec.compose_only = req.compose_only;
         spec.make_log = Some(build_log.clone());
         spec.seed_from = cfg.baseline.clone().or_else(|| cfg.systemd.as_ref().map(|s| s.gate_stage.clone()));
+        spec.release_follows_rewrites = cfg.systemd.is_some();
         if !req.hyperv.is_empty() {
             crate::buildmode::add_hyperv(&mut spec, std::env::consts::ARCH, &req.hyperv)?;
         }

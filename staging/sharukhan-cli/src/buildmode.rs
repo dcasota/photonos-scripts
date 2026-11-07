@@ -331,6 +331,11 @@ pub struct BuildSpec {
     /// after every patch and fixup, so the ledger compares the spec content
     /// that is built. None: the stage is the tree's own.
     pub seed_from: Option<PathBuf>,
+    /// The release branch is a reviewed port branch (`experimental/systemd-*`)
+    /// that is amended in review: the release clone follows a rewritten
+    /// branch with `reset --keep` instead of refusing the merge. sharukhan
+    /// never commits there, so the branch, not a merge, is the content.
+    pub release_follows_rewrites: bool,
 }
 
 impl BuildSpec {
@@ -371,6 +376,7 @@ impl BuildSpec {
             remote: None,
             make_log: None,
             seed_from: None,
+            release_follows_rewrites: false,
         })
     }
 
