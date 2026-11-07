@@ -122,6 +122,11 @@ fn spec_nevr(spec: &str, dist: &str) -> Option<String> {
 /// carries no baseurl, so a tree without SPECS/photon-repos still gets an
 /// answer rather than an error that reads like an outage.
 fn updates_index_url(cfg: &Config) -> String {
+    // `$releasever` is the Photon release (5.0), which the tree's
+    // build-config.json names; the branch (`cfg.release`) is the same string
+    // only on a release branch, never on a port branch like
+    // experimental/systemd-262.2.
+    let releasever = crate::specresolve::release_version_of(&cfg.photon_tree).unwrap_or_else(|| cfg.release.clone());
     let repo = cfg
         .photon_tree
         .join("SPECS/photon-repos/photon-updates.repo");
@@ -136,13 +141,13 @@ fn updates_index_url(cfg: &Config) -> String {
         // names first: replacing `$basearch` before `$releasever` is fine, but
         // a naive pass that matched a shorter prefix would corrupt the other.
         .map(|b| {
-            b.replace("$releasever", &cfg.release)
+            b.replace("$releasever", &releasever)
                 .replace("$basearch", "x86_64")
         })
         .unwrap_or_else(|| {
             format!(
                 "https://packages.broadcom.com/photon/{}/photon_updates_{}_x86_64",
-                cfg.release, cfg.release
+                releasever, releasever
             )
         });
     format!("{}/x86_64/", base.trim_end_matches('/'))
@@ -266,8 +271,11 @@ fn nevr_at(tree: &Path, git_ref: &str) -> Option<String> {
 /// something nobody is building.
 pub fn provenance(cfg: &Config, effective: String) -> Provenance {
     let mut unread = Vec::new();
-    let fork_ref = format!("origin/{}", cfg.release);
-    let up_ref = format!("vmware/{}", cfg.release);
+    // a systemd port is compared on the release branch it was ported from:
+    // its kernel is that branch's
+    let branch = cfg.systemd.as_ref().map(|s| s.base_release.as_str()).unwrap_or(cfg.release.as_str());
+    let fork_ref = format!("origin/{branch}");
+    let up_ref = format!("vmware/{branch}");
     let fork = nevr_at(&cfg.photon_tree, &fork_ref);
     if fork.is_none() {
         unread.push(fork_ref);
@@ -556,6 +564,21 @@ Version:        6.12.103
 Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
 %{!?fips_canister_version: %define fips_canister_version 6.12.60-18.2.ph5}
 ";
+
+    #[test]
+    fn a_port_branch_asks_the_release_repo_not_one_named_after_the_branch() {
+        let d = std::env::temp_dir().join(format!("shk-canurl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("SPECS/photon-repos")).unwrap();
+        std::fs::write(d.join("build-config.json"), r#"{"photon-build-param": {"photon-release-version": "5.0"}}"#).unwrap();
+        let mut cfg = Config::for_test(&d);
+        cfg.photon_tree = d.clone();
+        cfg.release = "experimental/systemd-262.2".into();
+        assert_eq!(updates_index_url(&cfg), "https://packages.broadcom.com/photon/5.0/photon_updates_5.0_x86_64/x86_64/");
+        std::fs::write(d.join("SPECS/photon-repos/photon-updates.repo"), "[photon-updates]\nbaseurl=https://h/photon/$releasever/photon_updates_$releasever_$basearch\n").unwrap();
+        assert_eq!(updates_index_url(&cfg), "https://h/photon/5.0/photon_updates_5.0_x86_64/x86_64/");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn nevr_drops_the_rpm_conditionals_from_release() {

@@ -313,6 +313,13 @@ pub fn dist_tag_of(tree: &Path) -> Option<String> {
     (!d.is_empty()).then_some(d)
 }
 
+/// `photon-release-version` of a tree's build-config.json (`5.0`).
+pub fn release_version_of(tree: &Path) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(tree.join("build-config.json")).ok()?).ok()?;
+    let r = v["photon-build-param"]["photon-release-version"].as_str()?.trim().to_string();
+    (!r.is_empty()).then_some(r)
+}
+
 pub fn tree_subrelease(tree: &Path) -> Option<u32> {
     subrelease_in(&std::fs::read_to_string(tree.join("build-config.json")).ok()?)
 }
