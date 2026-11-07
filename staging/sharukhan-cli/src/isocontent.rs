@@ -440,12 +440,71 @@ fn cache_entry(cfg: &Config, iso: &Path) -> Option<PathBuf> {
     found.map(|(d, _)| d)
 }
 
-/// The build log that stored `iso` (it names the stored path).
+/// The build log of `iso`: the log of the build that a driver log (a build
+/// log itself, a sync stage's log, or a run log) names last before the line
+/// that stored `iso`; that driver log when it names no build log.
 fn build_log(cfg: &Config, iso: &Path) -> Option<PathBuf> {
     let name = iso.file_name()?.to_string_lossy().into_owned();
-    let mut logs: Vec<PathBuf> = fs::read_dir(&cfg.build_log_dir).ok()?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "log")).collect();
-    logs.sort();
-    logs.into_iter().rev().find(|l| fs::read_to_string(l).is_ok_and(|t| t.lines().any(|x| x.contains("stored in") && x.contains(&name))))
+    let mut logs: Vec<PathBuf> = Vec::new();
+    let mut add_dir = |d: &Path| {
+        if let Ok(rd) = fs::read_dir(d) {
+            logs.extend(rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "log")));
+        }
+    };
+    add_dir(&cfg.build_log_dir);
+    add_dir(&cfg.run_log_dir);
+    if let Ok(rd) = fs::read_dir(cfg.results_dir.join("sync")) {
+        for e in rd.flatten() {
+            add_dir(&e.path());
+        }
+    }
+    logs.sort_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok());
+    for l in logs.into_iter().rev() {
+        let Ok(t) = fs::read_to_string(&l) else { continue };
+        let lines: Vec<&str> = t.lines().collect();
+        let Some(at) = lines.iter().position(|x| x.contains("stored in") && x.contains(&name)) else { continue };
+        let named = lines[..at].iter().rev().find_map(|x| {
+            let (_, rest) = x.split_once(" -> ")?;
+            let p = rest.split_whitespace().next()?;
+            (p.ends_with(".log") && p.starts_with(&*cfg.build_log_dir.to_string_lossy())).then(|| PathBuf::from(p))
+        });
+        return Some(named.filter(|p| p.is_file()).unwrap_or(l));
+    }
+    produced_by(cfg, iso, &name)
+}
+
+/// A `run`-driven build logs no "stored in" line: the build log of the same
+/// build whose "produced" line, or the image builder's "Generating Iso:"
+/// line, names this ISO's delivered name (the stored name without the build
+/// prefix and store stamp), written at most ten minutes after the ISO; the
+/// latest such log.
+fn produced_by(cfg: &Config, iso: &Path, name: &str) -> Option<PathBuf> {
+    let (build, rest) = name.split_once("__")?;
+    let delivered = match rest.split_once('-') {
+        Some((stamp, r)) if stamp.len() == 16 && stamp.ends_with('Z') && stamp.contains('T') => r,
+        _ => rest,
+    };
+    let iso_t = fs::metadata(iso).and_then(|m| m.modified()).ok()?;
+    let limit = iso_t + std::time::Duration::from_secs(600);
+    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
+    for e in fs::read_dir(&cfg.build_log_dir).ok()?.flatten() {
+        let p = e.path();
+        if p.extension().is_none_or(|x| x != "log") || !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(build)) {
+            continue;
+        }
+        let Ok(t) = fs::metadata(&p).and_then(|m| m.modified()) else { continue };
+        if t > limit || best.as_ref().is_some_and(|(b, _)| *b >= t) {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&p) else { continue };
+        let hit = text.lines().any(|l| {
+            (l.contains("produced ") && l.contains(&format!("/{build}/{delivered}"))) || l.contains(&format!("Generating Iso: /workdir/{delivered}"))
+        });
+        if hit {
+            best = Some((t, p));
+        }
+    }
+    best.map(|(_, p)| p)
 }
 
 /// `YYYY-MM-DDTHH:MM:SSZ` of a Unix time.
