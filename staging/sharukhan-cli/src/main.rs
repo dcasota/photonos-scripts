@@ -14,6 +14,7 @@ mod reuse;
 mod sdver;
 mod baseline;
 mod bootstrap;
+mod cachecheck;
 mod buildexec;
 mod builder;
 mod buildmode;

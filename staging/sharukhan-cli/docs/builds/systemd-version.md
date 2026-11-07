@@ -82,7 +82,14 @@ release. As the spec says, the published RPM is consumed: the highest NEVR the r
 publish (`tdnf repoquery --location`), fetched over https, accepted only with `rpm -K` reporting
 `digests signatures OK`, and recorded in `stage/.sharukhan-bootstrap.tsv`. It is removed as soon as
 the pre-build has made the tree's own RPM of that package; if it has not, the build stops before any
-media is composed. PRs that change `SPECS/systemd` are left out of
+media is composed.
+
+A cached ISO is reused only when its input record matches and its RPMs are still what the stage
+records. `rpms.sha256` in the cache directory lists every RPM the ISO carries, read back from the ISO
+on first use: an RPM whose file the stage still holds must be that file byte for byte, and every RPM
+of a spec the port branch changes needs a ledger entry equal to the hash of that spec directory as
+committed. On 2026-11-07 an amend at the same NEVR left ISOs whose input record matched while their
+systemd predated the amend; this check refuses them. PRs that change `SPECS/systemd` are left out of
 its variant patches and named in the log (`left out - it changes N systemd file(s) (SPECS/systemd),
 which the port owns`); every other PR is applied. The ISO's input record names the profile. Every row
 run with `--systemd` checks `guest.systemd_version`: the installed systemd must be the profile's

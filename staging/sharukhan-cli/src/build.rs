@@ -480,7 +480,11 @@ fn cached_inputs_differ(
         Ok(t) => t,
         Err(e) => return Some(format!("the current inputs cannot be determined ({e})")),
     };
-    inputs_diff(&recorded, &now)
+    if let Some(why) = inputs_diff(&recorded, &now) {
+        return Some(why);
+    }
+    // the inputs match: are the ISO's RPMs still what the stage records?
+    crate::cachecheck::cached_rpms_differ(cfg, &cfg.variant_patches.join(format!("poi-{}.patch", req.poi)), dir)
 }
 
 /// The keys whose values differ between two input records.

@@ -133,7 +133,7 @@ layout the 2026-10 host used (`<work root>` = `/root/photon-mc`):
 | `<work root>/run-logs` | `MC_RUN_LOG_DIR` | one log per `run` job; the script's own logs (`kernel-iso-<kernel>-<step>-<stamp>.log`) | old ones, yes |
 | `<work root>/build-logs` | `MC_BUILD_LOG_DIR` | one log per ISO build; `failed-attempts/` keeps the package logs of failed `make` attempts | old ones, yes |
 | `<work root>/memory.db` | `SHARUKHAN_DB` | jobs, runs, findings, sync runs, escalations | no |
-| an ISO cache, e.g. `C:\photon-mc\iso-cache-gate` | `MC_ISO_CACHE` | per build tuple `<type>-poi<variant>-<canister>/`: `photon.iso` (a link), `photon.iso.sha256`, `poi-nevr.txt`, `inputs.txt`; `k<kernel>/` for a kernel profile | links only; the ISO is in the store |
+| an ISO cache, e.g. `C:\photon-mc\iso-cache-gate` | `MC_ISO_CACHE` | per build tuple `<type>-poi<variant>-<canister>/`: `photon.iso` (a link), `photon.iso.sha256`, `poi-nevr.txt`, `inputs.txt`, `rpms.sha256`; `k<kernel>/` for a kernel profile, `s<release>/` for a systemd port | links only; the ISO is in the store |
 | an ISO store, e.g. `C:\Users\<user>\Downloads\Ph-Builds` | `MC_ISO_STORE` | the ISOs themselves, `<tuple>__<file>.iso` | an ISO nothing links to; renaming one breaks its cache link (`verify_media` then needs `ISO=`) |
 | a VM store, e.g. `C:\photon-mc\vm` | `MC_VM_ROOT_WSL` | `mc-<row>/`: one VM per matrix row, recreated for every run | not while a run uses it |
 
