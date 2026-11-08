@@ -43,3 +43,25 @@ A systemd release costs a port per release, as a kernel does; the report of `pro
 list. The ISO of a `--systemd` build is evidence for the port branch plus every PR that does not touch
 systemd, and says so in its log and input record. `guest.systemd_version` makes a medium that carries
 the wrong systemd a failed row, not a passed one.
+
+## Implementation notes (2026-11-07)
+
+The first real port, 262.2, passed the matrix (28 autonomous rows, 0 failures, every guest on systemd
+262.2-1). Getting there changed six things, each generic rather than specific to systemd:
+
+1. **Seeded stage.** A port's own build root started from an empty stage and rebuilt every spec. Its
+   stage is seeded from the gate's, right before the purge and after every patch and fixup, with only
+   the RPMs the tree's specs produce whose content the gate's ledger records (`baseline::seed`).
+2. **Nested branch.** `experimental/systemd-<release>` sits one level deeper than the common tree, so
+   `common-branch-path` is pointed at it for the build.
+3. **Own build requirement.** systemd.spec builds with its own `systemd-rpm-macros`
+   (`ExtraBuildRequires`), which a stage seeded for a new release lacks: the published RPM is
+   consumed, signature-checked, and retired once the tree's own is built (`bootstrap`).
+4. **A branch amended in review.** The build clone follows a rewritten port branch (`reset --keep`
+   after restoring SPECS) instead of refusing the merge; a release branch still refuses.
+5. **The port's own specs in the ledger.** The port's commits change specs no variant patch touches;
+   an amend at the same NEVR shipped the RPM built before it. The specs the branch changes against its
+   base are judged by the ledger like patched ones, and a cached ISO is reused only when its RPMs match
+   the stage's records (`cachecheck`).
+6. **Switched patches.** `systemd check` also replays the patches an overridable switch enables
+   (`STIG_HARDEN`), which the default expansion never applies.

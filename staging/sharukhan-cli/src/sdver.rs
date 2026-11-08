@@ -500,6 +500,25 @@ pub fn patches_in_order(expanded: &str) -> Vec<String> {
     v.into_iter().map(|(_, f)| f).collect()
 }
 
+/// The build switches a spec leaves overridable, off by default:
+/// `%{!?NAME: %global NAME 0}` (or `%define`). A patch only such a switch
+/// enables is part of the port too.
+pub fn overridable_switches(spec: &str) -> Vec<String> {
+    let mut v = Vec::new();
+    for l in spec.lines() {
+        let t = l.trim();
+        let Some(rest) = t.strip_prefix("%{!?") else { continue };
+        let Some((name, body)) = rest.split_once(':') else { continue };
+        let body = body.trim().trim_end_matches('}').trim();
+        let mut w = body.split_whitespace();
+        let (Some(kw), Some(n), Some(val)) = (w.next(), w.next(), w.next()) else { continue };
+        if (kw == "%global" || kw == "%define") && n == name && val == "0" && !v.contains(&n.to_string()) {
+            v.push(n.to_string());
+        }
+    }
+    v
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Applies {
     Yes,
@@ -628,7 +647,12 @@ fn build_params(text: &str) -> Result<(String, String, String), String> {
 
 /// The expanded spec at the mainline for `arch`, by `rpmspec -P` in `dir`.
 fn expand(dir: &Path, spec: &str, sub: &str, dist: &str, arch: &str, log: &mut dyn FnMut(&str)) -> Result<String, String> {
-    let args: Vec<std::ffi::OsString> = vec![
+    expand_with(dir, spec, sub, dist, arch, &[], log)
+}
+
+/// [`expand`] with further `-D <name> <value>` definitions.
+fn expand_with(dir: &Path, spec: &str, sub: &str, dist: &str, arch: &str, defines: &[(String, String)], log: &mut dyn FnMut(&str)) -> Result<String, String> {
+    let mut args: Vec<std::ffi::OsString> = vec![
         "-P".into(),
         "--target".into(),
         arch.into(),
@@ -640,8 +664,12 @@ fn expand(dir: &Path, spec: &str, sub: &str, dist: &str, arch: &str, log: &mut d
         format!("dist {dist}").into(),
         "-D".into(),
         "with_check 0".into(),
-        spec.into(),
     ];
+    for (k, v) in defines {
+        args.push("-D".into());
+        args.push(format!("{k} {v}").into());
+    }
+    args.push(spec.into());
     let o = crate::builder::tool_command("rpmspec", dir, &args, log)?.output().map_err(|e| format!("rpmspec: {e}"))?;
     if !o.status.success() {
         let err = String::from_utf8_lossy(&o.stderr);
@@ -710,7 +738,30 @@ fn port_report(
             return Err(format!("extracting {}", tarball.display()));
         }
         let top = src.join(r.top_dir());
-        let replayed = replay(&top, &spec_dir, &patches_in_order(&expanded));
+        let order = patches_in_order(&expanded);
+        let mut replayed = replay(&top, &spec_dir, &order);
+        // a patch only an overridable switch enables (STIG_HARDEN) is replayed
+        // in its own tree, in the order the switched spec applies them
+        let raw = std::fs::read_to_string(spec_dir.join("systemd.spec")).map_err(|e| format!("systemd.spec: {e}"))?;
+        for sw in overridable_switches(&raw) {
+            let on = expand_with(&spec_dir, "systemd.spec", &mainline, &dist, "x86_64", &[(sw.clone(), "1".into())], log)?;
+            let switched = patches_in_order(&on);
+            let only: Vec<String> = switched.iter().filter(|p| !order.contains(p)).cloned().collect();
+            if only.is_empty() {
+                continue;
+            }
+            let src2 = d.join(format!("src-{sw}"));
+            std::fs::create_dir_all(&src2).map_err(|e| format!("{e}"))?;
+            let ok = Command::new("tar").arg("-xzf").arg(tarball).arg("-C").arg(&src2).status().map_err(|e| format!("tar: {e}"))?;
+            if !ok.success() {
+                return Err(format!("extracting {}", tarball.display()));
+            }
+            for (p, a) in replay(&src2.join(r.top_dir()), &spec_dir, &switched) {
+                if only.contains(&p) {
+                    replayed.push((format!("{p} (with {sw}=1)"), a));
+                }
+            }
+        }
         let unknown = unknown_meson_options(&top, &expanded)?;
         Ok((replayed, unknown, expanded))
     })();
@@ -1105,6 +1156,8 @@ mod tests {
     fn patches_are_applied_in_number_order_and_unnumbered_ones_take_the_next() {
         let spec = "Patch2: c.patch\nPatch0: a.patch\nPatch1: b.patch\nPatch:  d.patch\nPatchX: no\nSource0: s\n";
         assert_eq!(patches_in_order(spec), vec!["a.patch", "b.patch", "c.patch", "d.patch"]);
+        let spec = "%{!?STIG_HARDEN: %global STIG_HARDEN 0}\n%{!?with_x:%define with_x 0}\n%{!?on: %global on 1}\n%global plain 0\n";
+        assert_eq!(overridable_switches(spec), vec!["STIG_HARDEN", "with_x"], "only switches off by default, overridable");
     }
 
     #[test]

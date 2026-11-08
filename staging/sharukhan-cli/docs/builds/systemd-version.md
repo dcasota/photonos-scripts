@@ -59,7 +59,9 @@ A `--systemd` build is refused until the branch passes, and every problem is nam
 - `config.yaml` pins the profile's tarball, sha512, url and commit;
 - the tree is a mainline tree (its subrelease is the mainline);
 - the spec is the profile's Version-Release, parses on x86_64 and aarch64, and `check_spec.py` passes;
-- every patch applies in `%autosetup` order at fuzz 0 to the verified tarball (one the release already
+- every patch applies in `%autosetup` order at fuzz 0 to the verified tarball, including the patches an
+  overridable switch enables (`%{!?STIG_HARDEN: %global STIG_HARDEN 0}`: the spec is expanded with the
+  switch on as well, and those patches are replayed in their own tree, in the switched order; one the release already
   carries must be dropped);
 - every meson option the spec passes is one the release declares.
 
