@@ -86,6 +86,15 @@ slot and runs it **only for a canister build** (`CANISTER_MODE` `build`,
   `CRYPTO_FIPS*`/`CRYPTO_JITTERENTROPY*` settings and fails `%prep` if any does
   not hold.
 
+It refuses anything but its caller's inputs, before it reads a byte: the spec
+must be a regular, non-symlinked `linux.spec` or `linux-esx.spec` below the
+release tree's `SPECS` (the working directory the pin script runs it in), the
+manifest a regular, non-symlinked file below the spec's directory, the LKCM
+version `<major>.<minor>`, and the manifest an object with `patches` and
+`sources` (objects), `dropped` (object or list) and `autopatch` (list). Its
+regular expressions are fixed and compiled once; numbers and names from the
+manifest are compared in code, never put into a pattern.
+
 `derive`'s branch check also reads the manifest and requires every file it
 names on the branch exactly once under `SPECS/linux` (rpm sees it flattened).
 

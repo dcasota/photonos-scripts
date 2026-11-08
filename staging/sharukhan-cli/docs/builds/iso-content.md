@@ -19,7 +19,18 @@
   branches whose spec declares exactly that Version-Release. Kernels sharukhan rebuilt itself are
   named for how (`canister=equivalent`, a kernel profile, the Azure remaster); out-of-tree modules
   whose Release carries the kernel's (`.0612115002` is linux 6.12.115-2) are listed with that kernel;
-- the cache record (`inputs.txt`, `photon.iso.sha256`) of a cache entry that links to the ISO, and
-  the build log that stored it.
+- the ISO's sha256, computed from the file and compared with the cache record of a cache entry that
+  links to the ISO (`photon.iso.sha256`); a disagreement is said. The sha256 of each ISO is kept in
+  `$MC_WORK/iso-content-sha256.tsv` by name, size and modification time, so only a new or changed ISO
+  is hashed again;
+- that cache entry's input record (`inputs.txt`);
+- the build log: the one a driver log (a build log, a sync stage's log, a run log) named last
+  before the line that stored the ISO; for a `run`-driven build, which logs no store line, the
+  build log of the same build whose `produced` or `Generating Iso:` line names the ISO, written at
+  most ten minutes after it.
 
 An RPM that no candidate declares is listed as unattributed, never guessed.
+
+The ISO store can be written from Windows while sharukhan runs as root, so a report is never
+written through a name that already exists: it goes to a new file beside it that is then renamed
+over `<iso>.md` (or `README.md`). A symlink planted under that name is replaced, not followed.
