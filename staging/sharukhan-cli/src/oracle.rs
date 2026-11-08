@@ -964,6 +964,22 @@ pub fn guest(
     c.check("guest.fips_canister", Status::Info, "", &v, "");
     canister_identity(g, canister, fips_on, c);
 
+    // PR#96: FIPS mode seeds OpenSSL from the jitterentropy provider, which
+    // reads the kernel's jitterentropy_rng through an AF_ALG socket; a daemon
+    // that initialises OpenSSL under a RestrictAddressFamilies= without AF_ALG
+    // (systemd-resolved) logs JENTROPY-ERROR and does not get that seed.
+    if fips_on {
+        let v = g
+            .run("journalctl -b --no-pager 2>/dev/null | grep -c 'JENTROPY-ERROR'")
+            .value_or("?");
+        c.expect(
+            "guest.fips_jitterentropy_seed",
+            "0",
+            &v,
+            "a daemon could not open the jitterentropy AF_ALG seed source",
+        );
+    }
+
     // One row in the matrix has a link that can NEVER reach `configured`, and
     // it is environmental rather than a defect: the legacy VLAN kickstart
     // forces dhcp4 on the tagged interface, and VMware Workstation 17 has no

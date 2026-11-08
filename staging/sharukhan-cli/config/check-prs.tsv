@@ -17,6 +17,7 @@ guest.failed_units	PR#31
 guest.fips_canister	PR#24
 guest.fips_enabled	PR#24
 guest.no_journal_group	PR#22
+guest.fips_jitterentropy_seed	PR#96
 guest.no_render_group	PR#22
 guest.selinux	PR#31
 guest.selinux_policy	PR#31
