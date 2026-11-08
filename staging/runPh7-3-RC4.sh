@@ -1215,12 +1215,39 @@ enable_fips_73rc4() {
 # certified 7.x canister to claim), and linux-esx links linux's canister.
 #
 # Idempotent; any unexpected shape is an error, never a guess.
+#
+# Every regular expression is a fixed pattern compiled once; numbers and names
+# from the manifest are compared in code, never put into a pattern.
 import json, re, sys
 from pathlib import Path
 
-spec, manifest, lkcm = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 tag = "[fips]"
-m = json.loads(manifest.read_text())
+if len(sys.argv) != 4:
+    sys.exit(f"{tag} ERROR: usage: fips_spec_edit.py <spec> <manifest.json> <lkcm_version>")
+SPEC_NAMES = ("linux.spec", "linux-esx.spec")
+spec = Path(sys.argv[1])
+if spec.name not in SPEC_NAMES or spec.is_symlink() or not spec.is_file():
+    sys.exit(f"{tag} ERROR: {spec}: not a regular file named {' or '.join(SPEC_NAMES)}")
+# The editor runs in the release tree (the caller's working directory) on a
+# kernel spec of its SPECS: a spec anywhere else is not one it may edit.
+specs_root = Path.cwd().resolve() / "SPECS"
+kdir = spec.resolve().parent
+if specs_root not in kdir.parents and kdir != specs_root:
+    sys.exit(f"{tag} ERROR: {spec}: not below the release tree's SPECS ({specs_root})")
+manifest = Path(sys.argv[2])
+if manifest.is_symlink() or not manifest.is_file() or kdir not in manifest.resolve().parents:
+    sys.exit(f"{tag} ERROR: {manifest}: not a regular file below the kernel spec directory {kdir}")
+lkcm = sys.argv[3]
+if not re.fullmatch(r"\d+\.\d+", lkcm):
+    sys.exit(f"{tag} ERROR: lkcm_version {lkcm!r} is not <major>.<minor>")
+try:
+    m = json.loads(manifest.read_text())
+except ValueError as e:
+    sys.exit(f"{tag} ERROR: {manifest}: not JSON ({e})")
+shape = {"patches": dict, "sources": dict, "dropped": (dict, list), "autopatch": list}
+if not isinstance(m, dict) or any(not isinstance(m.get(k), ty) for k, ty in shape.items()) \
+        or not isinstance(m.get("flavours", {}), dict):
+    sys.exit(f"{tag} ERROR: {manifest}: expected an object with patches and sources (objects), dropped (object or list) and autopatch (list)")
 t = spec.read_text()
 orig = t
 flavour = "linux-esx" if spec.name == "linux-esx.spec" else "linux"
@@ -1229,11 +1256,16 @@ m["patches"] = {**m["patches"], **extra.get("patches", {})}
 m["autopatch"] = m["autopatch"] + extra.get("autopatch", [])
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+LKCM_LINE = re.compile(r"(?m)^%global lkcm_version (\S+)$")
+PATCH_LINE = re.compile(r"(?m)^Patch(\d+):(\s*)(\S+)$")
+PATCH_LINE_NL = re.compile(r"(?m)^Patch(\d+):\s*\S+\n")
+SOURCE_LINE = re.compile(r"(?m)^Source(\d+):(\s*)(\S+)$")
+INSTALL_DIR = re.compile(r"(?m)^((?:cp|install)(?: -m \d+)? %\{SOURCE(\d+)\} )(\S+/)$")
+INSTALL_ANY = re.compile(r"(?m)^(?:cp|install)(?: -m \d+)? %\{SOURCE(\d+)\} (\S+)$")
+AUTOPATCH = re.compile(r"(?m)^%autopatch -p1 -m(\d+) -M(\d+)$")
 def fail(msg):
     sys.exit(f"{tag} ERROR: {spec}: {msg}")
 
-if not re.fullmatch(r"\d+\.\d+", lkcm):
-    fail(f"lkcm_version {lkcm!r} is not <major>.<minor>")
 for kind in ("patches", "sources"):
     for k, v in m[kind].items():
         if not k.isdigit():
@@ -1265,8 +1297,8 @@ x86 = re.sub(r"(?m)^%global fips 0$", "%global fips 1", x86, count=1)
 if not re.search(r"(?m)^%global fips 1$", x86):
     fail("x86_64 %global fips line not found")
 t = x86 + "%ifarch aarch64" + rest
-t = re.sub(r"(?m)^(%global lkcm_version )\S+$", r"\g<1>" + lkcm, t, count=1)
-if flavour == "linux" and not re.search(r"(?m)^%global lkcm_version " + re.escape(lkcm) + "$", t):
+t = LKCM_LINE.sub(lambda mo: "%global lkcm_version " + lkcm, t, count=1)
+if flavour == "linux" and not any(mo.group(1) == lkcm for mo in LKCM_LINE.finditer(t)):
     fail("%global lkcm_version not found")
 
 # --- Name before the canister flags -----------------------------------------------
@@ -1290,66 +1322,68 @@ if cond and name.start() > cond.start():
     t = t[:first_arch.start()] + line + "\n" + t[first_arch.start():]
 
 # --- PatchN lines ------------------------------------------------------------
-def patch_line_re(n):
-    return re.compile(r"(?m)^Patch%d:(\s*)(\S+)$" % n)
+def patch_line(t, n):
+    """The first `PatchN:` line of number n, or None."""
+    return next((mo for mo in PATCH_LINE.finditer(t) if mo.group(1) == str(n)), None)
 
-for k in sorted(m["dropped"], key=int):
-    t = re.sub(r"(?m)^Patch%d:\s*\S+\n" % int(k), "", t)
+def replace(t, mo, new):
+    return t[:mo.start()] + new + t[mo.end():]
+
+dropped = {str(int(k)) for k in m["dropped"]}
+t = PATCH_LINE_NL.sub(lambda mo: "" if mo.group(1) in dropped else mo.group(0), t)
 
 wanted = {int(k): v["file"] for k, v in m["patches"].items() if v.get("file")}
 for n in sorted(wanted):
     f = wanted[n]
     if flavour == "linux-esx" and n >= 11000:
         continue  # linux-esx cannot build a canister; it links linux's
-    r = patch_line_re(n)
-    if r.search(t):
-        t = r.sub(lambda mo: f"Patch{n}:{mo.group(1)}{f}", t, count=1)
+    mo = patch_line(t, n)
+    if mo:
+        t = replace(t, mo, f"Patch{n}:{mo.group(2)}{f}")
         continue
     # A new number goes after the highest listed patch below it in the same
     # hundred-block (10101..10199 and so on), which keeps it inside the
     # right %if block.
-    below = [p for p in wanted if p < n and p // 100 == n // 100 and patch_line_re(p).search(t)]
+    below = [p for p in wanted if p < n and p // 100 == n // 100 and patch_line(t, p)]
     if not below:
         fail(f"Patch{n}: no PatchN line of its block to anchor after")
-    a = patch_line_re(max(below)).search(t)
+    a = patch_line(t, max(below))
     t = t[:a.end()] + f"\nPatch{n}: {f}" + t[a.end():]
 
 # canister_build and canister_usage patch lines exist in linux.spec; linux-esx
 # carries only the common range and must not gain canister_build lines.
 if flavour == "linux-esx":
     for n in list(wanted):
-        if n >= 11000 and patch_line_re(n).search(t):
+        if n >= 11000 and patch_line(t, n):
             fail(f"linux-esx carries canister_build Patch{n}")
 
 # --- SourceN lines and their %prep installs -----------------------------------
 for k, v in sorted(m["sources"].items(), key=lambda x: int(x[0])):
     n, f, inst = int(k), v["file"], v["installs"]
-    r = re.compile(r"(?m)^Source%d:(\s*)(\S+)$" % n)
-    if not r.search(t):
+    mo = next((x for x in SOURCE_LINE.finditer(t) if x.group(1) == str(n)), None)
+    if not mo:
         if flavour == "linux-esx" and n >= 11000:
             continue
         fail(f"Source{n} line not found")
-    t = r.sub(lambda mo: f"Source{n}:{mo.group(1)}{f}", t, count=1)
+    t = replace(t, mo, f"Source{n}:{mo.group(2)}{f}")
     if f == inst:
         continue
     # The file name differs from the name the kernel tree expects: every
     # "cp|install [-m MODE] %{SOURCEn} <dir>/" must name the target.
-    pat = re.compile(r"(?m)^((?:cp|install)(?: -m \d+)? %\{SOURCE" + str(n) + r"\} )(\S+/)$")
-    hits = pat.findall(t)
+    hits = [x for x in INSTALL_DIR.finditer(t) if x.group(2) == str(n)]
     if not hits:
-        pat2 = re.compile(r"(?m)^(?:cp|install)(?: -m \d+)? %\{SOURCE" + str(n) + r"\} \S+/" + re.escape(inst) + "$")
-        if not pat2.search(t):
+        if not any(x.group(1) == str(n) and x.group(2).endswith("/" + inst) and x.group(2) != "/" + inst
+                   for x in INSTALL_ANY.finditer(t)):
             fail(f"no %prep install of Source{n} to rename to {inst}")
-    t = pat.sub(lambda mo: mo.group(1) + mo.group(2) + inst, t)
+    t = INSTALL_DIR.sub(lambda x: x.group(1) + x.group(3) + inst if x.group(2) == str(n) else x.group(0), t)
 
 # --- %autopatch ranges ---------------------------------------------------------
 # Restore each range where the wrapper commented it out (same position, same
 # %if block), matching on the range start; the manifest's end wins.
 skipped = re.compile(r"(?m)^# unrebased autopatch skipped for [^:]+: -p1 -m(\d+) -M(\d+)$")
 for a, b in ranges:
-    live = re.compile(r"(?m)^%%autopatch -p1 -m%d -M(\d+)$" % a)
-    if live.search(t):
-        t = live.sub(f"%autopatch -p1 -m{a} -M{b}", t)
+    if any(x.group(1) == str(a) for x in AUTOPATCH.finditer(t)):
+        t = AUTOPATCH.sub(lambda x: f"%autopatch -p1 -m{a} -M{b}" if x.group(1) == str(a) else x.group(0), t)
         continue
     hit = [mo for mo in skipped.finditer(t) if int(mo.group(1)) == a]
     if not hit:
@@ -1367,7 +1401,10 @@ if not ver or not rel:
 if flavour == "linux":
     own = f"{ver.group(1)}-{rel.group(1)}%{{?dist}}"
 else:
-    lx = (spec.parent / "linux.spec").read_text()
+    sibling = spec.parent / "linux.spec"
+    if sibling.is_symlink() or not sibling.is_file():
+        fail(f"{sibling} is not a regular file (linux-esx links linux's canister)")
+    lx = sibling.read_text()
     lv = re.search(r"(?m)^Version:\s*(\S+)$", lx)
     lr = re.search(r"(?m)^Release:\s*([0-9][0-9a-z.]*)", lx)
     if not lv or not lr:
@@ -1387,7 +1424,7 @@ if "%{fips_certified_override}" not in t:
         t = cert.sub(cert_block, t)
 else:
     t = re.sub(r"(?m)^(%define fips_certified_kernel_version )(?!%\{fips_certified_override\})\S+$",
-               r"\g<1>" + own, t)
+               lambda mo: mo.group(1) + own, t)
 
 pin = re.compile(r"(?m)^%define fips_canister_version \S+$")
 pin_block = ("%if 0%{?canister_equivalent}\n"
@@ -1401,7 +1438,7 @@ if "%{fips_canister_override}" not in t:
     t = pin.sub(pin_block, t)
 else:
     t = re.sub(r"(?m)^(%define fips_canister_version )(?!%\{fips_canister_override\})\S+$",
-               r"\g<1>" + own, t)
+               lambda mo: mo.group(1) + own, t)
 
 # --- what the kernel pin says about FIPS ------------------------------------------
 # The pin writes a FIPS-off header and changelog line for every build; in a

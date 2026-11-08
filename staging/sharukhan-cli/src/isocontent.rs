@@ -529,6 +529,30 @@ fn produced_by(cfg: &Config, iso: &Path, name: &str) -> Option<PathBuf> {
     best.map(|(_, p)| p)
 }
 
+/// Write `text` as `<dir>/<name>`, where `name` must be one plain path
+/// component. The text goes to a new file beside it (never an existing one)
+/// that is then renamed over `name`: a symlink planted under that name is
+/// replaced, not followed, so a report can only ever land in `dir`.
+pub fn write_beside(dir: &Path, name: &str, text: &str) -> Result<(), String> {
+    let mut comps = Path::new(name).components();
+    let plain = matches!((comps.next(), comps.next()), (Some(std::path::Component::Normal(c)), None) if c == std::ffi::OsStr::new(name));
+    if !plain {
+        return Err(format!("{name:?} is not a plain file name"));
+    }
+    let dest = dir.join(name);
+    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    let r = (|| -> Result<(), String> {
+        let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+        f.write_all(text.as_bytes()).map_err(|e| format!("{}: {e}", tmp.display()))?;
+        f.sync_all().map_err(|e| format!("{}: {e}", tmp.display()))?;
+        fs::rename(&tmp, &dest).map_err(|e| format!("{}: {e}", dest.display()))
+    })();
+    if r.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    r
+}
+
 /// `YYYY-MM-DDTHH:MM:SSZ` of a Unix time.
 fn utc(secs: u64) -> String {
     let (y, m, d) = crate::wrapper::escape::civil_from_days((secs / 86400) as i64);
@@ -890,9 +914,8 @@ pub fn cli(args: &[String]) -> u8 {
     for iso in &isos {
         match report(&cfg, iso, &repos, &mut produced, &index, &upstream, &fork) {
             Ok(r) => {
-                let p = out.join(format!("{}.md", r.file));
-                if let Err(e) = fs::write(&p, r.markdown()) {
-                    eprintln!("  {}: {e}", p.display());
+                if let Err(e) = write_beside(&out, &format!("{}.md", r.file), &r.markdown()) {
+                    eprintln!("  {e}");
                     rc = 1;
                 }
                 log(&format!("  {}: {} RPM(s), {} source(s), {} unattributed", r.file, r.rpms.len(), r.from_sources.len(), r.unattributed.len()));
@@ -904,12 +927,11 @@ pub fn cli(args: &[String]) -> u8 {
             }
         }
     }
-    let p = out.join("README.md");
-    if let Err(e) = fs::write(&p, index_markdown(&rows, &dir)) {
-        eprintln!("  {}: {e}", p.display());
+    if let Err(e) = write_beside(&out, "README.md", &index_markdown(&rows, &dir)) {
+        eprintln!("  {e}");
         rc = 1;
     }
-    log(&format!("wrote {} report(s) and {}", rows.len(), p.display()));
+    log(&format!("wrote {} report(s) and {}", rows.len(), out.join("README.md").display()));
     rc
 }
 
@@ -956,6 +978,25 @@ mod tests {
         assert!(!release_matches("2.0612115001", "2", false));
         assert!(!release_matches("21", "2", true));
         assert!(release_matches("10", "10", false));
+    }
+
+    #[test]
+    fn a_report_replaces_a_planted_symlink_instead_of_following_it() {
+        let d = std::env::temp_dir().join(format!("shk-writebeside-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("out")).unwrap();
+        let victim = d.join("victim.txt");
+        fs::write(&victim, "keep").unwrap();
+        std::os::unix::fs::symlink(&victim, d.join("out/x.iso.md")).unwrap();
+        write_beside(&d.join("out"), "x.iso.md", "report").unwrap();
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "keep", "the symlink's target is untouched");
+        assert!(!fs::symlink_metadata(d.join("out/x.iso.md")).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(d.join("out/x.iso.md")).unwrap(), "report");
+        for bad in ["../x.md", "a/b.md", "..", ".", "", "/etc/x"] {
+            assert!(write_beside(&d.join("out"), bad, "r").is_err(), "{bad:?}");
+        }
+        assert_eq!(fs::read_dir(d.join("out")).unwrap().count(), 1, "no temporary file is left behind");
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]
