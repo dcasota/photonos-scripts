@@ -19,6 +19,7 @@ from rich.logging import RichHandler
 
 from scripts.config import KernelConfig, DEFAULT_CONFIG, KERNEL_MAPPINGS
 from scripts.models import KernelVersion, Patch, PatchTarget
+from scripts.safe_io import confine, resolve_dir
 
 
 # Rich console for output
@@ -442,9 +443,15 @@ def ensure_photon_repo(
         logger.error(f"Unsupported kernel version: {kernel_version}")
         return None
     
-    # Determine repo directory - use repo_base if provided, otherwise config default
+    # Determine repo directory - use repo_base if provided, otherwise config default.
+    # A partial clone at repo_dir is deleted below, so the directory must be
+    # exactly <repo_base>/<branch> and never resolve anywhere else.
     if repo_base:
-        repo_dir = Path(repo_base) / mapping.branch.value
+        try:
+            repo_dir = confine(resolve_dir(repo_base, "repo base"), mapping.branch.value)
+        except ValueError as e:
+            logger.error(str(e))
+            return None
     else:
         repo_dir = config.get_repo_dir(kernel_version)
     

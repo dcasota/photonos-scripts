@@ -7,6 +7,7 @@ Downloads feeds once per run, then analyzes all CVEs from local cache.
 
 import gzip
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ import requests
 
 from scripts.common import logger
 from scripts.config import DEFAULT_CONFIG, KernelConfig, SUPPORTED_KERNELS
+from scripts.safe_io import confine, require_supported_kernel, require_version, resolve_dir
 from scripts.models import (
     CVE,
     GapAnalysisResult,
@@ -25,6 +27,8 @@ from scripts.models import (
     KernelVersion,
     Severity,
 )
+
+CVE_ID_RE = re.compile(r"CVE-[0-9]{4}-[0-9]{4,7}")
 
 
 @dataclass
@@ -662,6 +666,10 @@ def run_gap_detection(
     Returns:
         Path to JSON report file
     """
+    # kernel_version names the report files; accept only a supported series.
+    kernel_version = require_supported_kernel(kernel_version)
+    report_dir = resolve_dir(report_dir, "report directory")
+    
     detector = GapDetector(config)
     report = detector.run_detection(
         kernel_version, current_version, cve_ids, progress_callback
@@ -669,8 +677,8 @@ def run_gap_detection(
     
     # Generate report paths
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_path = report_dir / f"gap_report_{kernel_version}_{timestamp}.json"
-    text_path = report_dir / f"gap_report_{kernel_version}_{timestamp}.txt"
+    json_path = confine(report_dir, f"gap_report_{kernel_version}_{timestamp}.json")
+    text_path = confine(report_dir, f"gap_report_{kernel_version}_{timestamp}.txt")
     
     # Save reports
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -720,13 +728,26 @@ if __name__ == "__main__":
         print("         python -m kernelpatches.cve_gap_detection 5.10 5.10.220 cves.txt")
         sys.exit(1)
     
-    kernel = sys.argv[1]
-    version = sys.argv[2]
+    try:
+        kernel = require_supported_kernel(sys.argv[1])
+        version = require_version(sys.argv[2], "Photon kernel version")
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(2)
     
     cves = None
     if len(sys.argv) > 3:
-        cve_file = Path(sys.argv[3])
-        cves = [line.strip().split("|")[0] for line in cve_file.read_text().splitlines() if line.strip()]
+        cve_file = Path(os.path.realpath(sys.argv[3]))
+        if not cve_file.is_file():
+            print(f"Error: CVE list is not a regular file: {cve_file}")
+            sys.exit(2)
+        cves = [
+            cve for cve in (
+                line.strip().split("|")[0].strip()
+                for line in cve_file.read_text().splitlines()
+            )
+            if CVE_ID_RE.fullmatch(cve)
+        ]
         print(f"Analyzing {len(cves)} CVEs from file")
     else:
         print("Analyzing all kernel.org CVEs from NVD feeds")

@@ -17,7 +17,6 @@ Usage:
 import argparse
 import asyncio
 import lzma
-import os
 import subprocess
 import sys
 import tarfile
@@ -33,6 +32,13 @@ from scripts.cve_sources import NVDFetcher, GHSAFetcher, AtomFetcher
 from scripts.cve_matrix import CVEMatrixBuilder, CVECoverageMatrix, CVEPatchState, KernelCVEStatus
 from scripts.stable_patches import StablePatchManager
 from scripts.common import logger, extract_cve_ids
+from scripts.safe_io import (
+    confine,
+    require_supported_kernel,
+    require_version,
+    resolve_dir,
+    safe_extract_tar,
+)
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -380,18 +386,29 @@ async def download_kernel_tarball(
     """
     import aiohttp
     
+    # kernel_version comes from the command line and photon_version from a
+    # spec file or kernel.org; both end up in a URL and in file names, so
+    # only accept a supported series and a plain dotted version.
+    try:
+        kernel_version = require_supported_kernel(kernel_version)
+        photon_version = require_version(photon_version, "Photon kernel version")
+        output_base = resolve_dir(output_base, "output directory")
+    except ValueError as e:
+        console.print(f"    [red]{e}[/red]")
+        return None
+    
     kernel_url = get_kernel_org_url(kernel_version)
     if not kernel_url:
         return None
     
     tarball_name = f"linux-{photon_version}.tar.xz"
     tarball_url = f"{kernel_url}{tarball_name}"
-    tarball_dir = output_base / "tarballs"
+    tarball_dir = confine(output_base, "tarballs")
     tarball_dir.mkdir(parents=True, exist_ok=True)
-    tarball_path = tarball_dir / tarball_name
-    extract_dir = output_base / "kernel_source"
+    tarball_path = confine(tarball_dir, tarball_name)
+    extract_dir = confine(output_base, "kernel_source")
     extract_dir.mkdir(parents=True, exist_ok=True)
-    source_dir = extract_dir / f"linux-{photon_version}"
+    source_dir = confine(extract_dir, f"linux-{photon_version}")
     
     # Check if already extracted
     if source_dir.exists() and (source_dir / "Makefile").exists():
@@ -511,18 +528,12 @@ async def download_kernel_tarball(
         console.print(f"    [red]Failed to download tarball after {max_retries} attempts[/red]")
         return None
     
-    # Extract tarball with TarSlip protection: validate every member's
-    # resolved path stays under extract_dir before calling extractall.
+    # Extract without letting any member (or a symlink planted by an
+    # earlier member) write outside extract_dir.
     console.print(f"    Extracting {tarball_name}...")
     try:
-        extract_root = os.path.realpath(str(extract_dir))
         with tarfile.open(tarball_path, "r:xz") as tar:
-            for m in tar.getmembers():
-                dest = os.path.realpath(os.path.join(extract_root, m.name))
-                if not (dest == extract_root or
-                        dest.startswith(extract_root + os.sep)):
-                    raise RuntimeError(f"tar slip detected: {m.name}")
-            tar.extractall(path=extract_dir)
+            safe_extract_tar(tar, extract_dir)
         console.print(f"    Extracted to: {source_dir}")
         return source_dir
     except Exception as e:
@@ -636,9 +647,16 @@ async def download_kernel_tarballs_for_analysis(
             source_dirs[kv] = None
             continue
         
+        try:
+            photon_ver = require_version(photon_ver, "Photon kernel version")
+        except ValueError as e:
+            console.print(f"  {kv}: [red]{e}, skipping tarball download[/red]")
+            source_dirs[kv] = None
+            continue
+        
         # Check if already extracted
-        kernel_source_base = output_base / "kernel_source"
-        source_dir = kernel_source_base / f"linux-{photon_ver}"
+        kernel_source_base = confine(output_base, "kernel_source")
+        source_dir = confine(kernel_source_base, f"linux-{photon_ver}")
         
         if source_dir.exists() and (source_dir / "Makefile").exists():
             console.print(f"  {kv}: Kernel source already extracted: {source_dir}")
@@ -1098,7 +1116,13 @@ async def main():
     
     args = parser.parse_args()
     
-    kernel_versions = [k.strip() for k in args.kernels.split(",")]
+    try:
+        kernel_versions = [require_supported_kernel(k) for k in args.kernels.split(",")]
+        args.output = resolve_dir(args.output, "--output")
+        if args.repo_base:
+            args.repo_base = resolve_dir(args.repo_base, "--repo-base")
+    except ValueError as e:
+        parser.error(str(e))
     config = KernelConfig.from_env()
     
     console.print("[bold]Comprehensive CVE Coverage Matrix Generator[/bold]")

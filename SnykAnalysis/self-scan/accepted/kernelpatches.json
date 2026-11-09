@@ -1,35 +1,123 @@
 {
   "subdir": "kernelpatches",
-  "scan_date": "2026-05-11",
-  "note": "kernelpatches is a CLI tool for orchestrating Photon kernel CVE backports. All findings flow from argparse-supplied --kernel-version / --output-dir / --photon-base into paths or URL/regex composition.",
+  "scan_date": "2026-11-09",
+  "note": "kernelpatches is a CLI tool for orchestrating Photon kernel CVE backports. Iter 2 (2026-11-09) validated every derived path component and replaced the bypassable TarSlip guard; the residual findings are taint from the operator's own --output directory / input file, which Snyk cannot model as a sanitized source. Snyk CLI 1.1304.2 does not honor inline 'deepcode ignore' comments, so they are recorded here.",
   "accepted": [
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:350", "bucket": "DESIGN-DECISION", "reason": "ensure_photon_repo() opens an internal clone directory rooted at the CLI-supplied repo_base; CLI-by-design."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:434", "bucket": "DESIGN-DECISION", "reason": "matrix_dir under CLI-supplied output_dir; CLI-by-design."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:437", "bucket": "DESIGN-DECISION", "reason": "matrix.save_json target path under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:487", "bucket": "DESIGN-DECISION", "reason": "Patch download path under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:533", "bucket": "DESIGN-DECISION", "reason": "Spec file under CLI-supplied repo_base/SPECS."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:622", "bucket": "DESIGN-DECISION", "reason": "stable_patches dir under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:626", "bucket": "DESIGN-DECISION", "reason": "download_file target path under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:661", "bucket": "DESIGN-DECISION", "reason": "Patch dir under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:717", "bucket": "DESIGN-DECISION", "reason": "Report file under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:819", "bucket": "DESIGN-DECISION", "reason": "Phase summary file under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/cve_gap_detection.py:81", "bucket": "DESIGN-DECISION", "reason": "CLI tool reads a CLI-supplied report path."},
-    {"rule": "python/PT", "location": "scripts/cve_gap_detection.py:130", "bucket": "DESIGN-DECISION", "reason": "Same."},
-    {"rule": "python/PT", "location": "scripts/cve_gap_detection.py:728", "bucket": "DESIGN-DECISION", "reason": "Same."},
-    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:434", "bucket": "DESIGN-DECISION", "reason": "Tarball download path under CLI-supplied output_dir."},
-    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:453", "bucket": "DESIGN-DECISION", "reason": "Same tarball download path."},
-    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:483", "bucket": "DESIGN-DECISION", "reason": "Same."},
-    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:497", "bucket": "DESIGN-DECISION", "reason": "Same."},
-    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:517", "bucket": "DESIGN-DECISION", "reason": "Extract destination under CLI-supplied output_dir; the *content* of the tar is now TarSlip-guarded."},
-    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:642", "bucket": "DESIGN-DECISION", "reason": "Source tree under CLI-supplied output_dir."},
-    {"rule": "python/Ssrf", "location": "scripts/cve_coverage_build_workflow.py:626", "bucket": "FALSE-POSITIVE", "reason": "download_file() target URL is built from get_kernel_org_url(self.kernel_version), which hardcodes https://cdn.kernel.org/pub/linux/kernel/vX.x/. The host is not attacker-controllable; only the path segment (kernel version) is, and that has been validated by argparse."}
+    {
+      "rule": "python/PT",
+      "location": "scripts/cve_coverage_build_workflow.py:458",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (matrix.save_json)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/cve_coverage_build_workflow.py:515",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (CVE patch download; name = 12-hex sha + NVD CVE id, require_filename-checked)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/cve_coverage_build_workflow.py:666",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (stable patch download; target_version require_version-checked)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/generate_full_matrix.py:452",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (tarball integrity check after wget)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/generate_full_matrix.py:471",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (tarball integrity check after curl)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/generate_full_matrix.py:501",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (aiohttp download target)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/generate_full_matrix.py:515",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (tarball integrity check after aiohttp)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/generate_full_matrix.py:668",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (call site of download_kernel_tarball; photon_ver require_version-checked)"
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/cve_gap_detection.py:740",
+      "bucket": "DESIGN-DECISION",
+      "reason": "__main__ test helper reads the CVE list file the operator names on the command line; realpath'd, must be a regular file, only CVE-ID-shaped lines are used."
+    }
   ],
   "hard_fixes": [
-    {"rule": "python/TarSlip", "location": "scripts/generate_full_matrix.py:517", "fix": "Wrapped tarfile.extractall in a TarSlip-guard loop: realpath each member against the extract root before extractall, raise RuntimeError on slip. Added 'import os'."},
-    {"rule": "python/TarSlip", "location": "scripts/generate_full_matrix.py:434/453/497/642", "fix": "Same fix at L517 dominates the four other Snyk-flagged data-flow sinks; they were tainted-flow alerts pointing at the integrity-check and download call sites for the same downstream extract."},
-    {"rule": "python/TarSlip", "location": "scripts/source_verification.py:212", "fix": "Replaced the bare tar.extract loop with a realpath-validated TarSlip guard before each tar.extract(member) call. Added 'import os'."},
-    {"rule": "python/reDOS", "location": "scripts/generate_full_matrix.py:85 (sink: cve_sources.py:587)", "fix": "Wrapped kernel_version with re.escape() inside the fix_pattern f-string so CLI-supplied regex metacharacters cannot induce catastrophic backtracking."},
-    {"rule": "python/unquoted_csv_writer", "location": "scripts/cve_coverage_build_workflow.py:438 (sink: cve_matrix.py save_csv / save_stable_patch_csv)", "fix": "Set csv.writer(..., quoting=csv.QUOTE_ALL) on the two writers in cve_matrix.py to defeat CSV-injection via cell content that starts with =, +, -, @."},
-    {"rule": "python/unquoted_csv_writer", "location": "scripts/cve_coverage_build_workflow.py:439", "fix": "Same fix."}
+    {
+      "rule": "python/TarSlip",
+      "location": "scripts/generate_full_matrix.py:525,435,454,498,650 (iter1 numbering)",
+      "iteration": 2,
+      "fix": "Root cause: the iter1 guard realpath'd member names before extractall, so a symlink member pointing outside followed by a file written through it passed the check (reproduced on Python <3.14 defaults). Replaced with scripts/safe_io.safe_extract_tar: lexical pre-check of names, symlink/hardlink targets and special files, then extractall(filter='data') which re-checks against the filesystem per member. Verified against linux-6.12.113.tar.xz: 92471/92471 entries, 62 symlinks."
+    },
+    {
+      "rule": "python/TarSlip",
+      "location": "scripts/source_verification.py:224 (iter1 numbering)",
+      "iteration": 2,
+      "fix": "Same root cause; replaced with safe_extract_tar(progress=...). Tarball cache path/URL now require a dotted numeric version."
+    },
+    {
+      "rule": "python/Ssrf",
+      "location": "scripts/cve_coverage_build_workflow.py:626 (iter1 numbering)",
+      "iteration": 2,
+      "fix": "--kernel is normalised to the constant KERNEL_MAPPINGS key (require_supported_kernel) at the workflow boundary, and the kernel.org-sourced target_version must be digits and dots before it is put in the URL path."
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/cve_coverage_build_workflow.py:350,434,437,487,533,622,626,661,717,819; scripts/cve_gap_detection.py:81,130; scripts/generate_full_matrix.py:435,454,484,498,525,650 (iter1 numbering)",
+      "iteration": 2,
+      "fix": "Real traversals closed: --specs/spec names (joined onto SPECS dir and rewritten) must be plain file names; gap-report file names used the unvalidated kernel argv; tarball/source paths used spec- or kernel.org-sourced versions; repo_dir that ensure_photon_repo may rmtree is confined to <repo_base>/<branch>. All CLI kernel lists (cli.parse_kernel_arg, generate_full_matrix --kernels) are allowlisted. 10 of these 19 cleared in Snyk; the 9 that remain are listed under accepted."
+    },
+    {
+      "rule": "python/TarSlip",
+      "location": "scripts/generate_full_matrix.py:517",
+      "fix": "Wrapped tarfile.extractall in a TarSlip-guard loop: realpath each member against the extract root before extractall, raise RuntimeError on slip. Added 'import os'.",
+      "iteration": 1
+    },
+    {
+      "rule": "python/TarSlip",
+      "location": "scripts/generate_full_matrix.py:434/453/497/642",
+      "fix": "Same fix at L517 dominates the four other Snyk-flagged data-flow sinks; they were tainted-flow alerts pointing at the integrity-check and download call sites for the same downstream extract.",
+      "iteration": 1
+    },
+    {
+      "rule": "python/TarSlip",
+      "location": "scripts/source_verification.py:212",
+      "fix": "Replaced the bare tar.extract loop with a realpath-validated TarSlip guard before each tar.extract(member) call. Added 'import os'.",
+      "iteration": 1
+    },
+    {
+      "rule": "python/reDOS",
+      "location": "scripts/generate_full_matrix.py:85 (sink: cve_sources.py:587)",
+      "fix": "Wrapped kernel_version with re.escape() inside the fix_pattern f-string so CLI-supplied regex metacharacters cannot induce catastrophic backtracking.",
+      "iteration": 1
+    },
+    {
+      "rule": "python/unquoted_csv_writer",
+      "location": "scripts/cve_coverage_build_workflow.py:438 (sink: cve_matrix.py save_csv / save_stable_patch_csv)",
+      "fix": "Set csv.writer(..., quoting=csv.QUOTE_ALL) on the two writers in cve_matrix.py to defeat CSV-injection via cell content that starts with =, +, -, @.",
+      "iteration": 1
+    },
+    {
+      "rule": "python/unquoted_csv_writer",
+      "location": "scripts/cve_coverage_build_workflow.py:439",
+      "fix": "Same fix.",
+      "iteration": 1
+    }
   ]
 }
