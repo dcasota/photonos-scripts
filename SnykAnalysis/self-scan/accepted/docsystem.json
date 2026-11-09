@@ -71,15 +71,17 @@
     },
     {
       "rule": "python/PT",
-      "location": "tools/mirror-repository/mirror-repository.py:258/290",
-      "bucket": "DESIGN-DECISION",
-      "reason": "CLI tool for mirroring a git repository to a local cache; --output is operator-supplied."
+      "location": "tools/photonos-docs-lecturer/plugins/documentation_lecturer.py:898/2496/2832/3043",
+      "bucket": "FALSE-POSITIVE-POST-FIX",
+      "scan_date": "2026-11-09",
+      "reason": "Iter-1 verdict was wrong: page URLs come from the remote sitemap.xml and map_url_to_local_path() let '..' segments walk out of the docs checkout (reproduced: https://h/docs-v5/../../../../outside/secret -> outside/secret.md, which --gh-pr would also rewrite). Fixed in plugins/apply_fixes.py: dot segments (raw or %2e) are rejected, exact-name lookups now select os.listdir() entries so URL text never becomes path text, and the result must realpath under local_webserver (symlink escape also refused). Snyk passes taint through the unresolved method call at documentation_lecturer.py:2493 to open() at :2496, so the fix inside the mapper is not visible to it."
     },
     {
       "rule": "python/PT",
-      "location": "tools/photonos-docs-lecturer/plugins/documentation_lecturer.py:898/2496/2832/3043",
+      "location": "tools/mirror-repository/mirror-repository.py:273/305",
       "bucket": "DESIGN-DECISION",
-      "reason": "Documentation lecturer plugin reads/writes under its plugin data directory, configured via env vars / argparse."
+      "scan_date": "2026-11-09",
+      "reason": "--local-path is the operator's working directory by contract; it is now realpath'd and must be a directory. The clone dir is created by tempfile.mkdtemp under it, and the repo-name prefix comes from a fullmatch-validated GitHub URL (no '/', not '.'/'..'), so rmtree only ever removes that mkdtemp directory."
     }
   ],
   "deferred": {
@@ -93,5 +95,20 @@
       "13 first-party python/PT in .factory/ + tools/ -- documented as DESIGN-DECISION above"
     ],
     "next_iteration_recommendation": "Decide whether docsystem/photon should be added to a Snyk path-ignore list (it is upstream code, scanned only because docsystem ships content generated from it). Adding photon/ to .snyk excludes would drop ~73 findings without any code change."
-  }
+  },
+  "scan_date_tools_iter2": "2026-11-09",
+  "hard_fixes_iter2": [
+    {
+      "location": "tools/photonos-docs-lecturer/plugins/apply_fixes.py map_url_to_local_path",
+      "fix": "Confine sitemap-derived URL -> local markdown mapping to local_webserver (see accepted entry)."
+    },
+    {
+      "location": "tools/mirror-repository/mirror-repository.py run_command",
+      "fix": "Not a Snyk finding, found while fixing it: the push URL https://user:TOKEN@github.com/... was printed by 'Running: ...' and again in CalledProcessError text. Credentials are now redacted in both."
+    },
+    {
+      "location": "tools/mirror-repository/mirror-repository.py parse_github_url",
+      "fix": "Unanchored re.match with [^/.]+ silently truncated repo names at the first dot (photon.github.io -> photon) and ignored trailing text. Now fullmatch against GitHub owner/repo rules."
+    }
+  ]
 }

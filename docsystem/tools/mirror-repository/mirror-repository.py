@@ -56,11 +56,12 @@ def install_git_lfs() -> bool:
 
 def parse_github_url(url: str) -> tuple[str, str] | None:
     """Extract owner and repo name from a GitHub URL."""
-    pattern = r'https://github\.com/([^/]+)/([^/.]+)(?:\.git)?'
-    match = re.match(pattern, url)
-    if match:
-        return match.group(1), match.group(2)
-    return None
+    # GitHub owner and repository name rules; the whole URL must match.
+    pattern = r'https://github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?'
+    match = re.fullmatch(pattern, url.strip())
+    if not match or match.group(2) in ('.', '..'):
+        return None
+    return match.group(1), match.group(2)
 
 
 def check_lfs(owner: str, repo: str, token: str) -> bool:
@@ -123,12 +124,22 @@ def create_repo(repo_name: str, token: str) -> bool:
         return False
 
 
+_URL_CREDENTIALS = re.compile(r'(://)[^/@\s]+@')
+
+
+def redact(text: str) -> str:
+    """Hide user:token credentials embedded in URLs (https://user:TOKEN@host)."""
+    return _URL_CREDENTIALS.sub(r'\1***@', text)
+
+
 def run_command(cmd: list[str], cwd: str = None, check: bool = True) -> subprocess.CompletedProcess:
-    """Run a shell command."""
-    print(f"Running: {' '.join(cmd)}")
+    """Run a command (no shell). Credentials in URLs are never printed."""
+    shown = [redact(c) for c in cmd]
+    print(f"Running: {' '.join(shown)}")
     result = subprocess.run(cmd, cwd=cwd, capture_output=False)
     if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, cmd)
+        # The exception text is printed by the caller; give it the redacted argv.
+        raise subprocess.CalledProcessError(result.returncode, shown)
     return result
 
 
@@ -235,8 +246,12 @@ Environment variables:
     # Determine clone directory
     # If local_path is provided, create temp directory inside it; otherwise use system temp
     if args.local_path:
-        os.makedirs(args.local_path, exist_ok=True)
-        clone_dir = tempfile.mkdtemp(prefix=f"{original_repo}.", dir=args.local_path)
+        local_path = os.path.realpath(os.path.expanduser(args.local_path))
+        if os.path.exists(local_path) and not os.path.isdir(local_path):
+            print(f"Error: --local-path is not a directory: {local_path}")
+            sys.exit(1)
+        os.makedirs(local_path, exist_ok=True)
+        clone_dir = tempfile.mkdtemp(prefix=f"{original_repo}.", dir=local_path)
     else:
         clone_dir = tempfile.mkdtemp(prefix=f"{original_repo}.")
     

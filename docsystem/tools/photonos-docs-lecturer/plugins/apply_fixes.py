@@ -247,6 +247,22 @@ class FixApplicator:
         
         return similarity > 0.7
     
+    @staticmethod
+    def _existing_entry(parent_dir: str, target_name: str) -> Optional[str]:
+        """Return parent_dir/<entry> for the directory entry named exactly target_name.
+
+        The returned path is built from the name os.listdir() reports, so URL
+        text only selects an existing entry and never becomes part of a path
+        ('.' and '..' are never listed).
+        """
+        try:
+            for entry in os.listdir(parent_dir):
+                if entry == target_name:
+                    return os.path.join(parent_dir, entry)
+        except OSError:
+            pass
+        return None
+
     def find_directory_case_insensitive(self, parent_dir: str, target_name: str) -> Optional[str]:
         """Find a directory or file matching target_name case-insensitively.
         
@@ -427,7 +443,31 @@ class FixApplicator:
         return best_match
     
     def map_url_to_local_path(self, page_url: str, webpage_text: str = None) -> Optional[str]:
-        """Map a page URL to local markdown file path.
+        """Map a page URL to a local markdown file inside the local webserver tree.
+
+        Page URLs come from the site's sitemap.xml or from crawling, i.e. from
+        the network, and the returned file is read and (with --gh-pr)
+        rewritten. A URL with "." or ".." path segments is rejected, and the
+        resolved result must lie inside local_webserver; otherwise None.
+        """
+        if not self.local_webserver:
+            return None
+        segments = urllib.parse.urlparse(page_url).path.split('/')
+        if any(urllib.parse.unquote(seg) in ('.', '..') for seg in segments):
+            self.logger.warning(f"Ignoring URL with dot segments: {page_url}")
+            return None
+        candidate = self._map_url_to_local_path_unconfined(page_url, webpage_text)
+        if candidate is None:
+            return None
+        root = os.path.realpath(self.local_webserver)
+        resolved = os.path.realpath(candidate)
+        if resolved != root and not resolved.startswith(root + os.sep):
+            self.logger.warning(f"Ignoring {page_url}: maps outside {root}: {resolved}")
+            return None
+        return resolved
+
+    def _map_url_to_local_path_unconfined(self, page_url: str, webpage_text: str = None) -> Optional[str]:
+        """Map a page URL to local markdown file path (unchecked; use map_url_to_local_path).
         
         Hugo content structure typically uses:
         - _index.md for section/directory pages (e.g., /docs-v5/ -> content/en/docs-v5/_index.md)
@@ -484,14 +524,16 @@ class FixApplicator:
                 for i, part in enumerate(path_parts):
                     is_last_part = (i == len(path_parts) - 1)
                     
-                    exact_path = os.path.join(current_dir, part)
-                    if os.path.isdir(exact_path):
+                    exact_path = self._existing_entry(current_dir, part)
+                    if exact_path and os.path.isdir(exact_path):
                         current_dir = exact_path
-                        resolved_parts.append(part)
+                        resolved_parts.append(os.path.basename(exact_path))
                         continue
                     
-                    if is_last_part and os.path.isfile(exact_path + '.md'):
-                        return exact_path + '.md'
+                    if is_last_part:
+                        exact_md = self._existing_entry(current_dir, part + '.md')
+                        if exact_md and os.path.isfile(exact_md):
+                            return exact_md
                     
                     found_dir = self.find_directory_case_insensitive(current_dir, part)
                     if found_dir and os.path.isdir(found_dir):
