@@ -398,9 +398,11 @@ int main(int argc, char **argv)
             const char *scans_dir = (params.scansDir && params.scansDir[0])
                                     ? params.scansDir : params.workingDir;
             char out_path[PR_MAX_PATH];
-            snprintf(out_path, sizeof out_path,
-                     "%s/photonos-package-report_%s.prn", scans_dir, ts);
-            if (pr_write_package_report(lp, labels, out_path) == 0)
+            int opl = snprintf(out_path, sizeof out_path,
+                               "%s/photonos-package-report_%s.prn", scans_dir, ts);
+            if (opl < 0 || (size_t)opl >= sizeof out_path)
+                fprintf(stderr, "::warning::package-report: output path too long\n");
+            else if (pr_write_package_report(lp, labels, out_path) == 0)
                 fprintf(stderr, "Wrote %s\n", out_path);
             else
                 fprintf(stderr, "::warning::package-report: write failed\n");
@@ -435,12 +437,16 @@ int main(int argc, char **argv)
             snprintf(pd_b, sizeof pd_b, "photon-%s", diffs[i].b);
             snprintf(lbl_a, sizeof lbl_a, "photon-%s", diffs[i].a);
             snprintf(lbl_b, sizeof lbl_b, "photon-%s", diffs[i].b);
-            snprintf(out_path, sizeof out_path,
-                     "%s/photonos-diff-report-%s-%s_%s.prn",
-                     scans_dir, diffs[i].a, diffs[i].b, ts);
+            int opl = snprintf(out_path, sizeof out_path,
+                               "%s/photonos-diff-report-%s-%s_%s.prn",
+                               scans_dir, diffs[i].a, diffs[i].b, ts);
             pr_task_list_t la, lb;
             pr_task_list_init(&la); pr_task_list_init(&lb);
-            if (parse_directory(params.workingDir, pd_a, &la) != 0 ||
+            if (opl < 0 || (size_t)opl >= sizeof out_path) {
+                fprintf(stderr, "::warning::diff %s-%s: output path too long\n",
+                        diffs[i].a, diffs[i].b);
+                diff_rc = 1;
+            } else if (parse_directory(params.workingDir, pd_a, &la) != 0 ||
                 parse_directory(params.workingDir, pd_b, &lb) != 0) {
                 fprintf(stderr, "::warning::diff %s-%s: parse_directory failed\n",
                         diffs[i].a, diffs[i].b);
@@ -681,8 +687,14 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
     strftime(ts, sizeof ts, "%Y%m%d%H%M", &tm);
 
     char out_path[PR_MAX_PATH];
-    snprintf(out_path, sizeof out_path,
-             "%s/photonos-urlhealth-%s_%s.prn", scans_dir, branch, ts);
+    int opl = snprintf(out_path, sizeof out_path,
+                       "%s/photonos-urlhealth-%s_%s.prn", scans_dir, branch, ts);
+    if (opl < 0 || (size_t)opl >= sizeof out_path) {
+        fprintf(stderr, "generate_urlhealth: output path too long\n");
+        pr_source0_lookup_free(&lut);
+        pr_task_list_free(&list);
+        return 1;
+    }
 
     pr_prn_t *p = pr_prn_open(out_path);
     if (!p) {

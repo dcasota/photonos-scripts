@@ -212,10 +212,15 @@ static void test_roundtrip(void)
 
     /* Read back the emitted CSV into a heap buffer. */
     long sz = ftell(stdout);
+    if (sz < 0) { failures++; goto cleanup; }
     rewind(stdout);
     char *buf = (char *)malloc((size_t)sz + 1);
     if (!buf) { failures++; goto cleanup; }
-    if (fread(buf, 1, (size_t)sz, stdout) != (size_t)sz) { failures++; free(buf); goto cleanup; }
+    if (fread(buf, 1, (size_t)sz, stdout) != (size_t)sz) {
+        failures++;
+        free(buf);
+        goto cleanup;   /* buf is not used after this point */
+    }
     buf[sz] = '\0';
 
     /* Re-parse: temporarily swap out the embedded CSV pointer. This is

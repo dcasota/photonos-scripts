@@ -355,6 +355,22 @@ char *pr_koji_pick_latest_srpm(const char *html)
 
 /* ----- Public entry point ------------------------------------------- */
 
+/* version, release and the .src.rpm name are read from Fedora's pages and
+ * become path segments of the next kojipkgs URL. Accept a segment only if it
+ * cannot change the URL's structure: no '/', '?', '#', '%', '\\', blanks or
+ * control bytes, and not "." or "..". Real NVR fields (including '^'
+ * snapshots and '~' pre-releases) pass unchanged. */
+static int is_url_segment(const char *s)
+{
+    if (s == NULL || s[0] == '\0') return 0;
+    if (strcmp(s, ".") == 0 || strcmp(s, "..") == 0) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p <= 0x20 || *p == 0x7f || *p == '/' || *p == '?' || *p == '#'
+            || *p == '%' || *p == '\\') return 0;
+    }
+    return 1;
+}
+
 int koji_fedora_lookup(const char *artefact_name, char **out_url)
 {
     if (out_url == NULL) return -1;
@@ -377,7 +393,7 @@ int koji_fedora_lookup(const char *artefact_name, char **out_url)
     /* Step 2: derive version. */
     char *version = pr_koji_derive_version(artefact_name, dlname);
     free(dlname);
-    if (!version || version[0] == '\0') { free(version); return 0; }
+    if (!version || !is_url_segment(version)) { free(version); return 0; }
 
     /* Step 3: list release subdirs. */
     char url2[1024];
@@ -388,7 +404,7 @@ int koji_fedora_lookup(const char *artefact_name, char **out_url)
     if (http_get(url2, 10000, &body2) != 0) { free(version); return 0; }
     char *release = pr_koji_pick_latest_release(body2);
     free(body2);
-    if (!release) { free(version); return 0; }
+    if (!release || !is_url_segment(release)) { free(version); free(release); return 0; }
 
     /* Step 4: list .src.rpm files. */
     char url3[1024];
@@ -401,7 +417,7 @@ int koji_fedora_lookup(const char *artefact_name, char **out_url)
     }
     char *srpm = pr_koji_pick_latest_srpm(body3);
     free(body3);
-    if (!srpm) { free(version); free(release); return 0; }
+    if (!srpm || !is_url_segment(srpm)) { free(version); free(release); free(srpm); return 0; }
 
     /* Step 5: assemble final URL. */
     char final_url[2048];

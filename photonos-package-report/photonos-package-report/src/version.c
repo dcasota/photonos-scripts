@@ -80,6 +80,7 @@ static int re_match_groups(pcre2_code *re, const char *s,
                            char **out_caps, int max_caps)
 {
     pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
+    if (md == NULL) return 0;
     int rc = pcre2_match(re, (PCRE2_SPTR)s, PCRE2_ZERO_TERMINATED, 0, 0, md, NULL);
     int n = 0;
     if (rc > 0) {
@@ -89,9 +90,13 @@ static int re_match_groups(pcre2_code *re, const char *s,
         for (int i = 0; i < n; i++) {
             PCRE2_SIZE start = ov[2 * (i + 1)];
             PCRE2_SIZE end   = ov[2 * (i + 1) + 1];
-            size_t len = end - start;
+            /* An optional group that did not participate is PCRE2_UNSET;
+             * it captures the empty string (as in .NET), never s + UNSET. */
+            size_t len = (start == PCRE2_UNSET || end == PCRE2_UNSET || end < start)
+                         ? 0 : (size_t)(end - start);
             out_caps[i] = (char *)malloc(len + 1);
-            memcpy(out_caps[i], s + start, len);
+            if (out_caps[i] == NULL) { n = i; break; }
+            if (len) memcpy(out_caps[i], s + start, len);
             out_caps[i][len] = '\0';
         }
     }
@@ -104,10 +109,7 @@ static int re_match_groups(pcre2_code *re, const char *s,
 static char *xstrdup_or_null(const char *s)
 {
     if (s == NULL) return NULL;
-    size_t n = strlen(s);
-    char *p = (char *)malloc(n + 1);
-    if (p) memcpy(p, s, n + 1);
-    return p;
+    return strdup(s);
 }
 
 /* In-place replace every occurrence of `a` with `b`. Returns new heap
@@ -140,6 +142,7 @@ static char **split_char(const char *s, char delim, size_t *out_n)
             toks = np;
         }
         char *piece = (char *)malloc(len + 1);
+        if (piece == NULL) break;
         memcpy(piece, cur, len);
         piece[len] = '\0';
         toks[(*out_n)++] = piece;

@@ -31,3 +31,20 @@ Branch: snyk-self-scan-20260511
 ## Build verification
 
 `make` rebuilds photon-report-db cleanly with `-Werror`.
+
+## C port (photonos-package-report/photonos-package-report), 2026-11-09
+
+Snyk Code: **70 -> 56** (25 MEDIUM -> 15). Real defects fixed; remaining findings
+classified per location in `accepted/photonos-package-report.json` (`c_port`).
+
+- **Real, fixed:** SHA cache file name taken from upstream data allowed `../` out of
+  `SOURCES_NEW/` (reproduced; cache is on by default). Also: SPECS_NEW_C file name from
+  the upstream version (defense in depth), unchecked allocations in `version.c`,
+  overflow-safe git output buffer, Koji URL segments, report path truncation.
+- **Remaining 56:** Snyk C-model limits (memcpy of a sub-range = "unterminated",
+  PCRE-bounded copies, read()-bounded loops), operator-chosen output dirs, SHA-1 needed
+  for `%define sha1` parity, early-return frees.
+- **Parity:** output-neutral by construction and by test: hermetic old-vs-new run over
+  all 8 branches' SPECS, 14/14 `.prn` byte-identical; `ctest` 15/15. The networked
+  PS->C parity cycle could not run: PS snapshot artifacts have expired and the PS, C-side
+  parity and PR-gate workflows are disabled.

@@ -69,5 +69,183 @@
       "location": "package-report-database-tool/test/test_csv_parser.c:104",
       "fix": "Added null-check on fopen result before fclose to avoid passing NULL to fclose when /tmp/test_empty.prn cannot be created."
     }
-  ]
+  ],
+  "c_port": {
+    "subdir": "photonos-package-report/photonos-package-report",
+    "scan_date": "2026-11-09",
+    "note": "Snyk Code 70 -> 56. Every finding was reviewed; real defects fixed (below), the rest classified per location. All fixes are output-neutral: hermetic run of old vs new binary over all 8 branches' SPECS = 14/14 .prn byte-identical (~13.9k rows); ctest 15/15.",
+    "hard_fixes": [
+      {
+        "location": "src/check_urlhealth.c col9_cache_path",
+        "fix": "REAL path traversal: the SHA cache file was SOURCES_NEW/<UpdateDownloadName>, a name from upstream data, and the downloaded body is written there (cache on by default since M135). '../../../etc/cron.d/x' resolved outside the cache (reproduced). Names that are not one plain path component now get no cache path; the SHA comes from the live download (same value, uncached)."
+      },
+      {
+        "location": "src/modify_spec.c pr_modify_spec_file",
+        "fix": "SPECS_NEW_C/<Name>/<spec>-<UpdateAvailable>.spec used the upstream version verbatim; a '/' or '..' could leave SPECS_NEW_C if the intermediate directory existed (defense in depth: not reachable in the reproduction). Refused now; out_dir/out_path snprintf truncation checked."
+      },
+      {
+        "location": "src/version.c",
+        "fix": "Unchecked malloc before memcpy in the PCRE capture helper and split_char; PCRE2_UNSET groups now captured as empty explicitly (same result as before) instead of memcpy from s + UNSET with length 0."
+      },
+      {
+        "location": "src/git_with_timeout.c append_buf",
+        "fix": "Overflow-safe size arithmetic and doubling ceiling; growth sequence unchanged."
+      },
+      {
+        "location": "src/koji.c",
+        "fix": "Fedora-page-derived version/release/src.rpm must be plain URL segments before being placed in the next kojipkgs URL."
+      },
+      {
+        "location": "src/main.c",
+        "fix": "Report output paths checked for snprintf truncation (three sites)."
+      },
+      {
+        "location": "src/provenance.c pr_prov_fedora_sha512",
+        "fix": "hex[128] terminated explicitly."
+      },
+      {
+        "location": "src/strutil.c, version.c, latest_name.c, check_urlhealth.c, parse_directory.c",
+        "fix": "Buffers terminated at each step (calloc + explicit '\\0'; strdup instead of copy-n+1 helpers) \u2014 cleared 14 ImproperNullTermination findings, rest are Snyk model limits."
+      },
+      {
+        "location": "tests/unit/test_phase4.c, test_provenance.c, test_phase3.c",
+        "fix": "asprintf instead of malloc+strcpy+strcat; fopen/fwrite/fclose checked; ftell < 0 handled."
+      }
+    ],
+    "accepted": [
+      {
+        "rule": "cpp/BufferOverflow",
+        "location": "photonos-package-report/src/git_with_timeout.c:129/246/247",
+        "count": 3,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "n comes from read() into a 4096-byte chunk; append_buf now has overflow-safe size arithmetic and doubling ceiling."
+      },
+      {
+        "rule": "cpp/BufferOverflow",
+        "location": "photonos-package-report/src/github_api.c:111/222/224/226",
+        "count": 4,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
+      },
+      {
+        "rule": "cpp/BufferOverflow",
+        "location": "photonos-package-report/src/gnome_cache.c:69",
+        "count": 1,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
+      },
+      {
+        "rule": "cpp/BufferOverflow",
+        "location": "photonos-package-report/src/pypi.c:89",
+        "count": 1,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
+      },
+      {
+        "rule": "cpp/BufferOverflow",
+        "location": "photonos-package-report/src/sourceforge.c:211",
+        "count": 1,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
+      },
+      {
+        "rule": "cpp/InsecureHash",
+        "location": "photonos-package-report/src/sha.c:18",
+        "count": 1,
+        "bucket": "DESIGN-DECISION",
+        "reason": "SHA-1 is computed only to reproduce '%define sha1' values that Photon spec files declare (column 9 parity with the PS script); it is not used for any trust decision."
+      },
+      {
+        "rule": "cpp/IntegerOverflow",
+        "location": "photonos-package-report/src/check_urlhealth.c:3233/3344",
+        "count": 2,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "Taint from getenv flag (PR_TEST_NETWORK / PR_SHA_CACHE presence) or a loop index; no arithmetic on the environment value itself."
+      },
+      {
+        "rule": "cpp/IntegerOverflow",
+        "location": "photonos-package-report/src/main.c:731",
+        "count": 1,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "Taint from getenv flag (PR_TEST_NETWORK / PR_SHA_CACHE presence) or a loop index; no arithmetic on the environment value itself."
+      },
+      {
+        "rule": "cpp/IntegerOverflow",
+        "location": "photonos-package-report/src/provenance.c:479",
+        "count": 2,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "read() into buf + used with length sizeof buf - 1 - used; loop breaks when full, so used never exceeds sizeof buf - 1."
+      },
+      {
+        "rule": "cpp/PT",
+        "location": "photonos-package-report/src/check_urlhealth.c:3344",
+        "count": 1,
+        "bucket": "FALSE-POSITIVE-POST-FIX",
+        "reason": "Call into pr_modify_spec_file with the upstream UpdateAvailable; the callee now refuses a version containing '/' or '\\\\' or a dot-only name and checks snprintf truncation. Snyk carries taint across the call."
+      },
+      {
+        "rule": "cpp/PT",
+        "location": "photonos-package-report/src/main.c:405/454/699/731",
+        "count": 4,
+        "bucket": "DESIGN-DECISION",
+        "reason": "Output dir is the operator's -workingDir/-scansDir ($PUBLIC/$HOME by PS L87 contract). Report paths are now checked for snprintf truncation instead of writing to a cut-off path."
+      },
+      {
+        "rule": "cpp/Ssrf",
+        "location": "photonos-package-report/src/koji.c:77",
+        "count": 1,
+        "bucket": "FALSE-POSITIVE-POST-FIX",
+        "reason": "Host is fixed (https://kojipkgs.fedoraproject.org/packages/...); version/release/src.rpm segments read from Fedora pages are now required to be plain URL segments. koji_fedora_lookup() is not called from production code."
+      },
+      {
+        "rule": "cpp/UseAfterFree/test",
+        "location": "photonos-package-report/tests/unit/test_phase3.c:224/232",
+        "count": 2,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "test_phase3: after free(buf) the code jumps straight to cleanup; buf is not used again."
+      },
+      {
+        "rule": "python/PT",
+        "location": "photonos-package-report/tools/diff_analyzer.py:111/189",
+        "count": 2,
+        "bucket": "DESIGN-DECISION",
+        "reason": "Developer tool: reads the PS/C snapshot directories named on its own command line."
+      },
+      {
+        "rule": "cpp/DoubleFree",
+        "location": "photonos-package-report/src/main.c:746/751",
+        "count": 2,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "Each free(clone_root) is on a separate early-return error path."
+      },
+      {
+        "rule": "cpp/DoubleFree/test",
+        "location": "photonos-package-report/tests/unit/test_phase3.c:236",
+        "count": 1,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "test_phase3: after free(buf) the code jumps straight to cleanup; buf is not used again."
+      },
+      {
+        "rule": "cpp/ImproperNullTermination",
+        "location": "photonos-package-report/src/check_urlhealth.c:149/152/227/231/232/234/251/624/1174/1495/1511/1574/1592/2196/2254/2294/2486/3034/3053/3084/3233",
+        "count": 22,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "Snyk models every memcpy/memmove of a sub-range as leaving an unterminated buffer; each flagged buffer is terminated in the next statement (explicit '\\0' after every segment in strutil.c's replace helpers, the M-strip memmoves, PCRE-capture copies). Satisfying the model would mean rewriting core string helpers that every .prn cell passes through."
+      },
+      {
+        "rule": "cpp/ImproperNullTermination",
+        "location": "photonos-package-report/src/source0_substitute.c:78/109",
+        "count": 2,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "Snyk models every memcpy/memmove of a sub-range as leaving an unterminated buffer; each flagged buffer is terminated in the next statement (explicit '\\0' after every segment in strutil.c's replace helpers, the M-strip memmoves, PCRE-capture copies). Satisfying the model would mean rewriting core string helpers that every .prn cell passes through."
+      },
+      {
+        "rule": "cpp/ImproperNullTermination",
+        "location": "photonos-package-report/src/koji.c:366/430",
+        "count": 3,
+        "bucket": "FALSE-POSITIVE",
+        "reason": "Snyk models every memcpy/memmove of a sub-range as leaving an unterminated buffer; each flagged buffer is terminated in the next statement (explicit '\\0' after every segment in strutil.c's replace helpers, the M-strip memmoves, PCRE-capture copies). Satisfying the model would mean rewriting core string helpers that every .prn cell passes through."
+      }
+    ]
+  }
 }

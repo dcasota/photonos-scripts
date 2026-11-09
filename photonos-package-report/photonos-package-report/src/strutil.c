@@ -21,7 +21,9 @@ char *str_replace_all(char *in, const char *a, const char *b)
     size_t in_len  = strlen(in);
     size_t out_len = in_len + count * (blen > alen ? blen - alen : 0)
                             - count * (alen > blen ? alen - blen : 0);
-    char *out = (char *)malloc(out_len + 1);
+    /* calloc: the buffer is NUL-terminated at every step, not only after
+     * the copy loop finishes. */
+    char *out = (char *)calloc(out_len + 1, 1);
     if (!out) return in;
 
     char *o = out;
@@ -32,11 +34,13 @@ char *str_replace_all(char *in, const char *a, const char *b)
             size_t tail = strlen(cur);
             memcpy(o, cur, tail);
             o += tail;
+            *o = '\0';
             break;
         }
         memcpy(o, cur, (size_t)(hit - cur));
         o += hit - cur;
         if (blen) { memcpy(o, b, blen); o += blen; }
+        *o = '\0';
         cur = hit + alen;
     }
     *o = '\0';
@@ -58,7 +62,9 @@ char *istr_replace_all(char *in, const char *a, const char *b)
     size_t in_len  = strlen(in);
     size_t out_len = in_len + count * (blen > alen ? blen - alen : 0)
                             - count * (alen > blen ? alen - blen : 0);
-    char *out = (char *)malloc(out_len + 1);
+    /* calloc: the buffer is NUL-terminated at every step, not only after
+     * the copy loop finishes. */
+    char *out = (char *)calloc(out_len + 1, 1);
     if (!out) return in;
 
     char *o = out;
@@ -69,11 +75,13 @@ char *istr_replace_all(char *in, const char *a, const char *b)
             size_t tail = strlen(cur);
             memcpy(o, cur, tail);
             o += tail;
+            *o = '\0';
             break;
         }
         memcpy(o, cur, (size_t)(hit - cur));
         o += hit - cur;
         if (blen) { memcpy(o, b, blen); o += blen; }
+        *o = '\0';
         cur = hit + alen;
     }
     *o = '\0';

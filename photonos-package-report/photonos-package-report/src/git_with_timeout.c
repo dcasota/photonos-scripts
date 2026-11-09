@@ -46,6 +46,7 @@
 #include "photonos_package_report.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -112,9 +113,14 @@ static void free_argv(char **argv)
 /* Append n bytes of `src` to a growable buffer `*dst` (size `*len`, cap `*cap`). */
 static int append_buf(char **dst, size_t *len, size_t *cap, const char *src, size_t n)
 {
-    if (*len + n + 1 > *cap) {
-        size_t nc = (*cap ? *cap * 2 : 4096);
-        while (nc < *len + n + 1) nc *= 2;
+    if (n > SIZE_MAX - *len - 1) return -1;          /* *len + n + 1 would wrap */
+    size_t need = *len + n + 1;
+    if (need > *cap) {
+        size_t nc = (*cap ? *cap : 2048);
+        while (nc < need) {
+            if (nc > SIZE_MAX / 2) { nc = need; break; }
+            nc *= 2;
+        }
         char *nb = realloc(*dst, nc);
         if (!nb) return -1;
         *dst = nb;
