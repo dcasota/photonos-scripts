@@ -130,6 +130,50 @@ static int run_cmd_output(const char *cmd, char *output, size_t output_size) {
     return pclose(fp);
 }
 
+/* Run argv[0] with argv directly (no shell) and capture stdout+stderr into
+ * output, like `cmd 2>&1`. Returns the exit status, or -1 if it could not be
+ * run. Used where an argument comes from package content, so no file name
+ * can be interpreted by a shell. */
+static int run_argv_output(const char *const argv[], char *output, size_t output_size) {
+    int fds[2];
+    if (output_size == 0 || pipe(fds) != 0) return -1;
+    output[0] = '\0';
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return -1;
+    }
+    if (pid == 0) {
+        dup2(fds[1], STDOUT_FILENO);
+        dup2(fds[1], STDERR_FILENO);
+        close(fds[0]);
+        close(fds[1]);
+        execvp(argv[0], (char *const *)argv);
+        _exit(127);
+    }
+    close(fds[1]);
+    size_t total = 0;
+    ssize_t n;
+    char buf[256];
+    while ((n = read(fds[0], buf, sizeof(buf))) > 0 || (n < 0 && errno == EINTR)) {
+        if (n < 0) continue;
+        /* Keep reading after the buffer is full so the child never blocks
+         * on a full pipe; bytes beyond output_size - 1 are dropped. */
+        for (ssize_t i = 0; i < n && total + 1 < output_size; i++) {
+            output[total++] = buf[i];
+        }
+    }
+    output[total] = '\0';
+    close(fds[0]);
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    if (total > 0 && output[total - 1] == '\n') output[total - 1] = '\0';
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
 static int file_exists(const char *path) {
     struct stat st;
     return stat(path, &st) == 0;
@@ -1685,7 +1729,7 @@ rpm_validation_result_t* rpm_validate_mok_package(
         return result;
     }
     
-    snprintf(cmd, sizeof(cmd), "cd '%s' && rpm2cpio '%s' | cpio -idm 2>/dev/null", 
+    snprintf(cmd, sizeof(cmd), "cd '%s' && rpm2cpio '%s' | cpio -idm --no-absolute-filenames 2>/dev/null", 
              tmp_dir, rpm_path);
     run_cmd(cmd);
     
@@ -1702,9 +1746,8 @@ rpm_validation_result_t* rpm_validate_mok_package(
         snprintf(file_path, sizeof(file_path), "%s/%s", tmp_dir, efi_files[i]);
         
         if (file_exists(file_path)) {
-            snprintf(cmd, sizeof(cmd), "sbverify --cert '%s' '%s' 2>&1", 
-                     mok_cert, file_path);
-            if (run_cmd_output(cmd, output, sizeof(output)) != 0 ||
+            const char *sbv[] = {"sbverify", "--cert", mok_cert, file_path, NULL};
+            if (run_argv_output(sbv, output, sizeof(output)) != 0 ||
                 strstr(output, "Signature verification OK") == NULL) {
                 result->signature_valid = 0;
                 result->error_message = strdup(output);
@@ -1713,20 +1756,28 @@ rpm_validation_result_t* rpm_validate_mok_package(
         }
     }
     
-    /* Also check kernel */
-    snprintf(cmd, sizeof(cmd), "find '%s/boot' -name 'vmlinuz-*' -type f 2>/dev/null | head -1", 
-             tmp_dir);
-    if (run_cmd_output(cmd, output, sizeof(output)) == 0 && strlen(output) > 0) {
-        snprintf(cmd, sizeof(cmd), "sbverify --cert '%s' '%s' 2>&1", 
-                 mok_cert, output);
-        char verify_output[4096];
-        if (run_cmd_output(cmd, verify_output, sizeof(verify_output)) != 0 ||
-            strstr(verify_output, "Signature verification OK") == NULL) {
-            result->signature_valid = 0;
-            if (!result->error_message) {
-                result->error_message = strdup(verify_output);
+    /* Also check kernel. The file name comes from the package payload, so
+     * it is found with glob() and handed to sbverify as an argv element,
+     * never through a shell. */
+    char kernel_glob[600];
+    snprintf(kernel_glob, sizeof(kernel_glob), "%s/boot/vmlinuz-*", tmp_dir);
+    glob_t kg;
+    if (glob(kernel_glob, GLOB_NOSORT, NULL, &kg) == 0) {
+        for (size_t k = 0; k < kg.gl_pathc; k++) {
+            struct stat kst;
+            if (lstat(kg.gl_pathv[k], &kst) != 0 || !S_ISREG(kst.st_mode)) continue;
+            const char *sbv[] = {"sbverify", "--cert", mok_cert, kg.gl_pathv[k], NULL};
+            char verify_output[4096];
+            if (run_argv_output(sbv, verify_output, sizeof(verify_output)) != 0 ||
+                strstr(verify_output, "Signature verification OK") == NULL) {
+                result->signature_valid = 0;
+                if (!result->error_message) {
+                    result->error_message = strdup(verify_output);
+                }
             }
+            break;  /* first regular vmlinuz-*, as before */
         }
+        globfree(&kg);
     }
     
     /* Cleanup */

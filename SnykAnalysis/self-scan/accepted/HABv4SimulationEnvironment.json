@@ -1,8 +1,70 @@
 {
   "subdir": "HABv4SimulationEnvironment",
-  "scan_date": "2026-05-11",
-  "note": "PhotonOS-HABv4Emulation-ISOCreator is a privileged CLI tool that builds and signs Photon OS ISOs as root. It already validates every CLI argument via validate_path_safe (rejects ;|&$`\\\"'\\n\\r\\t and ..) and validate_release. The operator's HOME env var is operator-controlled.",
-  "accepted": [
+  "scan_date": "2026-11-09",
+  "note": "Iter 2 (v1.9.87): 30 -> 0 open. Every finding was fixed at its root cause; nothing is accepted. Two iter-1 verdicts were wrong and are corrected below (rpm_secureboot_patcher.c popen was injectable from RPM payload file names; HOME was not validated).",
+  "accepted": [],
+  "hard_fixes": [
+    {
+      "iteration": 2,
+      "rule": "cpp/CommandInjection",
+      "count": 17,
+      "location": "ISOCreator.c:1135,1152,1168,1204; habv4_efuse.c:250-319 (13)",
+      "fix": "create_efuse_img wrote `losetup --show` output to the predictable /tmp/habv4-loop-<pid>.txt and re-read it; as root a planted symlink/file let another user choose loop_dev, which only had to start with '/' before going into ~10 single-quoted shell commands. Now the output is captured directly (no temp file) and parse_loop_device() accepts only /dev/loop<1-6 digits> and rebuilds the path from the parsed number. Verified end to end (loop attached, partitioned, formatted, detached)."
+    },
+    {
+      "iteration": 2,
+      "rule": "cpp/CommandInjection",
+      "count": 2,
+      "location": "ISOCreator.c:531; habv4_common.c:318",
+      "fix": "check_certificate_expiry no longer runs `date -d` in a shell: openssl's notAfter is parsed in C (openssl_date_to_epoch, sscanf + timegm, strict format). Same truncation as the former $(( / 86400 )); 30-day cert -> 29 both ways."
+    },
+    {
+      "iteration": 2,
+      "rule": "cpp/CommandInjection",
+      "count": 2,
+      "location": "rpm_secureboot_patcher.c:110,1734",
+      "fix": "rpm_validate_mok_package passed a vmlinuz-* name found inside the validated RPM into `sbverify '...'` via popen. Reproduced: an RPM containing boot/vmlinuz-x'$(touch PWNED)' executed the payload. Now glob() finds the kernel and run_argv_output() runs sbverify via fork/execvp with no shell; cpio gets --no-absolute-filenames. Correctly signed kernel still verifies (signature_valid=1). Supersedes the iter-1 FALSE-POSITIVE verdict for :110."
+    },
+    {
+      "iteration": 2,
+      "rule": "cpp/CommandInjection+cpp/PT",
+      "count": 7,
+      "location": "ISOCreator.c:1707,2335,2567,2616,2635,2714,5958",
+      "fix": "cfg.photon_dir was built from unvalidated $HOME and then interpolated into shell commands. The home dir now comes from getpwuid(geteuid()) (the effective user's home; /root for the documented root use) and is checked with validate_path_safe; --work-dir remains the override. Supersedes the iter-1 DESIGN-DECISION that HOME is operator-controlled."
+    },
+    {
+      "iteration": 2,
+      "rule": "cpp/ClearTextLogging",
+      "count": 2,
+      "location": "ISOCreator.c:866; habv4_keys.c:255",
+      "fix": "Not logging: the gpg --gen-key batch file. Its text is a compile-time constant, now written with fputs of string-literal concatenation instead of a format string."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:480",
+      "fix": "Added whitelist sanitizer on the openssl notAfter output before formatting it into a shell 'date -d' command. Reject any character outside [A-Za-z0-9 :+-.,] so a maliciously-crafted cert cannot inject shell syntax through the certificate's NotAfter field.",
+      "iteration": 1
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/habv4_common.c:307",
+      "fix": "Same defensive whitelist sanitizer in habv4_common.c's check_certificate_expiry; rejects any char outside [A-Za-z0-9 :+-.,] before piping the openssl output into 'date -d'.",
+      "iteration": 1
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "src/rpm_secureboot_patcher.c:236",
+      "fix": "Replaced strcpy(file_pattern, last_slash + 1) with snprintf bounded by sizeof(file_pattern); also bounds-clamped the memcpy into dir_part so an oversized pattern can no longer overflow either buffer.",
+      "iteration": 1
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "src/rpm_secureboot_patcher.c:238",
+      "fix": "Same: strcpy(file_pattern, pattern) replaced with snprintf bounded by sizeof(file_pattern).",
+      "iteration": 1
+    }
+  ],
+  "iter1_accepted_superseded": [
     {
       "rule": "cpp/ClearTextLogging",
       "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:815",
@@ -80,28 +142,6 @@
       "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1313",
       "bucket": "DESIGN-DECISION",
       "reason": "Same: kernel source path under cfg.photon_dir/SPECS/linux/."
-    }
-  ],
-  "hard_fixes": [
-    {
-      "rule": "cpp/CommandInjection",
-      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:480",
-      "fix": "Added whitelist sanitizer on the openssl notAfter output before formatting it into a shell 'date -d' command. Reject any character outside [A-Za-z0-9 :+-.,] so a maliciously-crafted cert cannot inject shell syntax through the certificate's NotAfter field."
-    },
-    {
-      "rule": "cpp/CommandInjection",
-      "location": "src/habv4_common.c:307",
-      "fix": "Same defensive whitelist sanitizer in habv4_common.c's check_certificate_expiry; rejects any char outside [A-Za-z0-9 :+-.,] before piping the openssl output into 'date -d'."
-    },
-    {
-      "rule": "cpp/UnsafeFunctionStringHandling",
-      "location": "src/rpm_secureboot_patcher.c:236",
-      "fix": "Replaced strcpy(file_pattern, last_slash + 1) with snprintf bounded by sizeof(file_pattern); also bounds-clamped the memcpy into dir_part so an oversized pattern can no longer overflow either buffer."
-    },
-    {
-      "rule": "cpp/UnsafeFunctionStringHandling",
-      "location": "src/rpm_secureboot_patcher.c:238",
-      "fix": "Same: strcpy(file_pattern, pattern) replaced with snprintf bounded by sizeof(file_pattern)."
     }
   ]
 }

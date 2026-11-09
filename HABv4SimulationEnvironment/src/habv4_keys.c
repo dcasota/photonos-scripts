@@ -252,18 +252,19 @@ int generate_gpg_keys(void) {
         return -1;
     }
     
-    fprintf(f,
-        "%%echo Generating %s\n"
+    /* The batch text is a compile-time constant: write it verbatim. */
+    fputs(
+        "%echo Generating " GPG_KEY_NAME "\n"
         "Key-Type: RSA\n"
         "Key-Length: 4096\n"
         "Key-Usage: sign\n"
-        "Name-Real: %s\n"
-        "Name-Email: %s\n"
+        "Name-Real: " GPG_KEY_NAME "\n"
+        "Name-Email: " GPG_KEY_EMAIL "\n"
         "Expire-Date: 0\n"
-        "%%no-protection\n"
-        "%%commit\n"
-        "%%echo Done\n",
-        GPG_KEY_NAME, GPG_KEY_NAME, GPG_KEY_EMAIL
+        "%no-protection\n"
+        "%commit\n"
+        "%echo Done\n",
+        f
     );
     fclose(f);
     

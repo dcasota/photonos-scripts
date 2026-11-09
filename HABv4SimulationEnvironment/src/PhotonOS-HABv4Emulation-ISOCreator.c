@@ -34,6 +34,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <time.h>
+#include <pwd.h>
 
 #include "rpm_secureboot_patcher.h"
 
@@ -41,7 +42,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.86"
+#define VERSION "1.9.87"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -403,6 +404,29 @@ static char *run_cmd_capture(const char *cmd) {
     return buf;
 }
 
+/* Parse losetup --show output into "/dev/loopN".
+ * Returns 1 and writes the canonical device path to out on success, 0 if the
+ * output is anything other than /dev/loop followed by digits (and an optional
+ * trailing newline). The result is rebuilt from the parsed number, so no byte
+ * of the command output is copied into later shell commands. */
+static int parse_loop_device(const char *text, char *out, size_t out_size) {
+    static const char prefix[] = "/dev/loop";
+    if (!text || strncmp(text, prefix, sizeof(prefix) - 1) != 0) return 0;
+    const char *p = text + sizeof(prefix) - 1;
+    unsigned int n = 0;
+    int digits = 0;
+    while (*p >= '0' && *p <= '9') {
+        if (++digits > 6 || n > 99999u) return 0;  /* at most /dev/loop999999 */
+        n = n * 10u + (unsigned int)(*p - '0');
+        p++;
+    }
+    if (digits == 0) return 0;
+    while (*p == '\n' || *p == '\r') p++;
+    if (*p != '\0') return 0;
+    int w = snprintf(out, out_size, "/dev/loop%u", n);
+    return w > 0 && (size_t)w < out_size;
+}
+
 /* Resolve the path to a file inside the photon_installer Python package
  * at any Python version. Photon 4.0 ships python3.10, 5.0 ships python3.14
  * (older versions of this tool hardcoded python3.11 and silently skipped
@@ -482,6 +506,38 @@ static const char *get_host_arch(void) {
  * Certificate Monitoring
  * ============================================================================ */
 
+/* Convert openssl's notAfter text ("Nov  9 12:00:00 2027 GMT") to a UTC
+ * epoch. Returns 0 on success, -1 if the text is not in that format. Parsed
+ * in-process so certificate content never reaches a shell. */
+static int openssl_date_to_epoch(const char *text, time_t *out) {
+    static const char *months[] = {"Jan","Feb","Mar","Apr","May","Jun",
+                                   "Jul","Aug","Sep","Oct","Nov","Dec"};
+    char mon[4] = {0}, tz[4] = {0};
+    int day, hh, mm, ss, year;
+    if (sscanf(text, "%3s %d %d:%d:%d %d %3s", mon, &day, &hh, &mm, &ss, &year, tz) != 7)
+        return -1;
+    if (strcmp(tz, "GMT") != 0) return -1;
+    int m = -1;
+    for (int i = 0; i < 12; i++) {
+        if (strcmp(mon, months[i]) == 0) { m = i; break; }
+    }
+    if (m < 0 || day < 1 || day > 31 || hh < 0 || hh > 23 || mm < 0 || mm > 59 ||
+        ss < 0 || ss > 60 || year < 1950 || year > 9999)
+        return -1;
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    tm.tm_year = year - 1900;
+    tm.tm_mon = m;
+    tm.tm_mday = day;
+    tm.tm_hour = hh;
+    tm.tm_min = mm;
+    tm.tm_sec = ss;
+    time_t t = timegm(&tm);
+    if (t == (time_t)-1) return -1;
+    *out = t;
+    return 0;
+}
+
 /**
  * Check certificate expiration and return days until expiry.
  * Returns: positive = days remaining, 0 = expired today, negative = already expired
@@ -512,32 +568,11 @@ static int check_certificate_expiry(const char *cert_path) {
     size_t len = strlen(output);
     if (len > 0 && output[len-1] == '\n') output[len-1] = '\0';
 
-    /* Security: openssl notAfter output must look like an RFC 5280 generalized
-     * date (alnum, space, ':', '-', '+', '.', ','). Reject anything else
-     * before passing to a shell. Stops command injection via a maliciously-
-     * crafted cert. */
-    for (size_t i = 0; output[i]; i++) {
-        unsigned char c = (unsigned char)output[i];
-        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-                 (c >= '0' && c <= '9') || c == ' ' || c == ':' ||
-                 c == '-' || c == '+' || c == '.' || c == ',';
-        if (!ok) return -9999;
-    }
+    time_t not_after;
+    if (openssl_date_to_epoch(output, &not_after) != 0) return -9999;
 
-    /* Parse the date and calculate days remaining */
-    snprintf(cmd, sizeof(cmd),
-        "echo $(( ($(date -d '%s' +%%s) - $(date +%%s)) / 86400 ))", output);
-
-    fp = popen(cmd, "r");
-    if (!fp) return -9999;
-
-    int days = -9999;
-    if (fscanf(fp, "%d", &days) != 1) {
-        days = -9999;
-    }
-    pclose(fp);
-
-    return days;
+    /* Same truncation toward zero as the former shell $(( ... / 86400 )). */
+    return (int)((long long)(not_after - time(NULL)) / 86400);
 }
 
 /**
@@ -863,18 +898,19 @@ static int generate_gpg_keys(void) {
         return -1;
     }
     
-    fprintf(f,
-        "%%echo Generating %s\n"
+    /* The batch text is a compile-time constant: write it verbatim. */
+    fputs(
+        "%echo Generating " GPG_KEY_NAME "\n"
         "Key-Type: RSA\n"
         "Key-Length: 4096\n"
         "Key-Usage: sign\n"
-        "Name-Real: %s\n"
-        "Name-Email: %s\n"
+        "Name-Real: " GPG_KEY_NAME "\n"
+        "Name-Email: " GPG_KEY_EMAIL "\n"
         "Expire-Date: 0\n"
-        "%%no-protection\n"
-        "%%commit\n"
-        "%%echo Done\n",
-        GPG_KEY_NAME, GPG_KEY_NAME, GPG_KEY_EMAIL
+        "%no-protection\n"
+        "%commit\n"
+        "%echo Done\n",
+        f
     );
     fclose(f);
     
@@ -1095,35 +1131,21 @@ static int create_efuse_img(const char *out_path, int size_mb) {
         return -1;
     }
 
-    /* 2. Attach as loop device with partition scan, capture device path. */
-    char loop_dev_file[256];
-    snprintf(loop_dev_file, sizeof(loop_dev_file),
-             "/tmp/habv4-loop-%d.txt", (int)getpid());
-    snprintf(cmd, sizeof(cmd),
-             "losetup -fP --show '%s' > '%s'",
-             out_path, loop_dev_file);
-    if (run_cmd(cmd) != 0) {
+    /* 2. Attach as loop device with partition scan, capture device path.
+     * The path is read straight from losetup's stdout (no temp file: a
+     * predictable /tmp name could be pre-planted by another user) and is
+     * rebuilt from its digits, so only "/dev/loopN" reaches a shell. */
+    char loop_dev[32];
+    snprintf(cmd, sizeof(cmd), "losetup -fP --show '%s'", out_path);
+    char *losetup_out = run_cmd_capture(cmd);
+    if (!losetup_out) {
         log_error("losetup failed - is the loop kernel module available?");
-        unlink(loop_dev_file);
         return -1;
     }
-
-    char loop_dev[128] = {0};
-    FILE *lf = fopen(loop_dev_file, "r");
-    if (!lf || !fgets(loop_dev, sizeof(loop_dev), lf)) {
-        log_error("Could not read loop device path");
-        if (lf) fclose(lf);
-        unlink(loop_dev_file);
-        return -1;
-    }
-    fclose(lf);
-    unlink(loop_dev_file);
-    size_t loop_len = strlen(loop_dev);
-    while (loop_len > 0 && (loop_dev[loop_len-1] == '\n' || loop_dev[loop_len-1] == '\r')) {
-        loop_dev[--loop_len] = '\0';
-    }
-    if (loop_len == 0 || loop_dev[0] != '/') {
-        log_error("losetup returned unexpected output: '%s'", loop_dev);
+    int loop_ok = parse_loop_device(losetup_out, loop_dev, sizeof(loop_dev));
+    free(losetup_out);
+    if (!loop_ok) {
+        log_error("losetup did not return a /dev/loopN device - is the loop kernel module available?");
         return -1;
     }
     log_info("loop device: %s", loop_dev);
@@ -6645,8 +6667,19 @@ int main(int argc, char *argv[]) {
     cfg.mok_key_bits = DEFAULT_MOK_KEY_BITS;
     cfg.cert_warn_days = DEFAULT_CERT_WARN_DAYS;
     
-    char *home = getenv("HOME");
-    if (!home) home = "/root";
+    /* The home directory becomes the root of cfg.photon_dir, which is
+     * interpolated into many shell commands. Take it from the password
+     * database for the effective user rather than from $HOME, which the
+     * caller controls (sudo can keep the invoking user's HOME); --work-dir
+     * is the supported way to build somewhere else. It is still held to the
+     * same rule as every path given on the command line. */
+    const struct passwd *pw = getpwuid(geteuid());
+    const char *home = (pw && pw->pw_dir && pw->pw_dir[0]) ? pw->pw_dir : "/root";
+    if (home[0] != '/' || !validate_path_safe(home)) {
+        log_error("Home directory of the effective user must be an absolute path "
+                  "without shell metacharacters or '..'");
+        return 1;
+    }
     snprintf(cfg.photon_dir, sizeof(cfg.photon_dir), "%s/%s", home, cfg.release);
     
     static struct option long_options[] = {
