@@ -170,6 +170,27 @@ int create_efuse_usb(const char *device) {
     return 0;
 }
 
+/* Parse losetup --show output into "/dev/loopN". Returns 1 on success, 0 if
+ * the output is anything but /dev/loop + digits (+ newline). The result is
+ * rebuilt from the parsed number, so command output never reaches a shell. */
+static int parse_loop_device(const char *text, char *out, size_t out_size) {
+    static const char prefix[] = "/dev/loop";
+    if (!text || strncmp(text, prefix, sizeof(prefix) - 1) != 0) return 0;
+    const char *p = text + sizeof(prefix) - 1;
+    unsigned int n = 0;
+    int digits = 0;
+    while (*p >= '0' && *p <= '9') {
+        if (++digits > 6 || n > 99999u) return 0;  /* at most /dev/loop999999 */
+        n = n * 10u + (unsigned int)(*p - '0');
+        p++;
+    }
+    if (digits == 0) return 0;
+    while (*p == '\n' || *p == '\r') p++;
+    if (*p != '\0') return 0;
+    int w = snprintf(out, out_size, "/dev/loop%u", n);
+    return w > 0 && (size_t)w < out_size;
+}
+
 /* ============================================================================
  * eFuse Virtual USB Image Creation (file-backed)
  * ============================================================================
@@ -210,35 +231,22 @@ int create_efuse_img(const char *out_path, int size_mb) {
         return -1;
     }
 
-    /* 2. Attach as loop device (with partition scan); capture device path. */
-    char loop_dev_file[256];
-    snprintf(loop_dev_file, sizeof(loop_dev_file),
-             "/tmp/habv4-loop-%d.txt", (int)getpid());
-    snprintf(cmd, sizeof(cmd),
-             "losetup -fP --show '%s' > '%s'",
-             out_path, loop_dev_file);
-    if (run_cmd(cmd) != 0) {
+    /* 2. Attach as loop device with partition scan, capture device path.
+     * The path is read straight from losetup's stdout (no temp file: a
+     * predictable /tmp name could be pre-planted by another user) and is
+     * rebuilt from its digits, so only "/dev/loopN" reaches a shell. */
+    char loop_dev[32];
+    char losetup_out[128] = {0};
+    snprintf(cmd, sizeof(cmd), "losetup -fP --show '%s'", out_path);
+    FILE *lp = popen(cmd, "r");
+    if (!lp) {
         log_error("losetup failed - is the loop kernel module available?");
-        unlink(loop_dev_file);
         return -1;
     }
-
-    char loop_dev[128] = {0};
-    FILE *lf = fopen(loop_dev_file, "r");
-    if (!lf || !fgets(loop_dev, sizeof(loop_dev), lf)) {
-        log_error("Could not read loop device path");
-        if (lf) fclose(lf);
-        unlink(loop_dev_file);
-        return -1;
-    }
-    fclose(lf);
-    unlink(loop_dev_file);
-    size_t loop_len = strlen(loop_dev);
-    while (loop_len > 0 && (loop_dev[loop_len-1] == '\n' || loop_dev[loop_len-1] == '\r')) {
-        loop_dev[--loop_len] = '\0';
-    }
-    if (loop_len == 0 || loop_dev[0] != '/') {
-        log_error("losetup returned unexpected output: '%s'", loop_dev);
+    int got = fgets(losetup_out, sizeof(losetup_out), lp) != NULL;
+    int lrc = pclose(lp);
+    if (!got || lrc != 0 || !parse_loop_device(losetup_out, loop_dev, sizeof(loop_dev))) {
+        log_error("losetup did not return a /dev/loopN device - is the loop kernel module available?");
         return -1;
     }
     log_info("loop device: %s", loop_dev);

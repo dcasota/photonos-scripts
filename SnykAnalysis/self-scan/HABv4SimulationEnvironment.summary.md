@@ -37,3 +37,27 @@ Branch: snyk-self-scan-20260511
 ## Build verification
 
 `make` in `HABv4SimulationEnvironment/src` rebuilds PhotonOS-HABv4Emulation-ISOCreator cleanly (only pre-existing `strdup_safe` unused-function warning remains).
+
+## Iter 2 (2026-11-09, v1.9.87)
+
+| Phase  | Total | Medium | Low |
+|--------|-------|--------|-----|
+| Before | 30    | 27     | 3   |
+| Iter 2 | 0     | 0      | 0   |
+
+| Root cause | Findings | Fix |
+|---|---|---|
+| `losetup` output via predictable `/tmp/habv4-loop-<pid>.txt` | 17 | capture stdout directly; accept only `/dev/loopN`, rebuilt from the number |
+| cert notAfter passed to `date -d` in a shell | 2 | parse in C (`sscanf` + `timegm`) |
+| RPM payload file name into `sbverify '…'` (**reproduced injection**) | 2 | `glob()` + `fork`/`execvp`, `cpio --no-absolute-filenames` |
+| unvalidated `$HOME` -> `photon_dir` -> shell | 7 | home from `getpwuid(geteuid())`, `validate_path_safe` |
+| gpg batch file written with a format string | 2 | `fputs` of the constant text |
+
+Two iter-1 verdicts were wrong and are superseded (rpm_secureboot_patcher popen
+"false positive"; HOME "operator-controlled"). Two findings the first fix
+introduced (BufferOverflow in the capture loop, IntegerOverflow in the loop
+number parser) were closed with explicit bounds before the re-scan.
+
+Verification: full `make` build (only the pre-existing `strdup_safe` warning);
+helper harness (loop parser, date parser, real 30-day cert); malicious vs signed
+RPM through the old and new validator; `--create-efuse-img` end to end as root.

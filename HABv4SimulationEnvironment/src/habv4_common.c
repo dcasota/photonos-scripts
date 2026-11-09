@@ -280,6 +280,38 @@ const char *get_host_arch(void) {
  * Certificate Functions
  * ============================================================================ */
 
+/* Convert openssl's notAfter text ("Nov  9 12:00:00 2027 GMT") to a UTC
+ * epoch. Returns 0 on success, -1 if the text is not in that format. Parsed
+ * in-process so certificate content never reaches a shell. */
+static int openssl_date_to_epoch(const char *text, time_t *out) {
+    static const char *months[] = {"Jan","Feb","Mar","Apr","May","Jun",
+                                   "Jul","Aug","Sep","Oct","Nov","Dec"};
+    char mon[4] = {0}, tz[4] = {0};
+    int day, hh, mm, ss, year;
+    if (sscanf(text, "%3s %d %d:%d:%d %d %3s", mon, &day, &hh, &mm, &ss, &year, tz) != 7)
+        return -1;
+    if (strcmp(tz, "GMT") != 0) return -1;
+    int m = -1;
+    for (int i = 0; i < 12; i++) {
+        if (strcmp(mon, months[i]) == 0) { m = i; break; }
+    }
+    if (m < 0 || day < 1 || day > 31 || hh < 0 || hh > 23 || mm < 0 || mm > 59 ||
+        ss < 0 || ss > 60 || year < 1950 || year > 9999)
+        return -1;
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    tm.tm_year = year - 1900;
+    tm.tm_mon = m;
+    tm.tm_mday = day;
+    tm.tm_hour = hh;
+    tm.tm_min = mm;
+    tm.tm_sec = ss;
+    time_t t = timegm(&tm);
+    if (t == (time_t)-1) return -1;
+    *out = t;
+    return 0;
+}
+
 int check_certificate_expiry(const char *cert_path) {
     char cmd[1024];
     char output[256];
@@ -301,30 +333,11 @@ int check_certificate_expiry(const char *cert_path) {
     size_t len = strlen(output);
     if (len > 0 && output[len-1] == '\n') output[len-1] = '\0';
 
-    /* Security: openssl notAfter output must look like an RFC 5280 generalized
-     * date (alnum, space, ':', '-', '+'). Reject anything else before passing
-     * to a shell. Stops command injection via a maliciously-crafted cert. */
-    for (size_t i = 0; output[i]; i++) {
-        unsigned char c = (unsigned char)output[i];
-        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-                 (c >= '0' && c <= '9') || c == ' ' || c == ':' ||
-                 c == '-' || c == '+' || c == '.' || c == ',';
-        if (!ok) return -9999;
-    }
+    time_t not_after;
+    if (openssl_date_to_epoch(output, &not_after) != 0) return -9999;
 
-    snprintf(cmd, sizeof(cmd),
-        "echo $(( ($(date -d '%s' +%%s) - $(date +%%s)) / 86400 ))", output);
-
-    fp = popen(cmd, "r");
-    if (!fp) return -9999;
-    
-    int days = -9999;
-    if (fscanf(fp, "%d", &days) != 1) {
-        days = -9999;
-    }
-    pclose(fp);
-    
-    return days;
+    /* Same truncation toward zero as the former shell $(( ... / 86400 )). */
+    return (int)((long long)(not_after - time(NULL)) / 86400);
 }
 
 int check_all_certificates(const char *keys_dir, int warn_days) {
