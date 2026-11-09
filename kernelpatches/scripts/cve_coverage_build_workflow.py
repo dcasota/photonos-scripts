@@ -36,6 +36,13 @@ from scripts.config import (
     KernelConfig,
     get_kernel_org_url,
 )
+from scripts.safe_io import (
+    confine,
+    require_filename,
+    require_supported_kernel,
+    require_version,
+    resolve_dir,
+)
 from scripts.build import KernelBuilder
 from scripts.cve_gap_detection import GapDetector, NVDFeedCache
 from scripts.cve_matrix import CVEMatrixBuilder, CVEPatchState
@@ -278,25 +285,33 @@ class CVECoverageBuildWorkflow:
         spec_filter: Optional[List[str]] = None,
         repo_base: Optional[Path] = None,
     ):
+        # The kernel series picks the kernel.org URL and the repo branch, and
+        # the spec names are joined onto the repo's SPECS dir, so accept only
+        # a supported series and plain file names. Raises ValueError.
+        kernel_version = require_supported_kernel(kernel_version)
         self.kernel_version = kernel_version
         self.cleanup = cleanup
         self.config = config or KernelConfig.from_env()
-        self.spec_filter = spec_filter or ["linux-esx.spec"]
-        self.repo_base = repo_base
+        self.spec_filter = [
+            require_filename(s, "spec file name")
+            for s in (spec_filter or ["linux-esx.spec"])
+        ]
+        self.repo_base = resolve_dir(repo_base, "repo base") if repo_base else None
         
-        self.mapping = KERNEL_MAPPINGS.get(kernel_version)
-        if not self.mapping:
-            raise ValueError(f"Unsupported kernel version: {kernel_version}")
+        self.mapping = KERNEL_MAPPINGS[kernel_version]
         
         # Determine repo directory - use repo_base if provided
-        if repo_base:
-            self.repo_dir = repo_base / self.mapping.branch.value
+        if self.repo_base:
+            self.repo_dir = confine(self.repo_base, self.mapping.branch.value)
         else:
             self.repo_dir = self.config.get_repo_dir(kernel_version)
         self.spec_dir = self.repo_dir / self.mapping.spec_dir
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_dir = output_dir or (self.config.report_dir / f"cve_build_workflow_{timestamp}")
+        self.output_dir = resolve_dir(
+            output_dir or (self.config.report_dir / f"cve_build_workflow_{timestamp}"),
+            "output directory",
+        )
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         self.report = WorkflowReport(kernel_series=kernel_version)
@@ -307,7 +322,7 @@ class CVECoverageBuildWorkflow:
         self._repo_cloned: bool = False
         self._feed_cache: Optional[NVDFeedCache] = None
         
-        log_file = self.output_dir / "workflow.log"
+        log_file = confine(self.output_dir, "workflow.log")
         setup_logging("cve_workflow", log_file=log_file)
     
     def cleanup_previous_run(self) -> None:
@@ -430,13 +445,19 @@ class CVECoverageBuildWorkflow:
         console.print(f"  Not Applicable: {stats.cve_not_applicable}")
         console.print(f"  [cyan]Coverage: {stats.coverage_percent}%[/cyan]")
         
-        # Save detailed CVE matrix to files
-        matrix_dir = self.output_dir / f"{phase_name}_cve_matrix"
+        # Save detailed CVE matrix to files. kernel_version was read from a
+        # spec file or kernel.org, so it is validated before naming files.
+        try:
+            version = require_version(kernel_version)
+            matrix_dir = confine(self.output_dir, f"{require_filename(phase_name, 'phase name')}_cve_matrix")
+        except ValueError as e:
+            console.print(f"  [yellow]Not saving CVE matrix files: {e}[/yellow]")
+            return stats, missing_cves
         matrix_dir.mkdir(parents=True, exist_ok=True)
         
-        matrix.save_json(matrix_dir / f"cve_matrix_{kernel_version}.json")
-        matrix.save_csv(matrix_dir / f"cve_matrix_{kernel_version}.csv")
-        matrix.save_stable_patch_csv(matrix_dir / f"cve_stable_patch_{kernel_version}.csv")
+        matrix.save_json(confine(matrix_dir, f"cve_matrix_{version}.json"))
+        matrix.save_csv(confine(matrix_dir, f"cve_matrix_{version}.csv"))
+        matrix.save_stable_patch_csv(confine(matrix_dir, f"cve_stable_patch_{version}.csv"))
         
         console.print(f"  [green]Saved detailed CVE matrix to {matrix_dir}[/green]")
         
@@ -478,7 +499,14 @@ class CVECoverageBuildWorkflow:
                     if commit_match:
                         commit_sha = commit_match.group(1)
                         patch_url = f"https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id={commit_sha}"
-                        patch_file = patch_dir / f"{commit_sha[:12]}-{cve_id}.patch"
+                        try:
+                            patch_file = confine(
+                                patch_dir,
+                                require_filename(f"{commit_sha[:12]}-{cve_id}.patch", "patch file name"),
+                            )
+                        except ValueError as e:
+                            logger.warning(f"Skipping {cve_id}: {e}")
+                            break
                         
                         if patch_file.exists():
                             downloaded.append(str(patch_file))
@@ -507,7 +535,7 @@ class CVECoverageBuildWorkflow:
         
         console.print(f"\n[bold]Integrating {len(patch_files)} patches into {spec_name}[/bold]")
         
-        spec_path = self.spec_dir / spec_name
+        spec_path = confine(self.spec_dir, require_filename(spec_name, "spec file name"))
         if not spec_path.exists():
             console.print(f"  [red]Spec file not found: {spec_path}[/red]")
             return 0
@@ -528,7 +556,11 @@ class CVECoverageBuildWorkflow:
             if spec.has_patch(sha_prefix):
                 continue
             
-            dest_path = sources_dir / patch_name
+            try:
+                dest_path = confine(sources_dir, require_filename(patch_name, "patch file name"))
+            except ValueError as e:
+                console.print(f"  [yellow]Skipping {patch_file}: {e}[/yellow]")
+                continue
             if not dest_path.exists():
                 shutil.copy2(patch_path, dest_path)
             
@@ -592,7 +624,7 @@ class CVECoverageBuildWorkflow:
         console.print(f"\n[bold]Updating spec to {new_version}[/bold]")
         
         for spec_name in self.spec_filter:
-            spec_path = self.spec_dir / spec_name
+            spec_path = confine(self.spec_dir, spec_name)
             if not spec_path.exists():
                 continue
             
@@ -617,11 +649,19 @@ class CVECoverageBuildWorkflow:
         if not kernel_url:
             return None
         
+        # target_version is read from kernel.org and becomes part of both the
+        # request URL and the local file name: digits and dots only.
+        try:
+            target_version = require_version(target_version, "stable version")
+        except ValueError as e:
+            console.print(f"  [red]{e}[/red]")
+            return None
+        
         patch_name = f"patch-{target_version}.xz"
         patch_url = f"{kernel_url}{patch_name}"
-        patch_dir = self.output_dir / "stable_patches"
+        patch_dir = confine(self.output_dir, "stable_patches")
         patch_dir.mkdir(parents=True, exist_ok=True)
-        patch_path = patch_dir / patch_name
+        patch_path = confine(patch_dir, patch_name)
         
         if download_file(patch_url, patch_path):
             console.print(f"  [green]Downloaded: {patch_name}[/green]")
@@ -658,7 +698,7 @@ class CVECoverageBuildWorkflow:
         result.cve_coverage = stats
         result.missing_cves = missing_cves
         
-        patch_dir = self.output_dir / "phase1_patches"
+        patch_dir = confine(self.output_dir, "phase1_patches")
         downloaded, patch_files = self.download_cve_patches(missing_cves, patch_dir)
         result.patches_downloaded = downloaded
         
@@ -714,7 +754,7 @@ class CVECoverageBuildWorkflow:
         result.cve_coverage = stats
         result.missing_cves = missing_cves
         
-        patch_dir = self.output_dir / "phase2_patches"
+        patch_dir = confine(self.output_dir, "phase2_patches")
         downloaded, patch_files = self.download_cve_patches(missing_cves, patch_dir)
         result.patches_downloaded = downloaded
         
@@ -750,8 +790,8 @@ class CVECoverageBuildWorkflow:
         end_time = datetime.now()
         self.report.total_runtime_seconds = int((end_time - start_time).total_seconds())
         
-        self.report.save_json(self.output_dir / "report.json")
-        self.report.save_markdown(self.output_dir / "report.md")
+        self.report.save_json(confine(self.output_dir, "report.json"))
+        self.report.save_markdown(confine(self.output_dir, "report.md"))
         
         self._print_summary()
         
@@ -816,7 +856,7 @@ def run_cve_build_workflow(
     workflow = CVECoverageBuildWorkflow(
         kernel_version=kernel_version,
         cleanup=cleanup,
-        output_dir=Path(output_dir) if output_dir else None,
+        output_dir=resolve_dir(output_dir, "output directory") if output_dir else None,
         config=config,
         spec_filter=spec_filter,
         repo_base=repo_base,
@@ -829,8 +869,8 @@ def run_cve_build_workflow(
                 workflow.cleanup_previous_run()
             result = await workflow.phase1_current_kernel()
             workflow.report.phases.append(result)
-            workflow.report.save_json(workflow.output_dir / "report.json")
-            workflow.report.save_markdown(workflow.output_dir / "report.md")
+            workflow.report.save_json(confine(workflow.output_dir, "report.json"))
+            workflow.report.save_markdown(confine(workflow.output_dir, "report.md"))
             return workflow.report
         else:
             return await workflow.run()

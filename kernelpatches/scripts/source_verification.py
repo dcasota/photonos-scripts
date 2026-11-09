@@ -7,7 +7,6 @@ to check if CVE patches are already included before adding them to spec files.
 
 import hashlib
 import lzma
-import os
 import re
 import shutil
 import tarfile
@@ -21,6 +20,7 @@ import requests
 
 from scripts.common import logger
 from scripts.config import DEFAULT_CONFIG, KernelConfig
+from scripts.safe_io import confine, require_version, safe_extract_tar
 
 
 @dataclass
@@ -68,11 +68,13 @@ class SourceVerifier:
     def _get_tarball_url(self, version: str) -> str:
         """Get the URL for kernel source tarball."""
         base_url = self.config.photon_sources_url
+        version = require_version(version)
         return f"{base_url}linux-{version}.tar.xz"
     
     def _get_cached_tarball_path(self, version: str) -> Path:
         """Get path for cached tarball."""
-        return self._cache_dir / f"linux-{version}.tar.xz"
+        version = require_version(version)
+        return confine(self._cache_dir, f"linux-{version}.tar.xz")
     
     def _download_with_retry(
         self,
@@ -141,7 +143,11 @@ class SourceVerifier:
         Returns:
             Path to downloaded tarball or None on failure
         """
-        tarball_path = self._get_cached_tarball_path(version)
+        try:
+            tarball_path = self._get_cached_tarball_path(version)
+        except ValueError as e:
+            logger.error(str(e))
+            return None
         
         if tarball_path.exists() and not force:
             file_size = tarball_path.stat().st_size
@@ -188,7 +194,11 @@ class SourceVerifier:
             return self._source_dir
         
         # Ensure tarball exists
-        tarball_path = self._get_cached_tarball_path(version)
+        try:
+            tarball_path = self._get_cached_tarball_path(version)
+        except ValueError as e:
+            logger.error(str(e))
+            return None
         if not tarball_path.exists():
             tarball_path = self.download_source(version)
             if not tarball_path:
@@ -202,28 +212,17 @@ class SourceVerifier:
         logger.info(f"Extracting source tarball to: {self._temp_dir}")
         
         try:
-            # Extract with progress logging and TarSlip protection: validate
-            # every member's resolved path stays under the temp dir before
-            # calling tar.extract.
-            extract_root = os.path.realpath(str(self._temp_dir))
+            # Extract with progress logging; safe_extract_tar refuses any
+            # member, or symlink planted by an earlier member, that would
+            # write outside the temp dir.
+            def _progress(done: int, total: int) -> None:
+                if done % 10000 == 0:
+                    logger.debug(f"  Extracted {done}/{total} files")
+
             with lzma.open(tarball_path) as xz_file:
                 with tarfile.open(fileobj=xz_file, mode='r:') as tar:
-                    members = tar.getmembers()
-                    total_members = len(members)
-                    logger.info(f"Extracting {total_members} files...")
-
-                    for idx, member in enumerate(members):
-                        dest = os.path.realpath(
-                            os.path.join(extract_root, member.name)
-                        )
-                        if not (dest == extract_root or
-                                dest.startswith(extract_root + os.sep)):
-                            raise RuntimeError(
-                                f"tar slip detected: {member.name}"
-                            )
-                        tar.extract(member, self._temp_dir)
-                        if (idx + 1) % 10000 == 0:
-                            logger.debug(f"  Extracted {idx + 1}/{total_members} files")
+                    logger.info(f"Extracting {len(tar.getmembers())} files...")
+                    safe_extract_tar(tar, self._temp_dir, progress=_progress)
             
             # Find the extracted directory (usually linux-X.Y.Z)
             extracted_dirs = [d for d in self._temp_dir.iterdir() if d.is_dir()]

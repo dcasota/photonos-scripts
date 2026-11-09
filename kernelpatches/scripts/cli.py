@@ -20,6 +20,7 @@ from scripts.config import (
     validate_kernel_version,
 )
 from scripts.models import CVESource, PatchSource
+from scripts.safe_io import require_filename, require_supported_kernel
 
 console = Console()
 
@@ -168,7 +169,10 @@ def parse_kernel_arg(kernel: str) -> List[str]:
     """Parse kernel argument: 'all', single value, or comma-separated list."""
     if kernel.lower() == "all":
         return list(SUPPORTED_KERNELS)
-    return [k.strip() for k in kernel.split(",")]
+    try:
+        return [require_supported_kernel(k) for k in kernel.split(",")]
+    except ValueError as e:
+        raise click.BadParameter(str(e), param_hint="--kernel")
 
 
 @main.command()
@@ -789,7 +793,10 @@ def cve_build_workflow(
     from scripts.cve_coverage_build_workflow import run_cve_build_workflow
     
     kernel_versions = parse_kernel_arg(kernel)
-    spec_filter = [s.strip() for s in specs.split(",")]
+    try:
+        spec_filter = [require_filename(s.strip(), "spec file name") for s in specs.split(",")]
+    except ValueError as e:
+        raise click.BadParameter(str(e), param_hint="--specs")
     
     all_success = True
     for kv in kernel_versions:
