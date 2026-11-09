@@ -34,3 +34,23 @@ add `docsystem/photon/` to a Snyk path-ignore list to drop the ~73 vendored-code
 ## Build verification
 
 `python3 -m py_compile` on each modified script succeeds.
+
+## tools/ iter 2 (2026-11-09)
+
+Snyk on `docsystem/tools`: 6 findings (4 MEDIUM, 2 LOW). Runtime-fixed: 6; Snyk still lists 6.
+
+- **documentation_lecturer.py PT x4 (MEDIUM) -> FIXED, false-positive-post-fix.** The iter-1
+  "plugin data dir" verdict was wrong: page URLs come from the remote `sitemap.xml`, and
+  `apply_fixes.map_url_to_local_path` followed `..` segments out of the docs checkout
+  (reproduced). Now dot segments are rejected, exact-name lookups pick `os.listdir()` entries,
+  and the result must resolve under `local_webserver`. Snyk follows taint through the
+  unresolved call into `open()`, so it cannot see the fix.
+- **mirror-repository.py PT x2 (LOW) -> DESIGN-DECISION** (operator `--local-path`, now
+  resolved and checked; deletion target is the `mkdtemp` dir).
+- Found while fixing: the mirror script **printed the GitHub token** in `Running: git push
+  https://user:TOKEN@...` and in error text (now redacted), and its URL parser truncated repo
+  names at the first dot (now anchored, GitHub naming rules).
+
+Verification: traversal PoC (`..`, `%2e%2e`, symlink) refused, legitimate, mixed-case and
+content-based mappings unchanged vs HEAD; lecturer test suite 22 pass / same 12 pre-existing
+errors before and after (stale tests calling removed methods); mirror URL/redaction cases pass.
