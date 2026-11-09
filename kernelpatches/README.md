@@ -15,7 +15,7 @@ The kernelpatches solution provides:
 
 ### Dependencies
 
-- Python 3.9+
+- Python 3.10+
 - click, requests, pydantic, GitPython, rich, aiohttp
 
 ## Quick Start
