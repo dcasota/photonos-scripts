@@ -350,7 +350,8 @@ int pr_prov_fedora_sha512(const char *body, size_t len, const char *file, char h
     char h[129];
     if (!pr_prov_sums_lookup(body, len, file, 0, alg, h)) return 0;
     if (strcmp(alg, "sha512") != 0) return 0;
-    memcpy(hex, h, 129);
+    memcpy(hex, h, 128);
+    hex[128] = '\0';
     return 1;
 }
 

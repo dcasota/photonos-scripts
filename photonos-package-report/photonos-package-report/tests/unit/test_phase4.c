@@ -208,15 +208,12 @@ static void test_secondary(void)
         free(*slot);
         *slot = xs(cases[i].value);
 
-        size_t tlen = strlen(cases[i].token);
-        char *src = malloc(strlen("https://h/") + tlen + 1);
-        strcpy(src, "https://h/");
-        strcat(src, cases[i].token);
+        char *src = NULL;
+        if (asprintf(&src, "https://h/%s", cases[i].token) < 0) abort();
 
         if (pr_source0_substitute(&t, &src, "") == 0) {
-            char *expected = malloc(strlen("https://h/") + strlen(cases[i].value) + 1);
-            strcpy(expected, "https://h/");
-            strcat(expected, cases[i].value);
+            char *expected = NULL;
+            if (asprintf(&expected, "https://h/%s", cases[i].value) < 0) abort();
             if (strcmp(src, expected) != 0) {
                 fprintf(stderr, "  FAIL %s: expected '%s' got '%s'\n",
                         cases[i].fieldname, expected, src);

@@ -86,10 +86,7 @@ static int is_blank(const char *s)
 
 static char *xstrdup(const char *s)
 {
-    size_t n = strlen(s);
-    char *p = (char *)malloc(n + 1);
-    if (p) memcpy(p, s, n + 1);
-    return p;
+    return strdup(s);
 }
 
 static int cmp_strcmp(const void *a, const void *b)

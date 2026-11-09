@@ -613,6 +613,21 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
  *   - otherwise              → legacy <upstreams>/<branch>/SOURCES_NEW/<name>
  *     derived from clone_root (C-local cache; stable across C runs only).
  * Returns NULL (→ legacy /tmp download) when caching is off or inputs missing. */
+/* The download name comes from upstream data (scraped listings, release and
+ * tag names). It becomes a file name under SOURCES_NEW/, and the cache file
+ * is written there, so it must be a single plain path component. A name
+ * that is not gets no cache path: the SHA is then computed from a live
+ * download (same value, uncached), so the .prn is unchanged. */
+static int is_plain_file_name(const char *name)
+{
+    if (name == NULL || name[0] == '\0') return 0;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        if (*p == '/' || *p == '\\' || *p < 0x20 || *p == 0x7f) return 0;
+    }
+    return 1;
+}
+
 static char *col9_cache_path(const char *clone_root, const char *download_name)
 {
     /* M145 (2026-06-06): treat empty-string env var the same as unset.
@@ -625,7 +640,7 @@ static char *col9_cache_path(const char *clone_root, const char *download_name)
     const char *e = getenv("PR_SHA_CACHE");
     if (e == NULL || e[0] == '\0') return NULL;
     if (clone_root == NULL || clone_root[0] == '\0') return NULL;
-    if (download_name == NULL || download_name[0] == '\0') return NULL;
+    if (!is_plain_file_name(download_name)) return NULL;
     const char *suffix = "/clones";
     size_t cl = strlen(clone_root), sl = strlen(suffix);
     if (cl < sl || strcmp(clone_root + cl - sl, suffix) != 0) return NULL;
@@ -1517,7 +1532,9 @@ static char *download_name_post(char *raw, const char *task_name,
      * which mangled word-initial 'v' names — the PyPI sdist path now
      * surfaces such names so PS L 4969 must match this guard.) */
     if ((raw[0] == 'v' || raw[0] == 'V') && raw[1] >= '0' && raw[1] <= '9') {
-        memmove(raw, raw + 1, strlen(raw));
+        size_t rl = strlen(raw);
+        memmove(raw, raw + 1, rl - 1);
+        raw[rl - 1] = '\0';
     }
 
     /* M25 — PS L 4772-4779: four per-spec overrides applied AFTER the

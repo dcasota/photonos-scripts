@@ -302,8 +302,9 @@ int pr_modify_spec_file(const pr_task_t *task,
     /* PS L 1466: $SpecsNewDirectory = Join(UpstreamsDir, photonDir,
      *                                       <out_subdir>, Name). */
     char out_dir[1024];
-    if (snprintf(out_dir, sizeof out_dir, "%s/%s/%s/%s",
-                 upstreams_dir, photon_dir, out_subdir, task->Name) < 0) {
+    int odl = snprintf(out_dir, sizeof out_dir, "%s/%s/%s/%s",
+                       upstreams_dir, photon_dir, out_subdir, task->Name);
+    if (odl < 0 || (size_t)odl >= sizeof out_dir) {
         free(out_buf); return -2;
     }
     if (mkdir_p(out_dir) != 0) {
@@ -322,9 +323,21 @@ int pr_modify_spec_file(const pr_task_t *task,
     char *upd_clean = strip_asc_suffix_dup(update_avail);
     if (upd_clean == NULL) { free(base); free(out_buf); return -2; }
 
+    /* The update version comes from upstream (tag/release names, scraped
+     * listings, PyPI). It is part of the output file name, so it must not
+     * carry a path separator or a dot-only name; such a version gets no
+     * SPECS_NEW file (the .prn is not affected). */
+    if (strchr(upd_clean, '/') != NULL || strchr(upd_clean, '\\') != NULL
+        || strcmp(upd_clean, ".") == 0 || strcmp(upd_clean, "..") == 0) {
+        fprintf(stderr, "::warning::modify_spec: refusing update version with a path "
+                        "separator for %s\n", task->Spec);
+        free(base); free(upd_clean); free(out_buf); return -2;
+    }
+
     char out_path[2048];
-    if (snprintf(out_path, sizeof out_path, "%s/%s-%s.spec",
-                 out_dir, base, upd_clean) < 0) {
+    int opl = snprintf(out_path, sizeof out_path, "%s/%s-%s.spec",
+                       out_dir, base, upd_clean);
+    if (opl < 0 || (size_t)opl >= sizeof out_path) {
         free(base); free(upd_clean); free(out_buf); return -2;
     }
     free(base); free(upd_clean);

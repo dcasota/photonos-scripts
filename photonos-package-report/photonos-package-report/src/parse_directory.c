@@ -139,7 +139,9 @@ static char *sha_name_extract(char **lines, size_t n, const char *sub)
         for (;;) {
             char *hit = strcasestr(cur, sub);
             if (!hit) break;
-            memmove(hit, hit + sublen, strlen(hit + sublen) + 1);
+            size_t rest = strlen(hit + sublen);
+            memmove(hit, hit + sublen, rest);
+            hit[rest] = '\0';
             cur = hit;
         }
         /* trim */

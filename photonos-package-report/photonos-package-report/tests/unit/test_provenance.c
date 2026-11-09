@@ -79,8 +79,9 @@ static char *write_file(const char *name, const char *data)
     char *p = NULL;
     if (asprintf(&p, "%s/%s", g_dir, name) < 0) abort();
     FILE *f = fopen(p, "wb");
-    fwrite(data, 1, strlen(data), f);
-    fclose(f);
+    if (f == NULL) abort();
+    if (fwrite(data, 1, strlen(data), f) != strlen(data)) abort();
+    if (fclose(f) != 0) abort();
     return p;
 }
 
