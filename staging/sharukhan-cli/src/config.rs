@@ -69,6 +69,8 @@ pub struct Config {
     pub variants_file: DataFile,
     /// Which PR each oracle check proves (evidence::load_attribution).
     pub check_prs: DataFile,
+    /// The defects each PR fixes and how to probe for them (crate::preligible).
+    pub pr_defects: DataFile,
 
     // ---- photon build tree -----------------------------------------------
     pub photon_tree: PathBuf,
@@ -317,6 +319,7 @@ impl Config {
             matrix_tsv: DataFile::from_setting(get, "SHARUKHAN_MATRIX", "permutations.tsv", BUILTIN_MATRIX),
             variants_file: DataFile::from_setting(get, "SHARUKHAN_VARIANTS", "variants.conf", BUILTIN_VARIANTS),
             check_prs: DataFile::from_setting(get, "SHARUKHAN_CHECK_PRS", "check-prs.tsv", BUILTIN_CHECK_PRS),
+            pr_defects: DataFile::from_setting(get, "SHARUKHAN_PR_DEFECTS", "pr-defects.json", crate::preligible::BUILTIN_PR_DEFECTS),
 
             photon_tree: var_or(get, "PHOTON_TREE", "/root/5.0"),
             poi_tree: var_or(get, "POI_TREE", "/root/photon-os-installer"),
@@ -402,6 +405,7 @@ impl Config {
             ("SHARUKHAN_MATRIX", self.matrix_tsv.path.as_ref().map(p).unwrap_or_default()),
             ("SHARUKHAN_VARIANTS", self.variants_file.path.as_ref().map(p).unwrap_or_default()),
             ("SHARUKHAN_CHECK_PRS", self.check_prs.path.as_ref().map(p).unwrap_or_default()),
+            ("SHARUKHAN_PR_DEFECTS", self.pr_defects.path.as_ref().map(p).unwrap_or_default()),
             ("MC_FASTLOOP_ROWS", self.fastloop_rows.join(" ")),
             ("MC_STAGED_ROWS", self.staged_rows.join(" ")),
         ]
@@ -480,7 +484,7 @@ mod tests {
     #[test]
     fn the_configuration_files_are_built_in_unless_a_setting_names_one() {
         let c = Config::defaults();
-        for f in [&c.matrix_tsv, &c.variants_file, &c.check_prs] {
+        for f in [&c.matrix_tsv, &c.variants_file, &c.check_prs, &c.pr_defects] {
             assert!(f.path.is_none(), "{}", f.setting);
             assert!(f.label().starts_with("built-in config/"), "{}", f.label());
             assert!(!f.text().unwrap().is_empty());
@@ -489,6 +493,7 @@ mod tests {
         assert!(crate::matrix::load_file(&c.matrix_tsv).unwrap().len() > 10);
         crate::variants::load_file(&c.variants_file).unwrap();
         assert!(!crate::evidence::load_attribution_file(&c.check_prs).unwrap().is_empty());
+        assert!(!crate::preligible::parse(&c.pr_defects.text().unwrap()).unwrap().prs.is_empty());
 
         // an empty setting is unset; a set one replaces the built-in copy, and
         // a missing file is an error that names the setting, never a fallback

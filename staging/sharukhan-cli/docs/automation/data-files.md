@@ -2,7 +2,7 @@
 
 [← sharukhan overview](../../README.md)
 
-**Who this is for:** Anyone editing the data the automation reads: `variants.conf`, `check-prs.tsv`, `memory.db`.
+**Who this is for:** Anyone editing the data the automation reads: `variants.conf`, `check-prs.tsv`, `pr-defects.json`, `memory.db`.
 
 ## Data files the automation reads
 
@@ -34,6 +34,15 @@ whitespace (`guest.selinux PR#31`, or `media.x PR#85 PR#86`; labels are
 reads as "PR#22 regressed". Comments are whole lines starting with `#`. `sharukhan doctor`
 warns when a label names a PR that is no longer open. Compiled into
 sharukhan; `SHARUKHAN_CHECK_PRS` names a file that replaces it.
+
+### `config/pr-defects.json`: what each PR fixes
+
+Per PR: the package, an optional subrelease scope, and the defects it fixes,
+each with probes that look for the defect in every copy of the package
+(`sharukhan pr-eligibility`; the format and the probes are in
+[pr-eligibility.md](pr-eligibility.md)). A defect's `symptom_check` names a
+check id of `check-prs.tsv`. Compiled into sharukhan; `SHARUKHAN_PR_DEFECTS`
+names a file that replaces it.
 
 ### `memory.db` and `MEMORY.md`
 

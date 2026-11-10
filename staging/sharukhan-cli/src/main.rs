@@ -53,6 +53,7 @@ mod oracle;
 mod phases;
 mod pkglife;
 mod poiimage;
+mod preligible;
 mod prbody;
 mod proc;
 mod remaster;
@@ -146,6 +147,7 @@ PHASES (the same code `run` calls, one step at a time)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
     variants            does config/variants.conf match the fork's open PRs?
     canister-equivalent regenerate the embedded canister-equivalent patch (--check | --out <file>)
+    pr-eligibility      is each PR still needed: its defects probed in every copy of its package (--pr <n> --rev <base> --out <file.md>)
     db render           MEMORY.md as a view of the memory database ([<memory.db>] <out>)
     mcp                 stdio MCP server of one sync run and PR (--run --pr [--profile escalation|readonly])
     sync                a fork sync as a resumable state machine (start | resume | status | approve | abort | auto |
@@ -715,6 +717,15 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("sharukhan db: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+    if argv.first().map(String::as_str) == Some("pr-eligibility") {
+        return match preligible::cli(&config::Config::load(), &argv[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("sharukhan pr-eligibility: {e}");
                 ExitCode::from(1)
             }
         };

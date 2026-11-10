@@ -1,0 +1,252 @@
+{
+  "prs": [
+    {
+      "pr": 22,
+      "package": "systemd",
+      "title": "systemd: render and systemd-journal groups, STIG variant",
+      "subreleases": {
+        "from": 91
+      },
+      "defects": [
+        {
+          "id": "render-rule",
+          "summary": "`accel` udev rule refers to the removed `render` group",
+          "symptom_check": "guest.no_render_group",
+          "probes": [
+            {
+              "kind": "file",
+              "file": "0004-Remove-unused-default-groups-rules-and-tmpfiles.patch",
+              "present_if_all": [
+                {
+                  "line": " SUBSYSTEM==\"accel\", GROUP=\"render\", MODE=\"{{GROUP_RENDER_MODE}}\""
+                },
+                {
+                  "prefix": "-g render "
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "journal-snippet",
+          "summary": "`systemd-journal` sysusers snippet emptied (initrd has no group)",
+          "symptom_check": "guest.no_journal_group",
+          "probes": [
+            {
+              "kind": "file",
+              "file": "0004-Remove-unused-default-groups-rules-and-tmpfiles.patch",
+              "present_if_all": [
+                {
+                  "line": "-g systemd-journal {{SYSTEMD_JOURNAL_GID}} -"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "journal-gid",
+          "summary": "journal GID not pinned to filesystem's 23 (needed with the snippet)",
+          "probes": [
+            {
+              "kind": "file",
+              "file": "systemd.spec",
+              "present_if_none": [
+                {
+                  "contains": "-Dsystemd-journal-gid="
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "stig-define",
+          "summary": "`%define STIG_HARDEN 0` cannot be overridden with `-D`",
+          "probes": [
+            {
+              "kind": "file",
+              "file": "systemd.spec",
+              "applies_if": [
+                {
+                  "contains": "STIG_HARDEN"
+                }
+              ],
+              "present_if_all": [
+                {
+                  "line": "%define STIG_HARDEN 0"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "stig-prep",
+          "summary": "STIG variant: `harden-tmpfs-mount-options.patch` missing from `%prep` or not applying",
+          "symptom_check": "guest.tmp_noexec",
+          "probes": [
+            {
+              "kind": "series",
+              "defines": {
+                "STIG_HARDEN": "1"
+              },
+              "applies_if": [
+                {
+                  "contains": "STIG_HARDEN"
+                }
+              ],
+              "expect_patch": "harden-tmpfs-mount-options.patch"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pr": 79,
+      "package": "systemd",
+      "title": "systemd: ship each file of systemd-container and systemd-journal-remote once",
+      "subreleases": {
+        "from": 91
+      },
+      "defects": [
+        {
+          "id": "journal-remote-overlap",
+          "summary": "main package also owns systemd-journal-remote's binaries and units",
+          "probes": [
+            {
+              "kind": "file",
+              "file": "systemd.spec",
+              "present_if_all": [
+                {
+                  "line": "%{_unitdir}/*"
+                }
+              ],
+              "present_if_none": [
+                {
+                  "line": "%exclude %{_unitdir}/%{name}-journal-remote.service"
+                }
+              ]
+            },
+            {
+              "kind": "rpm-overlap",
+              "packages": [
+                "systemd",
+                "systemd-journal-remote"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "container-overlap",
+          "summary": "main package and systemd-container both own nspawn@ and machined files",
+          "probes": [
+            {
+              "kind": "file",
+              "file": "systemd.spec",
+              "present_if_all": [
+                {
+                  "line": "%{_unitdir}/*"
+                }
+              ],
+              "present_if_none": [
+                {
+                  "line": "%exclude %{_unitdir}/%{name}-nspawn@.service"
+                }
+              ]
+            },
+            {
+              "kind": "rpm-overlap",
+              "packages": [
+                "systemd",
+                "systemd-container"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "journal-remote-scriptlets",
+          "summary": "systemd-journal-remote has no unit scriptlets",
+          "probes": [
+            {
+              "kind": "file",
+              "file": "systemd.spec",
+              "applies_if": [
+                {
+                  "prefix": "%files journal-remote"
+                }
+              ],
+              "present_if_none": [
+                {
+                  "prefix": "%post journal-remote"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pr": 87,
+      "package": "systemd",
+      "title": "systemd: networkd pending-request drop, DHCPDECLINE and DHCPv4 client fixes",
+      "subreleases": {
+        "from": 91
+      },
+      "defects": [
+        {
+          "id": "acd-pending",
+          "summary": "no DHCPDECLINE on an ACD conflict: `on_acd()` misses still-queued addresses (systemd#43741)",
+          "probes": [
+            {
+              "kind": "upstream",
+              "commits": [
+                "4be31a9c35015f1564f10821708ca1973c9f8ac3",
+                "c5bf6bac23046c061c07164fe1bd016068728129",
+                "830b60ae1fcd435b162b1fa7552609dd425fb6b7",
+                "2aed6d9ad7226dad88a2386533ba63f6fc408c7f"
+              ]
+            },
+            {
+              "kind": "upstream-file",
+              "path": "src/network/networkd-ipv4acd.c",
+              "fixed_if": {
+                "contains": "address_get_harder(link, key, &address)"
+              }
+            }
+          ]
+        },
+        {
+          "id": "decline-transport",
+          "summary": "DHCPDECLINE cannot be sent from the BOUND state's UDP socket",
+          "probes": [
+            {
+              "kind": "upstream",
+              "commits": [
+                "6eaa5ba32231290971823d0ddf73bc712c384bcc",
+                "16d08897bbe1c6c9357bf1a845dd3efe2a5fd316"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dhcp4-client",
+          "summary": "nine sd-dhcp-client / networkd DHCPv4 fixes from v260 and v261",
+          "probes": [
+            {
+              "kind": "upstream",
+              "commits": [
+                "ddded65d41f691afc4d248343d987775655bcfb7",
+                "55f2fdd508dfe430cc36b9961b09d9eb649c6a83",
+                "6eaa5ba32231290971823d0ddf73bc712c384bcc",
+                "366e1d264a6d1c2aa96d85bf6dd80be2bbd65f72",
+                "68c70042365df8cf0dc9e8c3a7eada4fac375103",
+                "26f769bea390eb06bef0d709beb47a5a75f9ff3f",
+                "2dff63a31ce33e4525f68351b47516a69b27334c",
+                "8de24db5de6063feb1d23f9274fb52feb5995714",
+                "b831cd00e6777b32b08cc1848b5ff9c6c981f128"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

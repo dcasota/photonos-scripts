@@ -62,6 +62,7 @@ $S run --only k03 --allow-build                   # build the ISO if needed, ins
 - [The escalation](docs/automation/escalation.md) - budgets, confinement, the MCP server
 - [The watcher and its events](docs/automation/watcher-events.md) - `events.log` and notifications
 - [Data files](docs/automation/data-files.md) - `variants.conf`, `check-prs.tsv`, `memory.db`
+- [PR eligibility](docs/automation/pr-eligibility.md) - is a PR still needed: its defects probed in every copy of its package
 
 **Background**
 
