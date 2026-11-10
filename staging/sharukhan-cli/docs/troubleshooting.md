@@ -50,6 +50,22 @@ sharukhan variant-patches
 sharukhan run --all --allow-build
 ```
 
+### `nothing provides librpm_sequoia.so.1` when the base sandbox is made
+
+Photon's toolchain step lists `rpm` but not `rpm-sequoia`. When the
+rpm-sequoia spec moves to a new version, the purge before a build used to
+delete the old rpm-sequoia RPM, while the kept `rpm-libs` still needs its
+`librpm_sequoia.so.1`. tdnf then could not install `rpm-build` into the base
+sandbox, and every row failed before anything was built. Now the purge keeps
+an older package-manager RPM whenever a kept one requires something it alone
+provides, and logs `kept <rpm> until the build replaces it: ...`. The
+rebuilt, higher version wins in tdnf afterwards. A *higher* stale RPM is
+still removed, because it would shadow the rebuild.
+
+A stage purged by an older sharukhan gets the package back from vmware's
+published repositories, checked with `rpm -K`, the way `bootstrap` provides
+packages.
+
 ### Following a job
 
 `sharukhan watch --job <id>` prints the job's state and follows its run log

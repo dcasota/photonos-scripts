@@ -2288,8 +2288,19 @@ fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) -> Result<(), String> {
     let specs = release_tree.join("SPECS");
     let sub = build_subrelease(c, &release_tree);
 
-    let (rpm_purge, kept) = rpm_toolchain_split(&release_tree, &names, sub).map_err(|e| format!("rpm toolchain RPMs: {e}"))?;
-    let rpm_purge: Vec<&String> = rpm_purge.iter().collect();
+    let (rpm_purge, mut kept) = rpm_toolchain_split(&release_tree, &names, sub).map_err(|e| format!("rpm toolchain RPMs: {e}"))?;
+    // an OLDER package-manager RPM a kept one still needs stays until the
+    // build replaces it: rpm-libs needs librpm_sequoia.so.1, and when the
+    // rpm-sequoia spec moves on, nothing else provides it before the
+    // sandbox is made (Photon's toolchain list has rpm, not rpm-sequoia)
+    let older = |n: &str| older_than_building(&release_tree, n, sub);
+    let caps = |n: &str| rpm_caps(&rpms.join(n));
+    let rescued = rescue_providers(&rpm_purge, &kept, &older, &caps)?;
+    for (n, why) in &rescued {
+        c.say(&format!("  kept {n} until the build replaces it: {why}"));
+        kept.push(n.clone());
+    }
+    let rpm_purge: Vec<&String> = rpm_purge.iter().filter(|n| !rescued.iter().any(|(r, _)| r == *n)).collect();
     if !kept.is_empty() {
         c.say(&format!("  kept {} rpm toolchain RPM(s) the specs produce: {}", kept.len(), kept.join(" ")));
     }
@@ -2533,6 +2544,91 @@ pub(crate) fn rpm_toolchain_split(release_tree: &Path, names: &[String], sub: Op
         }
     }
     Ok((purge, keep))
+}
+
+/// Is this package-manager RPM older than what the spec building at `sub`
+/// produces? Unknown (no spec of its family builds): not older.
+fn older_than_building(release_tree: &Path, name: &str, sub: Option<u32>) -> bool {
+    let Some((pkg, ver, rel)) = parse_rpm_name(name) else { return false };
+    let Some(dist) = dist_tag(release_tree) else { return false };
+    let Some(rel) = rel.strip_suffix(dist.as_str()).map(str::to_string) else { return false };
+    for spec in TOOLCHAIN_RPM_SPECS {
+        let Some(all) = specs_named(release_tree, spec, sub) else { continue };
+        let Some((_, f, r)) = all.iter().find(|(b, f, _)| *b && f.families.iter().any(|x| *x == pkg)) else { continue };
+        return match vercmp(&ver, &f.version) {
+            std::cmp::Ordering::Equal => vercmp(&rel, r) == std::cmp::Ordering::Less,
+            o => o == std::cmp::Ordering::Less,
+        };
+    }
+    false
+}
+
+/// An RPM's provides and requires (`rpm -qp`), versions dropped, rpmlib()
+/// and file requires left out.
+fn rpm_caps(file: &Path) -> Result<(Vec<String>, Vec<String>), String> {
+    let q = |what: &str| -> Result<Vec<String>, String> {
+        let o = std::process::Command::new("rpm").args(["-qp", what]).arg(file).output().map_err(|e| format!("rpm -qp {what}: {e}"))?;
+        if !o.status.success() {
+            return Err(format!("rpm -qp {what} {}: {}", file.display(), String::from_utf8_lossy(&o.stderr).trim()));
+        }
+        Ok(String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter_map(|l| l.split_whitespace().next())
+            .filter(|c| !c.starts_with("rpmlib(") && !c.starts_with('/'))
+            .map(str::to_string)
+            .collect())
+    };
+    Ok((q("--provides")?, q("--requires")?))
+}
+
+/// The purge candidates to keep after all: an older one that provides a
+/// capability a kept RPM requires and no kept RPM provides, followed to a
+/// fixpoint (a rescued RPM's own requires count too). A newer one is never
+/// rescued: it would shadow the rebuild. Each with the reason.
+pub(crate) fn rescue_providers(
+    purge: &[String],
+    kept: &[String],
+    older: &dyn Fn(&str) -> bool,
+    caps: &dyn Fn(&str) -> Result<(Vec<String>, Vec<String>), String>,
+) -> Result<Vec<(String, String)>, String> {
+    let mut have: Vec<String> = kept.to_vec();
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut cache: std::collections::BTreeMap<String, (Vec<String>, Vec<String>)> = std::collections::BTreeMap::new();
+    let mut get = |n: &str| -> Result<(Vec<String>, Vec<String>), String> {
+        if let Some(c) = cache.get(n) {
+            return Ok(c.clone());
+        }
+        let c = caps(n)?;
+        cache.insert(n.to_string(), c.clone());
+        Ok(c)
+    };
+    loop {
+        let mut provided = std::collections::BTreeSet::new();
+        let mut needed: Vec<(String, String)> = Vec::new();
+        for n in &have {
+            let (p, r) = get(n)?;
+            provided.extend(p);
+            needed.extend(r.into_iter().map(|x| (x, n.clone())));
+        }
+        let mut added = false;
+        for (cap, by) in needed {
+            if provided.contains(&cap) {
+                continue;
+            }
+            for cand in purge.iter().filter(|c| !have.contains(c) && older(c)) {
+                if get(cand)?.0.contains(&cap) {
+                    out.push((cand.clone(), format!("{by} needs {cap}, which no kept RPM provides")));
+                    have.push(cand.clone());
+                    provided.extend(get(cand)?.0);
+                    added = true;
+                    break;
+                }
+            }
+        }
+        if !added {
+            return Ok(out);
+        }
+    }
 }
 
 /// Does this RPM belong to `fams` at a version the spec no longer declares?
@@ -4983,6 +5079,39 @@ mod tests {
         fs::write(root.join("build-config.json"), r#"{"photon-build-param": {"photon-dist-tag": ".ph5"}}"#).unwrap();
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_older_provider_a_kept_rpm_needs_stays_until_the_rebuild() {
+        let caps = |n: &str| -> Result<(Vec<String>, Vec<String>), String> {
+            let v = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+            Ok(match n {
+                "rpm-libs-6.1.0-5.ph5.x86_64.rpm" => (v(&["librpm.so.10()(64bit)"]), v(&["librpm_sequoia.so.1()(64bit)", "libc.so.6()(64bit)"])),
+                "rpm-sequoia-1.10.0-1.ph5.x86_64.rpm" => (v(&["librpm_sequoia.so.1()(64bit)", "rpm-sequoia"]), v(&["libssl.so.3()(64bit)"])),
+                "rpm-sequoia-9.0.0-1.ph5.x86_64.rpm" => (v(&["librpm_sequoia.so.1()(64bit)"]), vec![]),
+                "rpm-sequoia-devel-1.10.0-1.ph5.x86_64.rpm" => (v(&["rpm-sequoia-devel"]), v(&["rpm-sequoia"])),
+                "rpm-4.18.2-8.5.ph5.x86_64.rpm" => (v(&["rpm"]), vec![]),
+                _ => (vec![], vec![]),
+            })
+        };
+        let s = |a: &[&str]| a.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let kept = s(&["rpm-libs-6.1.0-5.ph5.x86_64.rpm"]);
+        let older = |n: &str| n.contains("1.10.0") || n.contains("4.18.2");
+        // the older provider stays; its -devel, which nothing kept needs, goes; so does an unrelated older rpm
+        let purge = s(&["rpm-sequoia-1.10.0-1.ph5.x86_64.rpm", "rpm-sequoia-devel-1.10.0-1.ph5.x86_64.rpm", "rpm-4.18.2-8.5.ph5.x86_64.rpm"]);
+        let r = rescue_providers(&purge, &kept, &older, &caps).unwrap();
+        assert_eq!(r.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), vec!["rpm-sequoia-1.10.0-1.ph5.x86_64.rpm"]);
+        assert!(r[0].1.contains("rpm-libs-6.1.0-5.ph5.x86_64.rpm needs librpm_sequoia.so.1()(64bit)"));
+        // a newer one would shadow the rebuild: never kept
+        let purge = s(&["rpm-sequoia-9.0.0-1.ph5.x86_64.rpm"]);
+        assert!(rescue_providers(&purge, &kept, &older, &caps).unwrap().is_empty());
+        // satisfied by a kept RPM already: nothing to keep
+        let kept2 = s(&["rpm-libs-6.1.0-5.ph5.x86_64.rpm", "rpm-sequoia-9.0.0-1.ph5.x86_64.rpm"]);
+        let purge = s(&["rpm-sequoia-1.10.0-1.ph5.x86_64.rpm"]);
+        assert!(rescue_providers(&purge, &kept2, &older, &caps).unwrap().is_empty());
+        // a failing query is an error, not a guess
+        let bad = |_: &str| -> Result<(Vec<String>, Vec<String>), String> { Err("rpm: broken".into()) };
+        assert!(rescue_providers(&purge, &kept, &older, &bad).is_err());
     }
 
     /// A NEVR an earlier, patched build recorded is checked against the spec
