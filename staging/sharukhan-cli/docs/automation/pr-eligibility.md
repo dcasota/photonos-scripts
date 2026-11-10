@@ -42,7 +42,7 @@ probe runs on every copy in scope:
 | `file` | lines of a file of the copy's spec directory: `present_if_all` patterns all there, `present_if_none` patterns none there; `applies_if` patterns must be there, or the defect is not applicable | present / absent / not applicable |
 | `upstream` | full SHAs of the upstream fix commits, against the commit the copy's source archive is made from (`config.yaml` `commit_id`, history fetched from `repo_url` into `$MC_WORK/pr-eligibility`): an ancestor, a `(cherry picked from commit <sha>)` trailer in the source's history, or a patch the spec lists whose header names the SHA | fixed upstream / absent (carried by the copy's patches) / present |
 | `upstream-file` | a file of that source, for the fixed code | fixed upstream, or undecided: a miss says nothing about the copy's own patches |
-| `series` | the copy's `%prep` with `defines` (a build variant, e.g. `STIG_HARDEN=1`): `rpmspec -P` in the builder, `expect_patch` among the expanded patches, every patch applied at fuzz 0 to the source archive, sha512-checked against `config.yaml` (from the build root's SOURCES, or downloaded into the cache) | present (does not expand, unreachable, a patch missing or not applying) / absent |
+| `series` | the copy's real `%prep` with `defines` (a build variant, e.g. `STIG_HARDEN=1`): `expect_patch` among the patches `rpmspec -P` expands, then `rpmbuild -bp --nodeps` in the builder. The sources are the spec directory staged by file name, as Photon stages it (`CVE/x.patch` is `x.patch`), plus every `config.yaml` archive, sha512-checked (from the build root's SOURCES, or downloaded into the cache). A switch fixed by a plain `%define` is set in a scratch copy of the spec (see [switches](#build-switches)) | present (does not expand, unreachable, a patch failing, with patch's own line) / absent / unknown (a source that is not verifiable, or a tool or header the builder lacks; `--nodeps` installs no build dependency). The trace is kept under `$MC_WORK/pr-eligibility/logs/` |
 | `rpm-overlap` | two packages of the gate's baseline build (`$MC_WORK/baseline-root/<release>/stage/RPMS`), only if their name-version-release is exactly the copy's: a build of other code is no evidence | present / absent / unknown |
 
 A pattern is exactly one of `line` (the whole line), `prefix` or `contains`,
@@ -68,6 +68,46 @@ it says that the symptom was seen, not on which copy.
 
 Running the command on a sync candidate's head, with `--rev`, checks a port. When every
 defect reads absent or fixed there, the port carries every fix.
+
+## Build switches
+
+`sharukhan switch-check (--package <name>... | --all) [--rev <base>] [--out <file.md>]`
+turns on every switch that guards a patch, in every copy of the package, and
+runs that variant's `%prep` the way the `series` probe does. It exits with
+status 1 when a variant is broken or undecided.
+
+A switch is a macro that is off by default and tested by a conditional
+(`%if 0%{?NAME}`, `%if %{NAME}`, `%elif ...`). There are two kinds:
+
+- **overridable**, `%{!?NAME: %global NAME 0}`: `-D 'NAME 1'` turns it on.
+- **fixed**, a plain `%define NAME 0` (or `%global`): the spec body's
+  definition is made after the command line's, so `-D` cannot turn it on. The
+  variant is then only built when someone edits the spec, so nothing ever
+  applies its patches, and they go stale when the package is upgraded. The
+  check sets the definition in a scratch copy of the spec, never in the tree.
+
+A plain `%global NAME 0` that no conditional tests is a value, not a switch.
+A name defined plainly twice is left out, since no single edit turns it on.
+`systemd check` replays the patches of both kinds when it reports a port.
+
+On vmware 5.0 4f6931f35f (2026-11-10), `--all` found these variants broken:
+
+| Copy | Switch | What fails |
+|---|---|---|
+| `SPECS/systemd` 262.1 | `STIG_HARDEN` | `harden-tmpfs-mount-options.patch`: `units/tmp.mount` changed in v262 |
+| `SPECS/openssh` 10.6p1 | `STIG_HARDEN` | `0001-hardened-sshd-config.patch`: 1 of 4 hunks, `sshd_config` changed in 10.6p1 |
+| `SPECS/92/linux` 6.12.115 | `canister_build` | `1000-FIPS-canister-creation.patch`, which `fix/canister-build-against-current-kernel` fixes |
+| `SPECS/90/linux` 6.1.190 | `canister_build` | `0001-FIPS-canister-binary-usage.patch` |
+
+These were undecided:
+
+| Copy | Switch | Why undecided |
+|---|---|---|
+| lua | `bootstrap` | its second archive is not in `config.yaml` |
+| powershell | `gen_nuget_deps` | needs `dotnet` |
+| linux 6.12 | `fips` | needs `libelf.h` |
+
+shadow's `STIG_HARDEN` builds.
 
 ## The data
 

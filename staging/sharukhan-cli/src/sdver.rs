@@ -500,25 +500,6 @@ pub fn patches_in_order(expanded: &str) -> Vec<String> {
     v.into_iter().map(|(_, f)| f).collect()
 }
 
-/// The build switches a spec leaves overridable, off by default:
-/// `%{!?NAME: %global NAME 0}` (or `%define`). A patch only such a switch
-/// enables is part of the port too.
-pub fn overridable_switches(spec: &str) -> Vec<String> {
-    let mut v = Vec::new();
-    for l in spec.lines() {
-        let t = l.trim();
-        let Some(rest) = t.strip_prefix("%{!?") else { continue };
-        let Some((name, body)) = rest.split_once(':') else { continue };
-        let body = body.trim().trim_end_matches('}').trim();
-        let mut w = body.split_whitespace();
-        let (Some(kw), Some(n), Some(val)) = (w.next(), w.next(), w.next()) else { continue };
-        if (kw == "%global" || kw == "%define") && n == name && val == "0" && !v.contains(&n.to_string()) {
-            v.push(n.to_string());
-        }
-    }
-    v
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Applies {
     Yes,
@@ -740,11 +721,22 @@ fn port_report(
         let top = src.join(r.top_dir());
         let order = patches_in_order(&expanded);
         let mut replayed = replay(&top, &spec_dir, &order);
-        // a patch only an overridable switch enables (STIG_HARDEN) is replayed
-        // in its own tree, in the order the switched spec applies them
+        // a patch only a switch enables (STIG_HARDEN) is replayed in its own
+        // tree, in the order the switched spec applies them; a switch fixed by
+        // a plain %define is set in a scratch copy of the spec, since -D
+        // cannot reach it
         let raw = std::fs::read_to_string(spec_dir.join("systemd.spec")).map_err(|e| format!("systemd.spec: {e}"))?;
-        for sw in overridable_switches(&raw) {
-            let on = expand_with(&spec_dir, "systemd.spec", &mainline, &dist, "x86_64", &[(sw.clone(), "1".into())], log)?;
+        for s in crate::specswitch::switches(&raw) {
+            let sw = s.name.clone();
+            let spec_name = match s.kind {
+                crate::specswitch::Kind::Overridable => "systemd.spec".to_string(),
+                crate::specswitch::Kind::Fixed(_) => {
+                    let n = format!("systemd.{sw}-on.spec");
+                    std::fs::write(spec_dir.join(&n), crate::specswitch::set(&raw, &s, "1")?).map_err(|e| format!("{n}: {e}"))?;
+                    n
+                }
+            };
+            let on = expand_with(&spec_dir, &spec_name, &mainline, &dist, "x86_64", &[(sw.clone(), "1".into())], log)?;
             let switched = patches_in_order(&on);
             let only: Vec<String> = switched.iter().filter(|p| !order.contains(p)).cloned().collect();
             if only.is_empty() {
@@ -758,7 +750,8 @@ fn port_report(
             }
             for (p, a) in replay(&src2.join(r.top_dir()), &spec_dir, &switched) {
                 if only.contains(&p) {
-                    replayed.push((format!("{p} (with {sw}=1)"), a));
+                    let how = if matches!(s.kind, crate::specswitch::Kind::Fixed(_)) { ", set in the spec" } else { "" };
+                    replayed.push((format!("{p} (with {sw}=1{how})"), a));
                 }
             }
         }
@@ -1156,8 +1149,10 @@ mod tests {
     fn patches_are_applied_in_number_order_and_unnumbered_ones_take_the_next() {
         let spec = "Patch2: c.patch\nPatch0: a.patch\nPatch1: b.patch\nPatch:  d.patch\nPatchX: no\nSource0: s\n";
         assert_eq!(patches_in_order(spec), vec!["a.patch", "b.patch", "c.patch", "d.patch"]);
-        let spec = "%{!?STIG_HARDEN: %global STIG_HARDEN 0}\n%{!?with_x:%define with_x 0}\n%{!?on: %global on 1}\n%global plain 0\n";
-        assert_eq!(overridable_switches(spec), vec!["STIG_HARDEN", "with_x"], "only switches off by default, overridable");
+        // a patch only a switch enables is part of the port too: both kinds
+        let spec = "%{!?STIG_HARDEN: %global STIG_HARDEN 0}\n%{!?with_x:%define with_x 0}\n%{!?on: %global on 1}\n%global plain 0\n%define fixed 0\n%if 0%{?fixed}\n%endif\n";
+        let names: Vec<String> = crate::specswitch::switches(spec).into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec!["STIG_HARDEN", "with_x", "fixed"], "switches off by default; a plain value is none");
     }
 
     #[test]

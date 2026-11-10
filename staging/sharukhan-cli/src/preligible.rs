@@ -255,6 +255,7 @@ pub struct Copy {
     pub url: Option<String>,
     pub repo_url: Option<String>,
     pub commit_id: Option<String>,
+    pub archives: Vec<Archive>,
 }
 
 impl Copy {
@@ -304,30 +305,85 @@ pub fn representative(build_if: &str) -> Option<u32> {
     lo.or(hi)
 }
 
-/// The first source of config.yaml: archive, sha512, url, repo_url, commit_id.
-pub fn source_of(yaml: &str, c: &mut Copy) {
-    let mut first = true;
-    for l in yaml.lines() {
+/// One source entry of config.yaml.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Archive {
+    pub name: String,
+    pub sha512: Option<String>,
+    pub url: Option<String>,
+    pub repo_url: Option<String>,
+    pub commit_id: Option<String>,
+}
+
+/// Every `- archive:` entry of config.yaml. A key whose value is on the next,
+/// deeper-indented line (`archive_sha512sum:` then the digest) is read too.
+pub fn archives_of(yaml: &str) -> Vec<Archive> {
+    let ls: Vec<&str> = yaml.lines().collect();
+    let mut v: Vec<Archive> = Vec::new();
+    let mut i = 0;
+    while i < ls.len() {
+        let l = ls[i];
+        let indent = l.len() - l.trim_start().len();
         let t = l.trim_start().trim_start_matches("- ").trim();
-        if t.starts_with("archive:") {
-            if !first {
-                break;
+        let Some((k, val)) = t.split_once(':') else {
+            i += 1;
+            continue;
+        };
+        let unq = |s: &str| s.trim().trim_matches('"').trim_matches('\'').to_string();
+        let mut val = unq(val);
+        if val.is_empty() {
+            if let Some(n) = ls.get(i + 1) {
+                let ni = n.len() - n.trim_start().len();
+                let nt = n.trim();
+                if ni > indent && !nt.is_empty() && !nt.contains(':') && !nt.starts_with('-') {
+                    val = unq(nt);
+                    i += 1;
+                }
             }
-            first = false;
         }
-        let val = |k: &str| t.strip_prefix(k).map(|v| v.trim().trim_matches('"').to_string()).filter(|v| !v.is_empty());
-        if let Some(v) = val("archive:") {
-            c.archive = Some(v);
-        } else if let Some(v) = val("archive_sha512sum:") {
-            c.sha512.get_or_insert(v);
-        } else if let Some(v) = val("url:") {
-            c.url.get_or_insert(v);
-        } else if let Some(v) = val("repo_url:") {
-            c.repo_url.get_or_insert(v);
-        } else if let Some(v) = val("commit_id:") {
-            c.commit_id.get_or_insert(v);
+        let field = if val.is_empty() { None } else { Some(val.clone()) };
+        match k.trim() {
+            "archive" if l.trim_start().starts_with("- ") => v.push(Archive { name: val, ..Archive::default() }),
+            "archive_sha512sum" => {
+                if let Some(a) = v.last_mut() {
+                    a.sha512 = a.sha512.take().or(field);
+                }
+            }
+            "url" => {
+                if let Some(a) = v.last_mut() {
+                    a.url = a.url.take().or(field);
+                }
+            }
+            "repo_url" => {
+                if let Some(a) = v.last_mut() {
+                    a.repo_url = a.repo_url.take().or(field);
+                }
+            }
+            "commit_id" => {
+                if let Some(a) = v.last_mut() {
+                    a.commit_id = a.commit_id.take().or(field);
+                }
+            }
+            _ => {}
         }
+        i += 1;
     }
+    v.retain(|a| !a.name.is_empty());
+    v
+}
+
+/// The copy's source facts from config.yaml: the first archive's, and every
+/// archive for a %prep that unpacks more than one.
+pub fn source_of(yaml: &str, c: &mut Copy) {
+    let all = archives_of(yaml);
+    if let Some(a) = all.first() {
+        c.archive = Some(a.name.clone());
+        c.sha512 = a.sha512.clone();
+        c.url = a.url.clone();
+        c.repo_url = a.repo_url.clone();
+        c.commit_id = a.commit_id.clone();
+    }
+    c.archives = all;
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -561,18 +617,18 @@ fn source_commit(c: &Copy) -> Result<(String, String), String> {
     Ok((url, id))
 }
 
-/// The copy's source archive, sha512-verified: from a SOURCES directory, or
-/// downloaded into the cache. A file whose digest differs is never used.
-fn archive(ctx: &mut Ctx, c: &Copy) -> Result<PathBuf, String> {
-    let name = c.archive.clone().filter(|a| safe_rel(a) && !a.contains('/')).ok_or("no archive in config.yaml")?;
-    let want = c.sha512.clone().filter(|s| crate::sha512::is_hex_digest(s)).ok_or("no archive_sha512sum in config.yaml")?;
+/// A source archive, sha512-verified: from a SOURCES directory, or downloaded
+/// into the cache. A file whose digest differs is never used.
+fn archive(ctx: &mut Ctx, a: &Archive) -> Result<PathBuf, String> {
+    let name = Some(a.name.clone()).filter(|n| safe_rel(n) && !n.contains('/')).ok_or("no archive name in config.yaml")?;
+    let want = a.sha512.clone().filter(|s| crate::sha512::is_hex_digest(s)).ok_or_else(|| format!("{name}: no archive_sha512sum in config.yaml"))?;
     for d in ctx.sources.clone().iter().chain(std::iter::once(&ctx.cache.join("sources"))) {
         let p = d.join(&name);
         if p.is_file() && crate::sha512::file(&p)? == want {
             return Ok(p);
         }
     }
-    let url = c.url.clone().filter(|u| u.starts_with("https://")).ok_or("no https url in config.yaml")?;
+    let url = a.url.clone().filter(|u| u.starts_with("https://")).ok_or_else(|| format!("{name}: no https url in config.yaml"))?;
     let dir = ctx.cache.join("sources");
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let part = dir.join(format!("{name}.part.{}", std::process::id()));
@@ -616,6 +672,117 @@ pub fn patch_list(expanded: &str) -> Vec<String> {
         .collect()
 }
 
+/// Photon stages a spec directory's files by name: a file in a subdirectory
+/// (SPECS/92/linux/CVE/x.patch) is a source as `x.patch`. The same here: each
+/// one is linked to the top of `dir`. Two different files of one name are
+/// refused, as Photon's staging would pick one silently.
+pub fn flatten_sources(dir: &Path) -> Result<usize, String> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in fs::read_dir(&d).map_err(|e| format!("{}: {e}", d.display()))? {
+            let e = e.map_err(|e| format!("{e}"))?;
+            let ft = e.file_type().map_err(|e| format!("{e}"))?;
+            if ft.is_dir() {
+                stack.push(e.path());
+            } else if ft.is_file() && d != dir {
+                found.push(e.path());
+            }
+        }
+    }
+    found.sort();
+    let mut n = 0;
+    for f in found {
+        let Some(name) = f.file_name() else { continue };
+        let top = dir.join(name);
+        if top.exists() {
+            if fs::read(&top).map_err(|e| format!("{e}"))? != fs::read(&f).map_err(|e| format!("{e}"))? {
+                return Err(format!("two different files are named {}: {} and {}", name.to_string_lossy(), top.display(), f.display()));
+            }
+            continue;
+        }
+        fs::hard_link(&f, &top).or_else(|_| fs::copy(&f, &top).map(|_| ())).map_err(|e| format!("{}: {e}", top.display()))?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+/// The Source file names an expanded spec lists.
+pub fn source_list(expanded: &str) -> Vec<String> {
+    expanded
+        .lines()
+        .filter_map(|l| {
+            let (tag, val) = l.split_once(':')?;
+            let num = tag.strip_prefix("Source")?;
+            if !num.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            let v = val.trim();
+            (!v.is_empty()).then(|| v.rsplit('/').next().unwrap_or(v).to_string())
+        })
+        .collect()
+}
+
+/// The patch %prep was applying when it failed: the last patch file the
+/// trace names, from `Patch #N (name):` (%patch) or the file %autosetup feeds
+/// to patch (`+ /usr/lib/rpm/rpmuncompress .../name.patch`, `cat`, `<`).
+pub fn failing_patch(out: &str) -> Option<String> {
+    let mut last = None;
+    for l in out.lines().map(str::trim) {
+        if let Some(r) = l.strip_prefix("Patch #") {
+            if let Some((_, x)) = r.split_once('(') {
+                if let Some((n, _)) = x.split_once(')') {
+                    last = Some(n.to_string());
+                }
+            }
+            continue;
+        }
+        if !l.starts_with('+') {
+            continue;
+        }
+        for w in l.split(|c: char| c.is_whitespace() || c == '<' || c == '\'' || c == '"') {
+            if w.ends_with(".patch") || w.ends_with(".diff") {
+                last = Some(w.rsplit('/').next().unwrap_or(w).to_string());
+            }
+        }
+    }
+    last
+}
+
+/// A command %prep ran that the builder lacks (`line 61: dotnet: command not
+/// found`): the environment's gap, not the spec's defect.
+/// A header is the same gap: `--nodeps` installs no build dependency, so a
+/// %prep that compiles a probe (`fatal error: libelf.h: No such file or
+/// directory`) says the builder lacks it, not that the spec is broken.
+pub fn missing_command(out: &str) -> Option<String> {
+    out.lines().find_map(|l| {
+        let l = l.trim();
+        if let Some(head) = l.strip_suffix(": command not found") {
+            let cmd = head.rsplit(": ").next()?.trim();
+            return (!cmd.is_empty() && !cmd.contains(' ')).then(|| cmd.to_string());
+        }
+        let (_, rest) = l.split_once("fatal error: ")?;
+        let hdr = rest.strip_suffix(": No such file or directory")?.trim();
+        (hdr.ends_with(".h") && !hdr.contains(' ')).then(|| format!("<{hdr}>"))
+    })
+}
+
+/// Did patch itself refuse a hunk or a file?
+pub fn patch_failed(out: &str) -> bool {
+    out.lines().map(str::trim).any(|l| (l.contains("hunk") && l.contains("FAILED")) || l.starts_with("can't find file to patch") || l.contains("Reversed (or previously applied) patch detected") || l.contains("malformed patch"))
+}
+
+/// What patch or the shell said when %prep failed: the first line that
+/// carries a reason, not rpm's own summary.
+pub fn prep_reason(out: &str) -> Option<String> {
+    const KEYS: [&str; 6] = ["FAILED", "can't find file", "No such file", "Reversed (or previously applied)", "malformed patch", "not found"];
+    out.lines().map(str::trim).find(|l| KEYS.iter().any(|k| l.contains(k)) && !l.starts_with("error: Bad exit status")).map(|l| l.chars().take(160).collect())
+}
+
+/// The copy's real %prep for `defines`: rpmbuild -bp --nodeps in the builder,
+/// with the spec directory and every config.yaml archive (sha512-verified) as
+/// its sources, in a scratch tree. A switch fixed by a plain %define is set in
+/// the scratch copy of the spec, since -D cannot reach it.
 fn series(ctx: &mut Ctx, c: &Copy, package: &str, defines: &BTreeMap<String, String>, expect: Option<&str>) -> Result<Verdict, String> {
     let work = fresh(ctx, "series")?;
     let r = (|| -> Result<Verdict, String> {
@@ -641,48 +808,106 @@ fn series(ctx: &mut Ctx, c: &Copy, package: &str, defines: &BTreeMap<String, Str
         if !x.wait().map_err(|e| format!("tar: {e}"))?.success() {
             return Err("unpacking the spec directory failed".into());
         }
+        flatten_sources(&specdir)?;
         let spec = specdir.join(format!("{package}.spec"));
-        let mut args: Vec<OsString> = vec!["-P".into(), "-D".into(), format!("_sourcedir {}", specdir.display()).into(), "-D".into(), "dist .ph5".into()];
+        let mut fixed = Vec::new();
+        let raw = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
+        let mut text = raw.clone();
+        for s in crate::specswitch::switches(&raw) {
+            if let (crate::specswitch::Kind::Fixed(_), Some(v)) = (&s.kind, defines.get(&s.name)) {
+                text = crate::specswitch::set(&text, &s, v)?;
+                fixed.push(s.name.clone());
+            }
+        }
+        if !fixed.is_empty() {
+            fs::write(&spec, &text).map_err(|e| format!("{}: {e}", spec.display()))?;
+        }
+        let with = if defines.is_empty() {
+            String::new()
+        } else {
+            let set = |k: &str| if fixed.iter().any(|f| f == k) { " (a plain %define, set in a scratch copy of the spec)" } else { "" };
+            format!(" with {}", defines.iter().map(|(k, v)| format!("{k}={v}{}", set(k))).collect::<Vec<_>>().join(" "))
+        };
+        let mut common: Vec<OsString> = vec!["-D".into(), format!("_sourcedir {}", specdir.display()).into(), "-D".into(), "dist .ph5".into(), "-D".into(), "with_check 0".into()];
         if let Some(s) = representative(&c.build_if) {
-            args.extend(["-D".into(), format!("photon_subrelease {s}").into()]);
+            common.extend(["-D".into(), format!("photon_subrelease {s}").into()]);
         }
         for (k, v) in defines {
-            args.extend(["-D".into(), format!("{k} {v}").into()]);
+            common.extend(["-D".into(), format!("{k} {v}").into()]);
         }
+        let mut args: Vec<OsString> = vec!["-P".into()];
+        args.extend(common.iter().cloned());
         args.push(spec.clone().into_os_string());
         let out = crate::builder::tool_command("rpmspec", &specdir, &args, ctx.log)?.output().map_err(|e| format!("rpmspec: {e}"))?;
-        let with = if defines.is_empty() { String::new() } else { format!(" with {}", defines.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" ")) };
         if !out.status.success() {
             let err = String::from_utf8_lossy(&out.stderr);
             let line = err.lines().find(|l| l.contains("error")).unwrap_or("rpmspec failed").trim().to_string();
             return Ok(Verdict::Present(format!("the spec does not expand{with}: {line}")));
         }
-        let patches = patch_list(&String::from_utf8_lossy(&out.stdout));
+        let expanded = String::from_utf8_lossy(&out.stdout).into_owned();
+        let patches = patch_list(&expanded);
         if let Some(e) = expect {
             if !patches.iter().any(|p| p == e) {
                 return Ok(Verdict::Present(format!("`{e}` is not in %prep{with}: the variant is unreachable")));
             }
         }
-        let tb = archive(ctx, c)?;
-        let src = work.join("src");
-        fs::create_dir_all(&src).map_err(|e| format!("{e}"))?;
-        let st = Command::new("tar").arg("-xf").arg(&tb).arg("-C").arg(&src).status().map_err(|e| format!("tar: {e}"))?;
-        if !st.success() {
-            return Err(format!("{}: unpacking failed", tb.display()));
-        }
-        let top: Vec<PathBuf> = fs::read_dir(&src).map_err(|e| format!("{e}"))?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.is_dir()).collect();
-        let [tree] = top.as_slice() else { return Err(format!("{}: not one top directory", tb.display())) };
-        for p in &patches {
-            let f = specdir.join(p);
-            if !f.is_file() {
-                return Ok(Verdict::Present(format!("`{p}` is listed{with} but missing")));
+        // the sources %prep may need: every config.yaml archive, verified
+        let mut unavailable = Vec::new();
+        for s in source_list(&expanded) {
+            if specdir.join(&s).exists() {
+                continue;
             }
-            let st = Command::new("patch").arg("-d").arg(tree).args(["-p1", "--fuzz=0", "-s", "--batch", "-i"]).arg(&f).output().map_err(|e| format!("patch: {e}"))?;
-            if !st.status.success() {
-                return Ok(Verdict::Present(format!("`{p}` does not apply at fuzz 0{with}")));
+            match c.archives.iter().find(|a| a.name == s) {
+                Some(a) => {
+                    let p = archive(ctx, a)?;
+                    let dst = specdir.join(&s);
+                    if fs::hard_link(&p, &dst).is_err() {
+                        fs::copy(&p, &dst).map_err(|e| format!("{}: {e}", dst.display()))?;
+                    }
+                }
+                None => unavailable.push(s),
             }
         }
-        Ok(Verdict::Absent(format!("{} patch(es) apply at fuzz 0{with}", patches.len())))
+        let (top, tmp) = (work.join("top"), work.join("tmp"));
+        for d in [&top, &tmp] {
+            fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+        }
+        let mut bp: Vec<OsString> = vec!["-bp".into(), "--nodeps".into(), "-D".into(), format!("_topdir {}", top.display()).into(), "-D".into(), format!("_builddir {}", top.join("BUILD").display()).into(), "-D".into(), format!("_tmppath {}", tmp.display()).into()];
+        bp.extend(common);
+        bp.push(spec.into_os_string());
+        let o = crate::builder::tool_command_with("rpmbuild", &specdir, &bp, &[work.clone()], ctx.log)?.output().map_err(|e| format!("rpmbuild: {e}"))?;
+        let all = format!("{}\n{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        if o.status.success() {
+            return Ok(Verdict::Absent(format!("%prep runs (rpmbuild -bp) with {} patch(es){with}", patches.len())));
+        }
+        if let Some(s) = unavailable.iter().find(|s| all.contains(s.as_str())) {
+            return Ok(Verdict::Unknown(format!("%prep{with} needs `{s}`, which is neither in the spec directory nor a verified archive of config.yaml")));
+        }
+        // the trace is kept: a verdict a reader cannot check is not one
+        let logs = ctx.cache.join("logs");
+        fs::create_dir_all(&logs).map_err(|e| format!("{}: {e}", logs.display()))?;
+        let tag: String = format!("{}{}", c.dir, if defines.is_empty() { String::new() } else { format!("-{}", defines.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("-")) })
+            .chars()
+            .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '=' || ch == '.' { ch } else { '_' })
+            .collect();
+        let log = logs.join(format!("{tag}.prep.log"));
+        fs::write(&log, &all).map_err(|e| format!("{}: {e}", log.display()))?;
+        // a patch that does not apply is decisive; a missing tool or header is
+        // only the answer when no patch failed (the log may carry both)
+        if !patch_failed(&all) {
+            if let Some(cmd) = missing_command(&all) {
+                return Ok(Verdict::Unknown(format!("%prep{with} needs `{cmd}`, which the builder does not have (--nodeps installs no build dependency; log {})", log.display())));
+            }
+        }
+        let why = prep_reason(&all).map(|r| format!(" (`{r}`)")).unwrap_or_default();
+        let why = format!("{why}; log {}", log.display());
+        Ok(match failing_patch(&all) {
+            Some(p) => Verdict::Present(format!("%prep fails at `{p}`{with}{why}")),
+            None => {
+                let line = all.lines().rev().find(|l| l.contains("error") && !l.contains("RPM build errors") && !l.contains("Bad exit status")).unwrap_or("rpmbuild -bp failed").trim().to_string();
+                Verdict::Present(format!("%prep fails{with}: {line}{why}"))
+            }
+        })
     })();
     let _ = fs::remove_dir_all(&work);
     r
@@ -987,9 +1212,181 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+// --- switch-check: every build variant's %prep -----------------------------------
+
+/// Does a conditional block that tests `name` hold a Patch line? Only then can
+/// turning the switch on change what %prep applies.
+pub fn patches_behind(spec: &str, name: &str) -> bool {
+    let forms = [format!("%{{?{name}}}"), format!("%{{{name}}}"), format!("%{{?{name}:")];
+    let mut stack: Vec<bool> = Vec::new();
+    for l in spec.lines().map(str::trim_start) {
+        if l.starts_with("%if") {
+            stack.push(forms.iter().any(|f| l.contains(f.as_str())));
+        } else if l.starts_with("%elif") {
+            if let Some(top) = stack.last_mut() {
+                *top = *top || forms.iter().any(|f| l.contains(f.as_str()));
+            }
+        } else if l.starts_with("%endif") {
+            stack.pop();
+        } else if stack.iter().any(|b| *b) {
+            if let Some((tag, _)) = l.split_once(':') {
+                if tag.strip_prefix("Patch").is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit())) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// The packages at `rev` with a switch that guards a patch, from one pass of
+/// git grep over the specs and a read of each candidate.
+fn packages_with_switches(repo: &Path, rev: &str) -> Result<Vec<String>, String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["grep", "-l", "-E", r"^[[:space:]]*(%\{!\?[A-Za-z_][A-Za-z0-9_]*:|%(define|global)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+0[[:space:]]*$)", rev, "--", "SPECS/*.spec", "SPECS/*/*.spec", "SPECS/*/*/*.spec"])
+        .output()
+        .map_err(|e| format!("git grep: {e}"))?;
+    if !out.status.success() && !out.stdout.is_empty() {
+        return Err(format!("git grep failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let mut v = std::collections::BTreeSet::new();
+    for l in String::from_utf8_lossy(&out.stdout).lines() {
+        let path = l.split_once(':').map(|x| x.1).unwrap_or(l);
+        let Some((dir, file)) = path.rsplit_once('/') else { continue };
+        let pkg = dir.rsplit('/').next().unwrap_or("");
+        if file != format!("{pkg}.spec") {
+            continue;
+        }
+        let Ok(text) = git(repo, &["show", &format!("{rev}:{path}")]) else { continue };
+        if crate::specswitch::switches(&text).iter().any(|s| patches_behind(&text, &s.name)) {
+            v.insert(pkg.to_string());
+        }
+    }
+    Ok(v.into_iter().collect())
+}
+
+/// One row of the switch check.
+pub struct SwitchRow {
+    pub copy: String,
+    pub switch: String,
+    pub kind: &'static str,
+    pub result: Verdict,
+}
+
+pub fn switch_rows(ctx: &mut Ctx, package: &str) -> Result<Vec<SwitchRow>, String> {
+    let mut rows = Vec::new();
+    for c in copies(ctx.repo, ctx.rev, package)? {
+        let spec = spec_text(ctx, &c, package).ok_or_else(|| format!("{}: unreadable", c.dir))?;
+        for s in crate::specswitch::switches(&spec) {
+            if !patches_behind(&spec, &s.name) {
+                continue;
+            }
+            let mut d = BTreeMap::new();
+            d.insert(s.name.clone(), "1".to_string());
+            let result = series(ctx, &c, package, &d, None).unwrap_or_else(Verdict::Unknown);
+            rows.push(SwitchRow { copy: c.label(), switch: s.name.clone(), kind: s.describe(), result });
+        }
+    }
+    Ok(rows)
+}
+
+pub fn switch_cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
+    let (mut pkgs, mut all, mut rev, mut out) = (Vec::new(), false, None, None);
+    let mut i = 0;
+    while i < args.len() {
+        let next = |i: usize| args.get(i + 1).cloned().ok_or_else(|| format!("{} needs a value", args[i]));
+        match args[i].as_str() {
+            "--package" => {
+                let p = next(i)?;
+                if !safe_rel(&p) || p.contains('/') {
+                    return Err(format!("--package {p:?} is not a spec directory name"));
+                }
+                pkgs.push(p);
+                i += 2;
+            }
+            "--all" => {
+                all = true;
+                i += 1;
+            }
+            "--rev" => {
+                rev = Some(next(i)?);
+                i += 2;
+            }
+            "--out" => {
+                out = Some(next(i)?);
+                i += 2;
+            }
+            "-h" | "--help" => {
+                println!("usage: sharukhan switch-check (--package <name>... | --all) [--rev <base>] [--out <file.md>]");
+                return Ok(());
+            }
+            a => return Err(format!("unknown argument {a}")),
+        }
+    }
+    if pkgs.is_empty() == !all {
+        return Err("name packages with --package, or --all; not both, not neither".into());
+    }
+    let rev = rev.unwrap_or_else(|| cfg.release.clone());
+    let sha = git(&cfg.gate_repo, &["rev-parse", "--verify", &format!("{rev}^{{commit}}")])?.trim().to_string();
+    if all {
+        pkgs = packages_with_switches(&cfg.gate_repo, &sha)?;
+    }
+    let mut log = |l: &str| eprintln!("{l}");
+    let mut ctx = Ctx {
+        repo: &cfg.gate_repo,
+        rev: &sha,
+        cache: cfg.work.join("pr-eligibility"),
+        scratch: crate::builder::shared_root().join("work"),
+        sources: vec![cfg.build_root.join(&cfg.release).join("stage/SOURCES")],
+        rpms: cfg.work.join("baseline-root").join(&cfg.release).join("stage/RPMS"),
+        log: &mut log,
+    };
+    let mut doc = format!("# Build switches on {rev} ({})\n\nEvery switch that guards a patch, turned on, and the variant's %prep applied at fuzz 0 to the sha512-checked source. A switch fixed by a plain %define is set in a scratch copy of the spec: no build reaches it with -D, which is how such a variant goes stale.\n\n| Copy | Switch | Kind | %prep with the switch on |\n|---|---|---|---|\n", &sha[..10]);
+    let mut broken = 0;
+    for p in &pkgs {
+        (ctx.log)(&format!("{p}"));
+        for r in switch_rows(&mut ctx, p)? {
+            broken += usize::from(matches!(r.result, Verdict::Present(_) | Verdict::Unknown(_)));
+            let word = match &r.result {
+                Verdict::Absent(_) => "builds",
+                Verdict::Present(_) => "**broken**",
+                _ => "undecided",
+            };
+            doc.push_str(&format!("| {} | `{}` | {} | {word}: {} |\n", cell(&r.copy), r.switch, r.kind, cell(r.result.why())));
+        }
+    }
+    if pkgs.is_empty() {
+        doc.push_str("| - | - | - | no spec has a switch that guards a patch |\n");
+    }
+    match out {
+        Some(p) => {
+            let tmp = format!("{p}.tmp.{}", std::process::id());
+            fs::write(&tmp, &doc).map_err(|e| format!("{tmp}: {e}"))?;
+            fs::rename(&tmp, &p).map_err(|e| format!("{p}: {e}"))?;
+            println!("wrote {p}");
+        }
+        None => print!("{doc}"),
+    }
+    if broken > 0 {
+        return Err(format!("{broken} switched variant(s) do not build their %prep or could not be decided"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_switch_guarding_a_patch_can_change_prep() {
+        let spec = "%define STIG_HARDEN 0\n%define with_check 0\n%if 0%{?STIG_HARDEN}\nSource2: stig.conf\n%if 1\nPatch5: tmp.patch\n%endif\n%endif\n%if 0%{?with_check}\nBuildRequires: x\n%endif\n";
+        assert!(patches_behind(spec, "STIG_HARDEN"));
+        assert!(!patches_behind(spec, "with_check"));
+        assert!(patches_behind("%if 0\n%elif %{a}\nPatch: p\n%endif\n", "a"));
+        assert!(!patches_behind("%if 0%{?a}\n%endif\nPatch0: p\n", "a"));
+    }
 
     fn pat_line(s: &str) -> Pat {
         Pat { line: Some(s.into()), prefix: None, contains: None }
@@ -1040,6 +1437,62 @@ mod tests {
         assert_eq!(c.url.as_deref(), Some("https://x/a.tar.gz"));
         assert_eq!(c.repo_url.as_deref(), Some("https://github.com/o/a"));
         assert_eq!(c.commit_id.as_deref(), Some("0123456789012345678901234567890123456789"));
+    }
+
+    #[test]
+    fn every_archive_is_read_and_a_folded_digest_too() {
+        let y = "sources:\n- archive: linux-6.12.115.tar.xz\n  archive_type: upstream\n  url: https://cdn.kernel.org/x.tar.xz\n  commit_id: 03bae623ec326c2738198739625832aab0eb120a\n  skip_list: []\n  archive_sha512sum: \n    ea97aa\n  skip_validation: false\n- archive: second.tar.gz\n  archive_sha512sum: ff00\n";
+        let a = archives_of(y);
+        assert_eq!(a.len(), 2);
+        assert_eq!(a[0].name, "linux-6.12.115.tar.xz");
+        assert_eq!(a[0].sha512.as_deref(), Some("ea97aa"));
+        assert_eq!(a[1].sha512.as_deref(), Some("ff00"));
+        assert_eq!(a[1].url, None);
+        let mut c = Copy::default();
+        source_of(y, &mut c);
+        assert_eq!(c.sha512.as_deref(), Some("ea97aa"));
+        assert_eq!(c.archives.len(), 2);
+        // a key with an empty value and a following key is not folded into it
+        assert_eq!(archives_of("- archive: 'q.tar.xz'\n  archive_sha512sum: 'ce27'\n")[0].sha512.as_deref(), Some("ce27"));
+        let z = archives_of("- archive: a\n  archive_sha512sum:\n  url: https://u\n");
+        assert_eq!((z[0].sha512.as_deref(), z[0].url.as_deref()), (None, Some("https://u")));
+    }
+
+    #[test]
+    fn sources_in_subdirectories_are_staged_by_name_as_photon_does() {
+        let d = std::env::temp_dir().join(format!("sharukhan-pe-{}-flat", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("CVE/deeper")).unwrap();
+        fs::write(d.join("x.spec"), "s").unwrap();
+        fs::write(d.join("CVE/a.patch"), "a").unwrap();
+        fs::write(d.join("CVE/deeper/b.patch"), "b").unwrap();
+        fs::write(d.join("CVE/x.spec"), "s").unwrap();
+        assert_eq!(flatten_sources(&d).unwrap(), 2);
+        assert_eq!(fs::read_to_string(d.join("a.patch")).unwrap(), "a");
+        assert_eq!(fs::read_to_string(d.join("b.patch")).unwrap(), "b");
+        fs::write(d.join("CVE/deeper/a.patch"), "other").unwrap();
+        assert!(flatten_sources(&d).unwrap_err().contains("two different files"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_prep_failure_names_the_patch_it_was_applying() {
+        let out = "Patch #0 (0001-a.patch):\n+ /usr/bin/patch -p1\nPatch #5 (harden-tmpfs-mount-options.patch):\n1 out of 1 hunk FAILED\nerror: Bad exit status\n";
+        assert_eq!(failing_patch(out).as_deref(), Some("harden-tmpfs-mount-options.patch"));
+        assert_eq!(failing_patch("error: x\n"), None);
+        let auto = "+ /usr/lib/rpm/rpmuncompress /w/spec/0001-a.patch\n+ /usr/bin/patch -p1 -s --fuzz=0 --no-backup-if-mismatch -f\n+ /usr/lib/rpm/rpmuncompress /w/spec/harden-tmpfs-mount-options.patch\n+ /usr/bin/patch -p1 -s --fuzz=0 --no-backup-if-mismatch -f\n1 out of 1 hunk FAILED -- saving rejects to file units/tmp.mount.rej\nerror: Bad exit status from /w/tmp/rpm-tmp.x (%prep)\n";
+        assert_eq!(failing_patch(auto).as_deref(), Some("harden-tmpfs-mount-options.patch"));
+        assert_eq!(prep_reason(auto).as_deref(), Some("1 out of 1 hunk FAILED -- saving rejects to file units/tmp.mount.rej"));
+        assert_eq!(missing_command("/w/tmp/rpm-tmp.J: line 61: dotnet: command not found\n").as_deref(), Some("dotnet"));
+        assert_eq!(missing_command("error: Bad exit status\n"), None);
+        assert_eq!(missing_command("<stdin>:1:10: fatal error: libelf.h: No such file or directory\n").as_deref(), Some("<libelf.h>"));
+        assert_eq!(missing_command("cat: x.patch: No such file or directory\n"), None);
+        let both = "<stdin>:1:10: fatal error: libelf.h: No such file or directory\n+ /usr/lib/rpm/rpmuncompress /w/1000-FIPS-canister-creation.patch\n1 out of 9 hunks FAILED -- saving rejects to file crypto/Makefile.rej\n";
+        assert!(patch_failed(both));
+        assert!(!patch_failed("<stdin>:1:10: fatal error: libelf.h: No such file or directory\n"));
+        // a path is not mistaken for a patch name
+        assert_eq!(failing_patch("+ cd /x/patches-dir\n"), None);
+        assert_eq!(source_list("Source0: https://x/a-1.tar.gz\nSource: b.conf\nSourceX: no\nPatch0: p\n"), vec!["a-1.tar.gz", "b.conf"]);
     }
 
     #[test]

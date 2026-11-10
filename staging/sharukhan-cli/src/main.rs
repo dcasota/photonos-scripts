@@ -12,6 +12,7 @@ mod build;
 mod tslog;
 mod reuse;
 mod sdver;
+mod specswitch;
 mod baseline;
 mod bootstrap;
 mod cachecheck;
@@ -147,6 +148,7 @@ PHASES (the same code `run` calls, one step at a time)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
     variants            does config/variants.conf match the fork's open PRs?
     canister-equivalent regenerate the embedded canister-equivalent patch (--check | --out <file>)
+    switch-check        every build switch guarding a patch turned on, its %prep applied at fuzz 0 (--package <n>... | --all)
     pr-eligibility      is each PR still needed: its defects probed in every copy of its package (--pr <n> --rev <base> --out <file.md>)
     db render           MEMORY.md as a view of the memory database ([<memory.db>] <out>)
     mcp                 stdio MCP server of one sync run and PR (--run --pr [--profile escalation|readonly])
@@ -717,6 +719,15 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("sharukhan db: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+    if argv.first().map(String::as_str) == Some("switch-check") {
+        return match preligible::switch_cli(&config::Config::load(), &argv[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("sharukhan switch-check: {e}");
                 ExitCode::from(1)
             }
         };

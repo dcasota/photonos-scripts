@@ -60,9 +60,10 @@ A `--systemd` build is refused until the branch passes, and every problem is nam
 - the tree is a mainline tree (its subrelease is the mainline);
 - the spec is the profile's Version-Release, parses on x86_64 and aarch64, and `check_spec.py` passes;
 - every patch applies in `%autosetup` order at fuzz 0 to the verified tarball, including the patches an
-  overridable switch enables (`%{!?STIG_HARDEN: %global STIG_HARDEN 0}`: the spec is expanded with the
+  overridable switch (`%{!?STIG_HARDEN: %global STIG_HARDEN 0}`) or a fixed one (a plain `%define STIG_HARDEN 0`,
+  set to 1 in a scratch copy of the spec, since `-D` cannot reach it) enables: the spec is expanded with the
   switch on as well, and those patches are replayed in their own tree, in the switched order; one the release already
-  carries must be dropped);
+  carries must be dropped. See [build switches](../automation/pr-eligibility.md#build-switches);
 - every meson option the spec passes is one the release declares.
 
 A port branch behind the release branch is reported: rebase it to test today's tree.
