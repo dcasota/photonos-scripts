@@ -865,14 +865,15 @@ fn check_snapshot(
 /// The default download cache: $SHARUKHAN_KERNEL_CACHE, else
 /// $XDG_CACHE_HOME/sharukhan/kernel, else $HOME/.cache/sharukhan/kernel.
 pub fn default_cache() -> Result<PathBuf> {
-    if let Some(p) = std::env::var_os("SHARUKHAN_KERNEL_CACHE") {
-        return Ok(PathBuf::from(p));
+    let env = |k: &str| crate::safepath::env_path(k).map_err(|e| io("kernel cache", e));
+    if let Some(p) = env("SHARUKHAN_KERNEL_CACHE")? {
+        return Ok(p);
     }
-    if let Some(p) = std::env::var_os("XDG_CACHE_HOME") {
-        return Ok(PathBuf::from(p).join("sharukhan/kernel"));
+    if let Some(p) = env("XDG_CACHE_HOME")? {
+        return Ok(p.join("sharukhan/kernel"));
     }
-    std::env::var_os("HOME")
-        .map(|h| PathBuf::from(h).join(".cache/sharukhan/kernel"))
+    env("HOME")?
+        .map(|h| h.join(".cache/sharukhan/kernel"))
         .ok_or_else(|| {
             io(
                 "kernel cache",
@@ -1320,7 +1321,7 @@ mod tests {
     impl Lab {
         fn new(tag: &str) -> Lab {
             use std::os::unix::fs::PermissionsExt;
-            let dir = std::env::temp_dir().join(format!("shk-{tag}-{}", std::process::id()));
+            let dir = crate::safepath::test_base().join(format!("shk-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             let home = dir.join("g");
             std::fs::create_dir_all(&home).unwrap();
@@ -1542,7 +1543,7 @@ mod tests {
     #[test]
     fn verify_refuses_a_local_copy_under_another_name_before_anything_else() {
         let k = KernelRelease::parse("7.2.8").unwrap();
-        let dir = std::env::temp_dir().join(format!("shk-name-{}", std::process::id()));
+        let dir = crate::safepath::test_base().join(format!("shk-name-{}", std::process::id()));
         let e = verify(&k, Some(Path::new("/x/linux-7.2.7.tar.xz")), &dir, &trust())
             .unwrap_err()
             .to_string();

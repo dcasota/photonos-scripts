@@ -83,7 +83,7 @@ Every layer depends only downward. The domain layer never shells out directly; i
 | automation | `sync`, `syncrun`, `prbody`, `subrel`, `variants`, `preligible` | the fork sync: analysis, rebase and verify (`sync`), the resumable state machine and its stages (`syncrun`, ADR-0009, ADR-0011), PR descriptions carried and linted (`prbody`), subreleases from the tree, the variants file, whether each PR is still needed (`preligible`: its defects probed in every copy of its package, docs/automation/pr-eligibility.md) |
 | automation | `watch`, `health` | the upstream watcher and its events and notifications; `doctor`'s automation checks |
 | automation | `escalate`, `mcp` | the escalation queue, budgets and ledger; the stdio MCP server it works through (ADR-0010) |
-| host | `service`, `secret`, `author` | the host services, settings file and secret files (ADR-0012); the configured commit author |
+| host | `service`, `secret`, `author`, `safepath` | the host services, settings file and secret files (ADR-0012); the configured commit author; path settings checked and private scratch directories (`safepath`) |
 | persistence | `dbrender`, `doccheck` | `db render` (MEMORY.md as a view); the documentation tests (links, anchors, subcommands, profiles) |
 | cli | `main`, `phases`, `config` | the command surface; one entry point per phase; typed paths and defaults, and the built-in configuration files (`DataFile`) |
 

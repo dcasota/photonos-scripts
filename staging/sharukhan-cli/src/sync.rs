@@ -350,10 +350,9 @@ fn changelog_body(spec: &str) -> &str {
 
 fn merge3(base: &str, ours: &str, theirs: &str) -> Result<String, ()> {
     // one directory per call: two merges within the same second must not share files
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let d = std::env::temp_dir().join(format!("shk-merge3-{}-{}-{seq}", std::process::id(), crate::job::stamp()));
-    let _ = fs::create_dir_all(&d);
+    // a scratch failure refuses the merge (the caller then asks for a decision),
+    // never a merge made without its inputs
+    let d = crate::safepath::private_tmp("shk-merge3").map_err(|_| ())?;
     let (o, b, t) = (d.join("o"), d.join("b"), d.join("t"));
     let r = (|| {
         fs::write(&o, ours).map_err(|_| ())?;
@@ -1163,7 +1162,7 @@ mod tests {
     #[test]
     fn a_replay_keeps_modes_and_moves_the_parents_new_changelog_into_the_include() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("shk-replay-{}-{}", std::process::id(), crate::job::stamp()));
+        let d = crate::safepath::test_base().join(format!("shk-replay-{}-{}", std::process::id(), crate::job::stamp()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/k")).unwrap();
         let g = |a: &[&str]| -> String {

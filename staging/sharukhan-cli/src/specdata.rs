@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn the_checker_is_called_as_build_py_calls_it() {
-        let d = std::env::temp_dir().join(format!("shk-checker-argv-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-checker-argv-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let new = d.join("new.py");
         std::fs::write(&new, "parser.add_argument(\n    \"--parse-matrix\",\n").unwrap();
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn a_build_root_without_the_package_builder_is_an_error_not_a_pass() {
-        let t = std::env::temp_dir().join(format!("shk-specdata-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-specdata-{}", std::process::id()));
         let _ = std::fs::create_dir_all(t.join("SPECS"));
         let i = Inputs::from_build_root(&t, "common", "5.0");
         let r = check(&i, &t.join("SPECS"), &[], &t.join("logs"));
@@ -471,27 +471,42 @@ mod tests {
     /// named (docker among them, the gate-70 failure) and minimal is not.
     /// Live: a real build root and gate repository (SHARUKHAN_LIVE_BUILD_ROOT,
     /// SHARUKHAN_LIVE_REPO); `cargo test live_ -- --ignored`.
+    /// `git archive 5.0 <paths> | tar -x -C <dir>` without a shell: two
+    /// processes and a pipe, the repository and the directory passed as
+    /// arguments, so neither is ever parsed as shell text.
+    fn extract_specs(repo: &Path, dir: &Path, paths: &[&str]) {
+        use std::process::Stdio;
+        let mut git = Command::new("git")
+            .arg("--git-dir")
+            .arg(repo)
+            .args(["archive", "5.0"])
+            .args(paths)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let tar = Command::new("tar")
+            .arg("-x")
+            .arg("-C")
+            .arg(dir)
+            .args(["--exclude=*.patch", "--exclude=*.tar.*", "--exclude=*.tgz", "--exclude=*.zip"])
+            .stdin(git.stdout.take().unwrap())
+            .status()
+            .unwrap();
+        assert!(git.wait().unwrap().success() && tar.success());
+    }
+
     #[test]
     #[ignore = "live: needs SHARUKHAN_LIVE_BUILD_ROOT and SHARUKHAN_LIVE_REPO"]
     fn live_an_already_built_packages_unbuilt_requirement_is_named() {
-        let root_env = std::env::var("SHARUKHAN_LIVE_BUILD_ROOT").expect("SHARUKHAN_LIVE_BUILD_ROOT=<build root with common and the release>");
-        let repo_env = std::env::var("SHARUKHAN_LIVE_REPO").expect("SHARUKHAN_LIVE_REPO=<gate repository>");
+        let root_env = crate::safepath::env_path("SHARUKHAN_LIVE_BUILD_ROOT").unwrap_or_else(|e| panic!("{e}")).expect("SHARUKHAN_LIVE_BUILD_ROOT=<build root with common and the release>").to_string_lossy().into_owned();
+        let repo_env = crate::safepath::env_path("SHARUKHAN_LIVE_REPO").unwrap_or_else(|e| panic!("{e}")).expect("SHARUKHAN_LIVE_REPO=<gate repository>").to_string_lossy().into_owned();
         let (root, repo) = (Path::new(&root_env), Path::new(&repo_env));
         let i = Inputs::from_build_root(root, "common", "5.0");
         assert!(i.missing().is_none() && repo.is_dir(), "{} or {} is incomplete: {:?}", root.display(), repo.display(), i.missing());
-        let t = std::env::temp_dir().join(format!("shk-specdeps-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-specdeps-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&t);
         std::fs::create_dir_all(&t).unwrap();
-        let ok = Command::new("sh")
-            .arg("-c")
-            .arg(format!(
-                "git --git-dir={} archive 5.0 SPECS data | tar -x -C {} --exclude='*.patch' --exclude='*.tar.*' --exclude='*.tgz' --exclude='*.zip'",
-                repo.display(),
-                t.display()
-            ))
-            .status()
-            .unwrap();
-        assert!(ok.success());
+        extract_specs(repo, &t, &["SPECS", "data"]);
         let spec = std::fs::read_to_string(t.join("SPECS/minimal/minimal.spec")).unwrap();
         let v = crate::specresolve::field(&spec, "Version:").unwrap();
         let r = crate::specresolve::field(&spec, "Release:").unwrap();
@@ -531,25 +546,16 @@ mod tests {
     #[test]
     #[ignore = "live: needs SHARUKHAN_LIVE_BUILD_ROOT and SHARUKHAN_LIVE_REPO"]
     fn live_the_real_parser_refuses_a_requirement_no_spec_provides() {
-        let root_env = std::env::var("SHARUKHAN_LIVE_BUILD_ROOT").expect("SHARUKHAN_LIVE_BUILD_ROOT=<build root with common and the release>");
-        let repo_env = std::env::var("SHARUKHAN_LIVE_REPO").expect("SHARUKHAN_LIVE_REPO=<gate repository>");
+        let root_env = crate::safepath::env_path("SHARUKHAN_LIVE_BUILD_ROOT").unwrap_or_else(|e| panic!("{e}")).expect("SHARUKHAN_LIVE_BUILD_ROOT=<build root with common and the release>").to_string_lossy().into_owned();
+        let repo_env = crate::safepath::env_path("SHARUKHAN_LIVE_REPO").unwrap_or_else(|e| panic!("{e}")).expect("SHARUKHAN_LIVE_REPO=<gate repository>").to_string_lossy().into_owned();
         let (root, repo) = (Path::new(&root_env), Path::new(&repo_env));
         let i = Inputs::from_build_root(root, "common", "5.0");
         assert!(i.missing().is_none() && repo.is_dir(), "{} or {} is incomplete: {:?}", root.display(), repo.display(), i.missing());
-        let t = std::env::temp_dir().join(format!("shk-specdata-real-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-specdata-real-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&t);
         std::fs::create_dir_all(&t).unwrap();
         // the spec side of 5.0: everything but patches and archives
-        let ok = Command::new("sh")
-            .arg("-c")
-            .arg(format!(
-                "git --git-dir={} archive 5.0 SPECS | tar -x -C {} --exclude='*.patch' --exclude='*.tar.*' --exclude='*.tgz' --exclude='*.zip'",
-                repo.display(),
-                t.display()
-            ))
-            .status()
-            .unwrap();
-        assert!(ok.success());
+        extract_specs(repo, &t, &["SPECS"]);
         let specs = t.join("SPECS/zz-probe");
         std::fs::create_dir_all(&specs).unwrap();
         let spec = |req: &str| {

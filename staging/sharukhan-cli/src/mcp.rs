@@ -246,10 +246,7 @@ pub fn propose_patch(s: &Subject, diff: &str, message: &str, author: &crate::aut
         Some(t) => t.clone(),
         None => git(&s.repo, &["rev-parse", "--verify", &format!("{}^{{commit}}", s.start())])?.trim().to_string(),
     };
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("shk-mcp-{}-{n}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
+    let dir = crate::safepath::private_tmp("shk-mcp")?;
     let index = dir.join("index");
     let patch = dir.join("p.diff");
     std::fs::write(&patch, diff).map_err(|e| format!("{e}"))?;
@@ -622,7 +619,7 @@ mod tests {
 
     #[test]
     fn a_proposal_is_a_commit_on_its_own_ref_only() {
-        let d = std::env::temp_dir().join(format!("shk-mcp-repo-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-mcp-repo-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("SPECS/x")).unwrap();
         std::fs::write(d.join("SPECS/x/x.spec"), "Name: x\nRelease: 1\n").unwrap();

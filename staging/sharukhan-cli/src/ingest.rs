@@ -559,7 +559,7 @@ mod tests {
     fn lifecycle_records_are_replaced_not_appended() {
         let conn = Connection::open_in_memory().unwrap();
         schema(&conn);
-        let d = std::env::temp_dir().join(format!("sharukhan-ing-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-ing-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("pkglife-s1.jsonl");
         std::fs::write(
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn evidence_is_read_once_and_again_only_when_it_changes() {
-        let d = std::env::temp_dir().join(format!("shk-ingest-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-ingest-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("results/k01")).unwrap();
         let db = d.join("m.db");

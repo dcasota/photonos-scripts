@@ -567,7 +567,7 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
 
     #[test]
     fn a_port_branch_asks_the_release_repo_not_one_named_after_the_branch() {
-        let d = std::env::temp_dir().join(format!("shk-canurl-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-canurl-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("SPECS/photon-repos")).unwrap();
         std::fs::write(d.join("build-config.json"), r#"{"photon-build-param": {"photon-release-version": "5.0"}}"#).unwrap();
@@ -806,7 +806,7 @@ mod series_tests {
     /// So the thing that must work is: keep going, and capture each reject.
     #[test]
     fn a_failure_does_not_stop_the_series_and_its_reject_is_captured() {
-        let base = std::env::temp_dir().join(format!("sk-series-{}", std::process::id()));
+        let base = crate::safepath::test_base().join(format!("sk-series-{}", std::process::id()));
         let (patches, tree) = (base.join("patches"), base.join("tree"));
         fs::create_dir_all(&patches).unwrap();
         fs::create_dir_all(&tree).unwrap();

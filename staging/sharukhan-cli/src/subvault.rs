@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn vault_moves_aside_and_restore_puts_back() {
-        let root = std::env::temp_dir().join(format!("shk-subvault-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-subvault-{}", std::process::id()));
         let x = root.join("RPMS/x86_64");
         fs::create_dir_all(&x).unwrap();
         for f in ["gcc-12.5.0-2.ph5.x86_64.rpm", "gcc-12.2.0-16.2.ph5.x86_64.rpm", "zlib-1.3-1.ph5.x86_64.rpm"] {
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn a_file_the_build_recreated_is_not_overwritten_on_restore() {
-        let root = std::env::temp_dir().join(format!("shk-subvault-keep-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-subvault-keep-{}", std::process::id()));
         let x = root.join("RPMS/x86_64");
         fs::create_dir_all(&x).unwrap();
         fs::write(x.join("gcc-12.5.0-2.ph5.x86_64.rpm"), b"old").unwrap();

@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn a_photon_clone_is_read_at_the_remote_tracking_ref_only() {
-        let dir = std::env::temp_dir().join(format!("shk-branch-{}", std::process::id()));
+        let dir = crate::safepath::test_base().join(format!("shk-branch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let g = |args: &[&str]| {
@@ -488,7 +488,7 @@ mod tests {
     /// SPECS/linux, and not in another subrelease's directory.
     #[test]
     fn the_kernel_directory_is_read_from_the_branch() {
-        let dir = std::env::temp_dir().join(format!("shk-branch-sr-{}", std::process::id()));
+        let dir = crate::safepath::test_base().join(format!("shk-branch-sr-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let g = |args: &[&str]| {

@@ -835,12 +835,12 @@ mod tests {
     /// both `linux` lines get the console, exactly once, and nothing else moves.
     #[test]
     fn the_serial_console_lands_on_the_installers_own_linux_lines() {
-        let dir = std::env::temp_dir().join(format!("sharukhan-grub-{}", std::process::id()));
+        let dir = crate::safepath::test_base().join(format!("sharukhan-grub-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("boot/grub2")).unwrap();
         let cfg = dir.join("boot/grub2/grub.cfg");
         let before = "menuentry \"Photon\" {\n  linux /boot/$photon_linux root=$rootpartition $photon_cmdline $systemd_cmdline  $user_cmdline \n  initrd /boot/$photon_initrd\n}\nmenuentry \"Photon fsck\" {\n  linux /boot/$photon_linux root=$rootpartition $photon_cmdline fsck.mode=force fsck.repair=yes\n}\n";
         std::fs::write(&cfg, before).unwrap();
-        let line = GRUB_SERIAL_CONSOLE.replace("/boot/grub2/grub.cfg", &cfg.to_string_lossy());
+        let line = GRUB_SERIAL_CONSOLE.replace("/boot/grub2/grub.cfg", &crate::safepath::sh_quote(&crate::safepath::shell_safe(&cfg)));
         for _ in 0..2 {
             assert!(std::process::Command::new("sh").args(["-c", &line]).status().unwrap().success());
         }
@@ -861,14 +861,14 @@ mod tests {
     /// detached tail keeps copying the log to the serial port.
     #[test]
     fn preinstall_returns_at_once_and_keeps_streaming_the_log() {
-        let dir = std::env::temp_dir().join(format!("sharukhan-pre-{}", std::process::id()));
+        let dir = crate::safepath::test_base().join(format!("sharukhan-pre-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let (log, tty) = (dir.join("installer.log"), dir.join("ttyS0"));
         std::fs::write(&log, "step 1\n").unwrap();
         let script = preinstall()
             .join("\n")
-            .replace("/var/log/installer.log", &log.to_string_lossy())
-            .replace("/dev/ttyS0", &tty.to_string_lossy());
+            .replace("/var/log/installer.log", &crate::safepath::shell_safe(&log))
+            .replace("/dev/ttyS0", &crate::safepath::shell_safe(&tty));
         let t0 = std::time::Instant::now();
         let out = std::process::Command::new("sh").args(["-c", &script]).output().unwrap();
         assert!(out.status.success());

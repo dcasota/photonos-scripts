@@ -804,7 +804,7 @@ mod tests {
         }
     }
     fn tmp(tag: &str) -> T {
-        let d = std::env::temp_dir().join(format!("shk-kslot-{tag}-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-kslot-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         T(d)

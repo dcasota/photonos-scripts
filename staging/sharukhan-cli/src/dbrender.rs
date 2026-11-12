@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn a_render_is_grouped_by_severity_and_flags_blockers() {
-        let d = std::env::temp_dir().join(format!("shk-render-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-render-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let p = d.join("m.db");
         let _ = std::fs::remove_file(&p);

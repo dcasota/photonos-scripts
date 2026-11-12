@@ -307,7 +307,7 @@ mod stop_tests {
 
     #[test]
     fn files_move_only_once_the_vm_is_proven_stopped() {
-        let base = std::env::temp_dir().join(format!("shk-stop-{}", std::process::id()));
+        let base = crate::safepath::test_base().join(format!("shk-stop-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         for (case, running, fails) in [("off", false, false), ("on", true, false), ("unknown", true, true)] {
             let d = base.join(case);

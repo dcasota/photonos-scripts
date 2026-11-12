@@ -11,6 +11,7 @@ mod branchguard;
 mod build;
 mod tslog;
 mod reuse;
+mod safepath;
 mod sdver;
 mod specswitch;
 mod baseline;
@@ -1844,7 +1845,7 @@ fn cmd_remaster(args: &Args) -> Result<(), String> {
     let tree = args
         .photon_tree
         .clone()
-        .or_else(|| std::env::var("MC_REMASTER_PHOTON_TREE").ok())
+        .or(crate::safepath::env_path("MC_REMASTER_PHOTON_TREE")?.map(|p| p.to_string_lossy().into_owned()))
         .ok_or(
             "remaster needs --photon-tree <dir>: a Photon checkout at the commit that built \
              the input ISO. The live tree has moved on, so building from it would produce a \
@@ -1853,12 +1854,12 @@ fn cmd_remaster(args: &Args) -> Result<(), String> {
     let sources = args
         .sources
         .clone()
-        .or_else(|| std::env::var("MC_REMASTER_SOURCES").ok())
+        .or(crate::safepath::env_path("MC_REMASTER_SOURCES")?.map(|p| p.to_string_lossy().into_owned()))
         .ok_or("remaster needs --sources <dir>: the declared kernel source tarballs")?;
     let workdir = args
         .builddir
         .clone()
-        .or_else(|| std::env::var("MC_REMASTER_WORKDIR").ok())
+        .or(crate::safepath::env_path("MC_REMASTER_WORKDIR")?.map(|p| p.to_string_lossy().into_owned()))
         .ok_or("remaster needs --builddir <dir>: tens of gigabytes of scratch space")?;
     let only = match args.stage.as_deref() {
         None => vec![],
@@ -2054,19 +2055,13 @@ phase B: relink linux and linux-esx against it"),
         return Ok(());
     }
 
-    // Work on a throwaway copy: the series must be applied cumulatively for
-    // later patches to see earlier ones, and that must never touch the tree a
-    // build is using.
-    let work = std::env::temp_dir().join(format!("sharukhan-rebase-{}", job::stamp()));
-    println!(
-        "\nrebase-check needs an unpacked kernel tree at {}",
-        work.display()
-    );
-    println!("(not yet wired to unpack the source tarball - point PHOTON_KERNEL_TREE at one)");
-    let tree = match std::env::var("PHOTON_KERNEL_TREE") {
-        Ok(t) => std::path::PathBuf::from(t),
-        Err(_) => return Err("set PHOTON_KERNEL_TREE to a prepared kernel tree".into()),
-    };
+    // The series must be applied cumulatively for later patches to see earlier
+    // ones, on a prepared copy of the kernel tree, never the tree a build uses.
+    println!("\nrebase-check runs on the unpacked kernel tree PHOTON_KERNEL_TREE names (not yet wired to unpack the source tarball)");
+    let tree = crate::safepath::env_path("PHOTON_KERNEL_TREE")?.ok_or("set PHOTON_KERNEL_TREE to a prepared kernel tree")?;
+    if !tree.is_dir() {
+        return Err(format!("PHOTON_KERNEL_TREE {} is not a directory", tree.display()));
+    }
     let applied = canister::rebase_check(cfg, &tree)?;
     let (mut ok, mut bad) = (0, 0);
     for a in &applied {
@@ -2292,11 +2287,9 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
             bad += 1;
             println!("  [FAIL ] package builder parse: cannot run it ({m})");
         } else {
-            let wt = std::env::temp_dir().join(format!(
-                "shk-branch-check-{}",
-                std::process::id()
-            ));
-            let _ = std::fs::remove_dir_all(&wt);
+            // one private directory holds both worktrees and the logs
+            let scratch = crate::safepath::private_tmp("shk-branch-check")?;
+            let wt = scratch.join("branch");
             let added = std::process::Command::new("git")
                 .arg("-C")
                 .arg(dir)
@@ -2319,14 +2312,10 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
                 // it is checked by building the release's specs with its own
                 // code, against a pristine checkout of the release branch - not
                 // by treating its common SPECS as release specs.
-                let rel_wt = std::env::temp_dir().join(format!(
-                    "shk-branch-check-release-{}",
-                    std::process::id()
-                ));
+                let rel_wt = scratch.join("release");
                 let kind = specresolve::is_common_tree(&wt);
                 if kind == Some(true) {
-                    // a run that died here leaves the directory and its registration
-                    let _ = std::fs::remove_dir_all(&rel_wt);
+                    // a run that died leaves a stale worktree registration
                     let _ = std::process::Command::new("git")
                         .arg("-C")
                         .arg(dir)
@@ -2369,10 +2358,7 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
                         &inputs,
                         &release_specs,
                         &changed,
-                        &std::env::temp_dir().join(format!(
-                            "shk-branch-check-logs-{}",
-                            std::process::id()
-                        )),
+                        &scratch.join("logs"),
                     )
                 }) {
                     Ok((n, warnings)) => {
@@ -2403,6 +2389,7 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
                     .args(["worktree", "remove", "--force"])
                     .arg(&wt)
                     .status();
+                let _ = std::fs::remove_dir_all(&scratch);
             }
         }
     }

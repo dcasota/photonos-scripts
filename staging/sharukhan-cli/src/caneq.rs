@@ -547,7 +547,7 @@ mod tests {
 
     #[test]
     fn the_aligned_patch_applies_where_the_compiled_one_does_not() {
-        let d = std::env::temp_dir().join(format!("shk-caneq-align-{}-{}", std::process::id(), crate::job::stamp()));
+        let d = crate::safepath::test_base().join(format!("shk-caneq-align-{}-{}", std::process::id(), crate::job::stamp()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/92/linux")).unwrap();
         let rebased = CLOG_OLD.replace("* Fri Oct 23 2026 A B <a@b> 6.12.113-6", "* Tue Oct 27 2026 A B <a@b> 6.12.113-6");
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn included_preamble_and_changelog_are_found_by_subrelease() {
-        let d = std::env::temp_dir().join(format!("shk-caneq-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-caneq-{}", std::process::id()));
         fs::create_dir_all(d.join("SPECS/92/linux")).unwrap();
         fs::write(
             d.join("SPECS/92/linux/linux.spec"),

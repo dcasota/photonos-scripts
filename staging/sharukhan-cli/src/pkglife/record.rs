@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn records_round_trip_and_resume_keeps_only_final_verdicts_from_this_guest() {
-        let d = std::env::temp_dir().join(format!("sharukhan-rec-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-rec-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let mut w = Writer::create(&d, "k09", "20260927T000000Z").unwrap();
         let mut a = rec(PASS);

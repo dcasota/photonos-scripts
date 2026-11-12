@@ -2305,7 +2305,7 @@ mod tests {
 
     #[test]
     fn fastloop_rows_come_from_the_matrix_and_are_checked() {
-        let d = std::env::temp_dir().join(format!("shk-fastloop-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-fastloop-{}", std::process::id()));
         fs::create_dir_all(&d).unwrap();
         fs::write(d.join("m.tsv"), "k03 minimal 2.8 yes ext4 ks stigpkgs fails pass prebuilt\nc03 minimal 2.8 no ext4 ks fips untested pass equivalent\nf01 full 2.8 no ext4 ks none works pass prebuilt\nl01 minimal latest no ext4 ks none works pass prebuilt\n").unwrap();
         fs::write(d.join("v.conf"), "[variant 2.8]\nfix/poi-a\n[variant latest]\nfix/poi-b\n[common]\n").unwrap();
@@ -2354,7 +2354,7 @@ mod tests {
     /// synced; a staged PR, which did not move on GitHub, is restored.
     #[test]
     fn an_abort_after_publish_keeps_the_published_heads_and_records_the_base() {
-        let d = std::env::temp_dir().join(format!("shk-abort-pub-{}-{}", std::process::id(), crate::job::stamp()));
+        let d = crate::safepath::test_base().join(format!("shk-abort-pub-{}-{}", std::process::id(), crate::job::stamp()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         let g = |a: &[&str]| -> String {
@@ -2407,7 +2407,7 @@ mod tests {
     /// the base's files counted as the PR's own change.
     #[test]
     fn a_child_on_a_staged_parent_is_measured_from_the_staged_head() {
-        let d = std::env::temp_dir().join(format!("shk-near-anc-{}-{}", std::process::id(), crate::job::stamp()));
+        let d = crate::safepath::test_base().join(format!("shk-near-anc-{}-{}", std::process::id(), crate::job::stamp()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         let g = |a: &[&str]| -> String {
@@ -2703,7 +2703,7 @@ mod tests {
     #[test]
     #[ignore]
     fn live_upstream_pairs_descriptions_and_merges() {
-        let repo = std::env::var("SHARUKHAN_LIVE_REPO").expect("SHARUKHAN_LIVE_REPO=<gate repository>");
+        let repo = crate::safepath::env_path("SHARUKHAN_LIVE_REPO").unwrap_or_else(|e| panic!("{e}")).expect("SHARUKHAN_LIVE_REPO=<gate repository>").to_string_lossy().into_owned();
         let cfg = crate::config::Config::defaults();
         let c = Connection::open_in_memory().unwrap();
         let ctx = Ctx {
@@ -2712,7 +2712,7 @@ mod tests {
             fork: cfg.fork.clone(),
             repo: PathBuf::from(&repo),
             bases: BTreeMap::new(),
-            dir: std::env::temp_dir(),
+            dir: crate::safepath::test_base(),
             publish: String::new(),
             upstream: cfg.upstream.clone(),
         };

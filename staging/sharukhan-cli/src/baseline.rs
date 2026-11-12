@@ -206,7 +206,7 @@ mod tests {
     /// ledger records other content for; and it never writes the gate stage.
     #[test]
     fn the_baseline_stage_holds_only_what_the_pristine_specs_produce() {
-        let root = std::env::temp_dir().join(format!("shk-baseline-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-baseline-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let tree = root.join("5.0");
         let gate = root.join("gate-stage");
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn a_baseline_runs_in_a_root_cache_and_patches_of_its_own_with_empty_patches() {
-        let d = std::env::temp_dir().join(format!("shk-baseline-cfg-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-baseline-cfg-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let mut cfg = Config::for_test(&d);
         cfg.work = d.join("work");

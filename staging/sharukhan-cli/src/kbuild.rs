@@ -14,7 +14,7 @@
 //! whoever else builds on this host.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use crate::config::Config;
@@ -75,9 +75,10 @@ pub fn load(name: &str) -> Result<KernelBuild, String> {
     // A profile directory given explicitly is the one under review; otherwise
     // the profile compiled into the binary.
     let file = format!("{name}.json");
-    let (profile_source, profile_text) = match std::env::var_os("SHARUKHAN_WRAPPER_PROFILES") {
+    crate::safepath::check_name("a kernel profile", &file)?;
+    let (profile_source, profile_text) = match crate::safepath::env_path("SHARUKHAN_WRAPPER_PROFILES")? {
         Some(d) => {
-            let p = PathBuf::from(d).join(&file);
+            let p = d.join(&file);
             let t = fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
             (p.display().to_string(), t)
         }
@@ -93,9 +94,11 @@ pub fn load(name: &str) -> Result<KernelBuild, String> {
         return Err(format!("{profile_source} is the profile of {}, not {name}", target.ksrc()));
     }
     // Likewise the base wrapper: a directory given explicitly, else built in.
-    let base_text = match std::env::var_os("SHARUKHAN_WRAPPERS") {
+    // the base wrapper's name comes from the profile file: one plain name
+    crate::safepath::check_name("the profile's base wrapper", &profile.base.script)?;
+    let base_text = match crate::safepath::env_path("SHARUKHAN_WRAPPERS")? {
         Some(d) => {
-            let p = PathBuf::from(d).join(&profile.base.script);
+            let p = d.join(&profile.base.script);
             fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?
         }
         None => crate::wrapper::embedded::base(&profile.base.script)
@@ -236,6 +239,7 @@ pub fn prepare_release_tree(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn the_committed_profile_yields_its_pin_script_and_nevr() {

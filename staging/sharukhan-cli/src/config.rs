@@ -242,8 +242,23 @@ impl DataFile {
 /// all for the tests' `defaults`, so a unit test never depends on this host.
 type Get<'a> = &'a dyn Fn(&str) -> Option<String>;
 
+/// A path setting: unset or empty takes the default; a value must be an
+/// absolute path without `.`/`..` components or control characters
+/// (crate::safepath::check_path). A malformed one is refused, never used:
+/// MC_WORK=work/../x would send every write and removal somewhere else.
+fn path_setting(key: &str, value: Option<String>, default: &str) -> Result<PathBuf, String> {
+    let p = PathBuf::from(value.filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_string()));
+    crate::safepath::check_path(key, &p)?;
+    Ok(p)
+}
+
+/// [`path_setting`] for `load`: a malformed setting stops sharukhan with a
+/// configuration error (EX_CONFIG) before anything acts on it.
 fn var_or(get: Get, key: &str, default: &str) -> PathBuf {
-    PathBuf::from(get(key).unwrap_or_else(|| default.to_string()))
+    path_setting(key, get(key), default).unwrap_or_else(|e| {
+        eprintln!("sharukhan: configuration error: {e}");
+        std::process::exit(78)
+    })
 }
 
 fn s_or(get: Get, key: &str, default: &str) -> String {
@@ -482,6 +497,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_path_setting_is_absolute_and_plain_or_refused() {
+        assert_eq!(path_setting("MC_WORK", None, "/root/w").unwrap(), PathBuf::from("/root/w"));
+        assert_eq!(path_setting("MC_WORK", Some(String::new()), "/root/w").unwrap(), PathBuf::from("/root/w"), "empty is unset");
+        assert_eq!(path_setting("MC_WORK", Some("/srv/w".into()), "/root/w").unwrap(), PathBuf::from("/srv/w"));
+        for bad in ["work", "/root/../etc", "/root/a\nb", "./w"] {
+            assert!(path_setting("MC_WORK", Some(bad.into()), "/root/w").is_err(), "{bad:?}");
+        }
+        // every built-in default passes its own check
+        let c = Config::defaults();
+        for p in [&c.vmrun, &c.vm_root, &c.iso_cache, &c.results_dir, &c.work, &c.memory_db, &c.photon_tree, &c.gate_repo, &c.build_root] {
+            crate::safepath::check_path("default", p).unwrap();
+        }
+    }
+
+    #[test]
     fn the_configuration_files_are_built_in_unless_a_setting_names_one() {
         let c = Config::defaults();
         for f in [&c.matrix_tsv, &c.variants_file, &c.check_prs, &c.pr_defects] {
@@ -499,7 +529,7 @@ mod tests {
         // a missing file is an error that names the setting, never a fallback
         let empty = Config::from(&|k: &str| (k == "SHARUKHAN_MATRIX").then(|| " ".to_string()));
         assert!(empty.matrix_tsv.path.is_none());
-        let d = std::env::temp_dir().join(format!("shk-datafile-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-datafile-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("m.tsv");
         std::fs::write(&f, "x").unwrap();

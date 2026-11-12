@@ -16,6 +16,19 @@
 Every path has a default and an environment override. Nothing is tied to one
 machine.
 
+Every path setting is checked before use. An empty value means the default.
+Otherwise the value must be absolute, with no `.` or `..` component and no
+control character. A malformed setting (`MC_WORK=work/../x`) stops sharukhan
+with `configuration error` and exit status 78. It is never used as given, and
+it never falls back to the default silently. The same rule applies to the
+directory settings read elsewhere: `SHARUKHAN_WRAPPERS`,
+`SHARUKHAN_WRAPPER_PROFILES`, `SHARUKHAN_SYSTEMD_PROFILES`, the cache settings,
+`MC_BUILDER_SHARED_ROOT`, `MC_BUILDER_DIR`, `MC_ISO_STORE`, `MC_VMX_TEMPLATE`,
+`MC_ANTHROPIC_KEY_FILE`, the `MC_REMASTER_*` directories and
+`PHOTON_KERNEL_TREE`. Scratch directories are made in the temp directory
+(`TMPDIR`), which must be sticky when it is world-writable; each one is new,
+has an unpredictable name and mode 0700.
+
 | Variable | Default |
 | --- | --- |
 | `PHOTON_TREE` | `/root/5.0` |

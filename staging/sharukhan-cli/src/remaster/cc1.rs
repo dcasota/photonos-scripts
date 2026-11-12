@@ -684,7 +684,7 @@ mod tests {
     /// at all, so they prove nothing about a cross compiler.
     #[test]
     fn host_tool_objects_are_never_chosen_as_evidence() {
-        let d = std::env::temp_dir().join(format!("shk-cc1pick-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-cc1pick-{}", std::process::id()));
         for sub in ["scripts", "tools/perf", "kernel/sched"] {
             fs::create_dir_all(d.join(sub)).unwrap();
         }
@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn the_recorded_command_is_read_out_of_the_kbuild_cmd_file() {
-        let d = std::env::temp_dir().join(format!("shk-cc1cmd-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-cc1cmd-{}", std::process::id()));
         fs::create_dir_all(d.join("mm")).unwrap();
         fs::write(
             d.join("mm/.page_alloc.o.cmd"),

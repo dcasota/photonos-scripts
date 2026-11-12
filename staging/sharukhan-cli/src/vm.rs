@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn detaching_the_cdrom_rewrites_only_that_line() {
-        let dir = std::env::temp_dir().join(format!("sharukhan-test-{}", std::process::id()));
+        let dir = crate::safepath::test_base().join(format!("sharukhan-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let vmx = dir.join("t.vmx");
         fs::write(

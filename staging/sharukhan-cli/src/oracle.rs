@@ -31,9 +31,7 @@ use std::process::Command;
 /// POI#11 is exactly the promise that each of those is on the media - by
 /// package name, or by a package there that provides it (ntpsec provides ntp).
 pub fn installer_stig_set(iso: &Path) -> Result<Vec<String>, String> {
-    let tmp = std::env::temp_dir().join(format!("shk-stig-{}-{}", std::process::id(), unique()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let tmp = crate::safepath::private_tmp("shk-stig")?;
     let r = (|| {
         let rpm = find_on_media(iso, "/RPMS", "photon-os-installer-*.rpm")?;
         let local = tmp.join("installer.rpm");
@@ -50,13 +48,6 @@ pub fn installer_stig_set(iso: &Path) -> Result<Vec<String>, String> {
     })();
     let _ = std::fs::remove_dir_all(&tmp);
     r
-}
-
-fn unique() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0)
 }
 
 /// The quoted names of `KS_STIG_PACKAGES = [ ... ]`, comments ignored.
@@ -83,9 +74,7 @@ pub fn parse_ks_stig_packages(py: &str) -> Option<Vec<String>> {
 /// Every name the media's own repository metadata offers: package names and
 /// their `rpm:provides` entries, from the primary.xml.gz its repomd.xml names.
 pub fn media_provides(iso: &Path) -> Result<std::collections::BTreeSet<String>, String> {
-    let tmp = std::env::temp_dir().join(format!("shk-prov-{}-{}", std::process::id(), unique()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let tmp = crate::safepath::private_tmp("shk-prov")?;
     let r = (|| {
         let repomd = tmp.join("repomd.xml");
         extract(iso, "/RPMS/repodata/repomd.xml", &repomd)?;
@@ -337,9 +326,7 @@ pub fn media_hyperv(
     use std::fs;
     use std::process::Stdio;
 
-    let tmp = std::env::temp_dir().join(format!("sharukhan-verify-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let tmp = crate::safepath::private_tmp("sharukhan-verify")?;
     let mut out = Vec::new();
     let mut fail = Vec::new();
 
@@ -1580,7 +1567,7 @@ mod sd_tests {
     /// it is recorded.
     #[test]
     fn the_installed_systemd_is_judged_only_under_a_profile() {
-        let d = std::env::temp_dir().join(format!("shk-sdoracle-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-sdoracle-{}", std::process::id()));
         let mut c = Checks::init(&d, "k03", "20261105T000000Z").unwrap();
         systemd_version(Some("262.2-1.ph5"), "262.2-1.ph5", &mut c);
         systemd_version(Some("262.2-1.ph5"), "257.13-7.ph5", &mut c);
@@ -1629,7 +1616,7 @@ mod tests {
     use crate::evidence::Checks;
 
     fn scratch(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("sharukhan-or-{}-{tag}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-or-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d

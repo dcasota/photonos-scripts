@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn a_secret_is_written_private_and_read_back_checked() {
-        let d = std::env::temp_dir().join(format!("shk-secret-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-secret-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let p = d.join("s").join("key");
         write(&p, "value-1").unwrap();

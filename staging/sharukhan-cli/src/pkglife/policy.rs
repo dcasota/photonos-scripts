@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn a_policy_file_is_loaded_and_errors_name_it() {
-        let d = std::env::temp_dir().join(format!("sharukhan-pol-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-pol-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("p.json");
         std::fs::write(&f, EMBEDDED).unwrap();

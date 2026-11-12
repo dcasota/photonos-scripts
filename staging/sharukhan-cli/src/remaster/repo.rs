@@ -423,7 +423,7 @@ mod tests {
     /// the failure it exists to catch - and pass when it does not.
     #[test]
     fn stale_kernel_metadata_fails_the_repo_assertion() {
-        let d = std::env::temp_dir().join(format!("shk-repo-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-repo-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
 

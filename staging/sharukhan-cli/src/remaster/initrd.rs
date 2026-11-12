@@ -301,7 +301,7 @@ mod tests {
     /// symptom at boot is "no disks found".
     #[test]
     fn initrd_module_dir_swap_rejects_a_missing_old_uname() {
-        let d = std::env::temp_dir().join(format!("shk-initrd-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-initrd-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let root = d.join("root");
         let newt = d.join("new/6.12.109-4.azure.ph5");
@@ -351,7 +351,7 @@ mod tests {
     /// only in entry order is a gratuitously different image.
     #[test]
     fn the_repack_file_list_is_byte_sorted_and_relative() {
-        let d = std::env::temp_dir().join(format!("shk-initlist-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-initlist-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         for sub in ["usr/lib", "etc"] {
             fs::create_dir_all(d.join(sub)).unwrap();

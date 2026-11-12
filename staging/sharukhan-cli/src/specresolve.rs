@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn the_kernel_directory_is_the_one_whose_build_if_holds() {
-        let d = std::env::temp_dir().join(format!("shk-kdir-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-kdir-{}", std::process::id()));
         for (dir, b) in [("SPECS/90/linux", "%global build_if %{photon_subrelease} <= 90"), ("SPECS/91/linux", "%global build_if %{photon_subrelease} == 91"), ("SPECS/92/linux", "%global build_if %{photon_subrelease} >= 92")] {
             std::fs::create_dir_all(d.join(dir)).unwrap();
             std::fs::write(d.join(dir).join("linux.spec"), format!("{b}\nName: linux\n")).unwrap();
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn a_tree_says_whether_it_is_common_or_a_release() {
-        let d = std::env::temp_dir().join(format!("shk-treekind-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-treekind-{}", std::process::id()));
         fs::create_dir_all(&d).unwrap();
         let w = |s: &str| fs::write(d.join("build-config.json"), s).unwrap();
         w(r#"{"release-branch-path": "../5.0", "photon-build-param": {}}"#);
@@ -417,7 +417,7 @@ BuildRequires:  gcc >= 12.5
 ";
 
     fn fixture(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("shk-resolve-{tag}-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-resolve-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         fs::write(d.join("linux.spec"), SKELETON).unwrap();
@@ -474,7 +474,7 @@ BuildRequires:  gcc >= 12.5
     /// the resolver is safe for every spec, not only the kernel.
     #[test]
     fn a_plain_spec_is_unchanged() {
-        let d = std::env::temp_dir().join(format!("shk-resolve-plain-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-resolve-plain-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         let text = "Name:           aide\nVersion:        0.18\nRelease:        3%{?dist}\n%ifarch x86_64\nPatch0: a.patch\n%else\nPatch1: b.patch\n%endif\n";
@@ -490,7 +490,7 @@ BuildRequires:  gcc >= 12.5
     /// a reader looking for a field finds nothing instead of a wrong value.
     #[test]
     fn an_unreadable_include_is_kept() {
-        let d = std::env::temp_dir().join(format!("shk-resolve-missing-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-resolve-missing-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         fs::write(d.join("x.spec"), "Source7: gone.inc\n%include %{SOURCE7}\n").unwrap();
@@ -501,7 +501,7 @@ BuildRequires:  gcc >= 12.5
 
     #[test]
     fn the_subrelease_comes_from_build_config() {
-        let d = std::env::temp_dir().join(format!("shk-resolve-cfg-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-resolve-cfg-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         fs::write(
@@ -518,7 +518,7 @@ BuildRequires:  gcc >= 12.5
     /// is how the kernel NEVR is read before a build without a checkout.
     #[test]
     fn the_index_reader_sees_a_cached_patch() {
-        let d = std::env::temp_dir().join(format!("shk-resolve-git-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-resolve-git-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/linux")).unwrap();
         let git = |args: &[&str]| {

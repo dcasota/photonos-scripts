@@ -220,9 +220,12 @@ pub fn trust() -> Result<Trust, String> {
 /// A file of `profiles/systemd/`: from `SHARUKHAN_SYSTEMD_PROFILES` when set
 /// (a profile under review), else built in. Returns where it came from.
 fn data_file(name: &str) -> Result<(String, String), String> {
-    match std::env::var_os("SHARUKHAN_SYSTEMD_PROFILES") {
-        Some(d) if !d.is_empty() => {
-            let p = PathBuf::from(d).join(name);
+    // one plain file name: a name made from a release string or read from a
+    // file never reaches outside the profiles directory
+    crate::safepath::check_name("a systemd profile file", name)?;
+    match crate::safepath::env_path("SHARUKHAN_SYSTEMD_PROFILES")? {
+        Some(d) => {
+            let p = d.join(name);
             let t = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
             Ok((p.display().to_string(), t))
         }
@@ -257,14 +260,14 @@ pub struct Verification {
 /// `$SHARUKHAN_SYSTEMD_CACHE`, else `$XDG_CACHE_HOME/sharukhan/systemd`, else
 /// `$HOME/.cache/sharukhan/systemd`.
 pub fn default_cache() -> Result<PathBuf, String> {
-    if let Some(p) = std::env::var_os("SHARUKHAN_SYSTEMD_CACHE").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(p));
+    if let Some(p) = crate::safepath::env_path("SHARUKHAN_SYSTEMD_CACHE")? {
+        return Ok(p);
     }
-    if let Some(x) = std::env::var_os("XDG_CACHE_HOME").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(x).join("sharukhan/systemd"));
+    if let Some(x) = crate::safepath::env_path("XDG_CACHE_HOME")? {
+        return Ok(x.join("sharukhan/systemd"));
     }
-    let home = std::env::var_os("HOME").ok_or("no HOME for the default systemd cache; set SHARUKHAN_SYSTEMD_CACHE")?;
-    Ok(PathBuf::from(home).join(".cache/sharukhan/systemd"))
+    let home = crate::safepath::env_path("HOME")?.ok_or("no HOME for the default systemd cache; set SHARUKHAN_SYSTEMD_CACHE")?;
+    Ok(home.join(".cache/sharukhan/systemd"))
 }
 
 fn ve(e: crate::wrapper::error::WrapperError) -> String {
@@ -1084,10 +1087,11 @@ pub fn cli(args: &[String]) -> u8 {
             Ok(0)
         }),
         Some("profile-new") => {
-            let dir = out
-                .or_else(|| std::env::var_os("SHARUKHAN_SYSTEMD_PROFILES").filter(|d| !d.is_empty()).map(PathBuf::from))
-                .unwrap_or_else(|| PathBuf::from("profiles/systemd"));
-            profile_new(&cfg, release, &dir, force, tarball.as_deref(), &mut log).map(|ready| if ready { 0 } else { 10 })
+            let dir = match out {
+                Some(d) => Ok(d),
+                None => crate::safepath::env_path("SHARUKHAN_SYSTEMD_PROFILES").map(|p| p.unwrap_or_else(|| PathBuf::from("profiles/systemd"))),
+            };
+            dir.and_then(|dir| profile_new(&cfg, release, &dir, force, tarball.as_deref(), &mut log).map(|ready| if ready { 0 } else { 10 }))
         }
         Some("check") => check(&cfg, release, &mut log).map(|lines| {
             for l in lines {
@@ -1157,7 +1161,7 @@ mod tests {
 
     #[test]
     fn the_replay_tells_applied_already_upstream_and_rejected_apart() {
-        let d = std::env::temp_dir().join(format!("shk-sdreplay-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-sdreplay-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         let (src, pd) = (d.join("src"), d.join("spec"));
         std::fs::create_dir_all(&src).unwrap();
@@ -1178,7 +1182,7 @@ mod tests {
 
     #[test]
     fn meson_options_the_release_does_not_declare_are_named() {
-        let d = std::env::temp_dir().join(format!("shk-sdmeson-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-sdmeson-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join("meson_options.txt"), "option('homed', type : 'feature')\noption(\"oomd\", type : 'boolean')\noption('kernel-install', type : 'boolean')\n").unwrap();
@@ -1191,7 +1195,7 @@ mod tests {
 
     #[test]
     fn a_systemd_build_runs_in_a_root_cache_and_variant_patches_of_its_own() {
-        let d = std::env::temp_dir().join(format!("shk-sdcfg-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-sdcfg-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join("build-config.json"), r#"{"photon-build-param": {"photon-dist-tag": ".ph5"}}"#).unwrap();
