@@ -1,66 +1,18 @@
 {
   "subdir": "photonos-package-report",
-  "scan_date": "2026-05-11",
+  "scan_date": "2026-11-12",
   "accepted": [
     {
       "rule": "cpp/AllocOfStrlen",
-      "location": "package-report-database-tool/src/docx_writer.c:68",
+      "location": "package-report-database-tool/src/docx_writer.c:76",
       "bucket": "FALSE-POSITIVE",
-      "reason": "zip_add_file() is given the binary payload length of XML buffers (via strlen at the call sites), and internally allocates compressBound(len) bytes for raw deflate output. The strlen result is not used to size a buffer that must hold the source plus a NUL terminator; it sizes the deflate output (which is binary, no terminator). Off-by-one is not reachable."
-    },
-    {
-      "rule": "cpp/BufferOverflow",
-      "location": "package-report-database-tool/src/db.c:38",
-      "bucket": "FALSE-POSITIVE",
-      "reason": "Inside sha256_hash(), msg is calloc'd with new_len + 8 bytes where new_len = len + padding (>= len + 1, aligned to 56 mod 64). memcpy(msg, data, len) writes exactly len bytes into a buffer of size >= len + 9. Additionally compute_file_sha256() bounds the input length to MAX_FILE_SIZE before passing to sha256_hash."
-    },
-    {
-      "rule": "cpp/ImproperNullTermination",
-      "location": "package-report-database-tool/src/csv_parser.c:86",
-      "bucket": "FALSE-POSITIVE",
-      "reason": "The buffer comes from fgets() in csv_parse_file(), which always NUL-terminates. The memmove uses strlen(p) on the same NUL-terminated buffer."
-    },
-    {
-      "rule": "cpp/ImproperNullTermination",
-      "location": "package-report-database-tool/src/csv_parser.c:177",
-      "bucket": "FALSE-POSITIVE",
-      "reason": "strip_trailing_whitespace operates on the same fgets()-produced line which is NUL-terminated. strlen is safe."
-    },
-    {
-      "rule": "cpp/ImproperNullTermination",
-      "location": "package-report-database-tool/src/docx_writer.c:428",
-      "bucket": "FALSE-POSITIVE",
-      "reason": "strbuf_append is called with the output of secure_xml_escape (heap-allocated, NUL-terminated by the escape routine) or with list_buf which is built up via snprintf and explicitly NUL-terminated."
-    },
-    {
-      "rule": "cpp/ImproperNullTermination/test",
-      "location": "package-report-database-tool/test/test_csv_parser.c:121",
-      "bucket": "FALSE-POSITIVE",
-      "reason": "secure_xml_escape() is invoked with a string literal in a unit test; the literal is NUL-terminated by the compiler."
+      "reason": "zip_add_file() allocates deflateBound(len) bytes for raw deflate output, where len is the strlen of an XML part (or the PNG byte count). The buffer holds binary compressed data, never the source string plus a NUL, so there is no off-by-one. deflate() must now return Z_STREAM_END or the entry is refused, so an undersized buffer could not go unnoticed either."
     },
     {
       "rule": "cpp/InsecureStorage",
-      "location": "package-report-database-tool/src/db.c:88",
+      "location": "package-report-database-tool/src/db.c:94",
       "bucket": "DESIGN-DECISION",
-      "reason": "The tool is by design a SQLite-backed package report database. The plaintext SQLite file is the application's primary on-disk artifact and is intended to be world-readable on developer workstations; it does not store credentials or other secrets."
-    },
-    {
-      "rule": "cpp/PT",
-      "location": "package-report-database-tool/src/main.c:85",
-      "bucket": "DESIGN-DECISION",
-      "reason": "photon-report-db is a CLI tool. The --import argument is the operator-supplied scan directory. Restricting paths would make the tool unusable. Path is consumed by db_import_directory which iterates via opendir(); no shell expansion or symlink walking occurs."
-    },
-    {
-      "rule": "cpp/PT",
-      "location": "package-report-database-tool/src/main.c:150",
-      "bucket": "DESIGN-DECISION",
-      "reason": "photon-report-db is a CLI tool. The --report argument is the operator-supplied output path or directory. fopen of the operator-chosen target is the documented contract."
-    },
-    {
-      "rule": "cpp/WeakGuard/test",
-      "location": "package-report-database-tool/test/test_db.c:149",
-      "bucket": "FALSE-POSITIVE",
-      "reason": "The strcmp in question is in a unit test asserting that the 'github.com' source category is present in the seeded test database. It is not a security guard."
+      "reason": "The tool is by design a SQLite-backed package report database built from the public scan .prn files committed to this repository. It holds no credentials or personal data; the plaintext SQLite file is the product."
     }
   ],
   "hard_fixes": [
@@ -68,12 +20,32 @@
       "rule": "cpp/DerefNull/test",
       "location": "package-report-database-tool/test/test_csv_parser.c:104",
       "fix": "Added null-check on fopen result before fclose to avoid passing NULL to fclose when /tmp/test_empty.prn cannot be created."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "package-report-database-tool/src/main.c",
+      "fix": "--db/--import/--report/--chart-png go through secure_cli_path(): the path is rebuilt from an allowed-character table ([A-Za-z0-9/._-+~@:,]) and a '..' component is refused with a clear message. test/run_tests.sh now passes an absolute scans path. The report-in-directory path and each import path are checked for snprintf truncation (a cut-off path is no longer opened)."
+    },
+    {
+      "rule": "cpp/BufferOverflow",
+      "location": "package-report-database-tool/src/db.c sha256",
+      "fix": "compute_file_sha256() streams the file through the SHA-256 block function 64 bytes at a time instead of reading up to 50 MB into memory and copying it into a padded second buffer. Verified against sha256sum (304 scan files, and edge sizes 1..100000 bytes around the 55/56/64-byte padding boundaries)."
+    },
+    {
+      "rule": "cpp/ImproperNullTermination",
+      "location": "package-report-database-tool/src/csv_parser.c, security.c, db.c",
+      "fix": "Quoted CSV fields unescape \"\" in place with a write pointer (was an O(n^2) memmove per quote); secure_xml_escape() writes entities from one table; parse_prn_filename() copies with snprintf(\"%.*s\"). Old-vs-new parse of 300000 random quoted lines identical; DB dump of a full import identical."
+    },
+    {
+      "rule": "robustness",
+      "location": "package-report-database-tool/src/docx_writer.c zip_add_file",
+      "fix": "deflate() result was ignored; a stream that did not finish would have written a truncated entry. Now requires Z_STREAM_END, sizes the buffer with deflateBound() for the raw-deflate stream, and refuses parts over 4 GiB (32-bit ZIP fields). Generated .docx contents identical."
     }
   ],
   "c_port": {
     "subdir": "photonos-package-report/photonos-package-report",
-    "scan_date": "2026-11-09",
-    "note": "Snyk Code 70 -> 56. Every finding was reviewed; real defects fixed (below), the rest classified per location. All fixes are output-neutral: hermetic run of old vs new binary over all 8 branches' SPECS = 14/14 .prn byte-identical (~13.9k rows); ctest 15/15.",
+    "scan_date": "2026-11-12",
+    "note": "2026-11-12: every residual from the 2026-11-09 pass re-examined by root cause and fixed where a change was a real check or a simplification. Output-neutral: hermetic old-vs-new run over all 8 branches' SPECS (no network, no token, no SHA cache) = 14/14 .prn byte-identical; ctest 15/15; old-vs-new differential tests for str_replace_all/istr_replace_all (2M random cases) and invoke_git_with_timeout (32 KB output, error paths) identical.",
     "hard_fixes": [
       {
         "location": "src/check_urlhealth.c col9_cache_path",
@@ -105,147 +77,69 @@
       },
       {
         "location": "src/strutil.c, version.c, latest_name.c, check_urlhealth.c, parse_directory.c",
-        "fix": "Buffers terminated at each step (calloc + explicit '\\0'; strdup instead of copy-n+1 helpers) \u2014 cleared 14 ImproperNullTermination findings, rest are Snyk model limits."
+        "fix": "Buffers terminated at each step (calloc + explicit '\\0'; strdup instead of copy-n+1 helpers) — cleared 14 ImproperNullTermination findings, rest are Snyk model limits."
       },
       {
         "location": "tests/unit/test_phase4.c, test_provenance.c, test_phase3.c",
         "fix": "asprintf instead of malloc+strcpy+strcat; fopen/fwrite/fclose checked; ftell < 0 handled."
+      },
+      {
+        "location": "src/strutil.c str_replace_all / istr_replace_all",
+        "fix": "Root cause of 22 ImproperNullTermination findings across check_urlhealth.c, source0_substitute.c and koji.c. The two copies are now one replace_all() with a strstr/strcasestr finder, copying byte-wise into an exactly sized buffer that is terminated once. 2,000,000 random old-vs-new cases identical."
+      },
+      {
+        "location": "src/github_api.c, gnome_cache.c, pypi.c, sourceforge.c",
+        "fix": "PCRE capture copies use strndup() and check the ovector span lies inside the subject (ov[2] <= ov[3] <= length) before copying."
+      },
+      {
+        "location": "src/check_urlhealth.c name prefix helpers",
+        "fix": "replace_leading_icase() and the open-vm-tools / httpd-mod_jk / <name>- prefixes use asprintf instead of hand-sized malloc+memcpy."
+      },
+      {
+        "location": "src/git_with_timeout.c",
+        "fix": "read() goes straight into the growable output buffer (read_append) with overflow-checked growth, instead of a stack chunk plus memcpy; empty output is still returned as NULL."
+      },
+      {
+        "location": "src/main.c generate_urlhealth_main",
+        "fix": "Parallel path moved to run_parallel(); one cleanup path frees clone_root/rows/prn/lut/list (was three hand-written copies)."
+      },
+      {
+        "location": "src/modify_spec.c",
+        "fix": "The SPECS_NEW_C file name uses the update version only if it is rebuilt from a version-character table (letters, digits, '._+~^-') and is not '.'/'..'; the Source0 extension swap uses asprintf instead of three length-summed memcpy calls."
+      },
+      {
+        "location": "src/koji.c",
+        "fix": "version/release/src.rpm from Fedora pages are rebuilt from an RPM-field character table before going into the next kojipkgs URL (was a deny-list). koji_fedora_lookup() is still not called from production code."
+      },
+      {
+        "location": "src/provenance.c gpgv status read",
+        "fix": "Loop condition carries the buffer bound (used < sizeof buf - 1) instead of a post-hoc break."
+      },
+      {
+        "location": "tests/unit/test_phase3.c",
+        "fix": "Single free(buf) on both fread outcomes (was free + goto)."
+      },
+      {
+        "location": "tools/diff_analyzer.py",
+        "fix": "The three directory arguments are rebuilt from an allowed-character table and a '..' component is refused with a clear message."
       }
     ],
     "accepted": [
-      {
-        "rule": "cpp/BufferOverflow",
-        "location": "photonos-package-report/src/git_with_timeout.c:129/246/247",
-        "count": 3,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "n comes from read() into a 4096-byte chunk; append_buf now has overflow-safe size arithmetic and doubling ceiling."
-      },
-      {
-        "rule": "cpp/BufferOverflow",
-        "location": "photonos-package-report/src/github_api.c:111/222/224/226",
-        "count": 4,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
-      },
-      {
-        "rule": "cpp/BufferOverflow",
-        "location": "photonos-package-report/src/gnome_cache.c:69",
-        "count": 1,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
-      },
-      {
-        "rule": "cpp/BufferOverflow",
-        "location": "photonos-package-report/src/pypi.c:89",
-        "count": 1,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
-      },
-      {
-        "rule": "cpp/BufferOverflow",
-        "location": "photonos-package-report/src/sourceforge.c:211",
-        "count": 1,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "memcpy length is a PCRE2 ovector span (ov[3]-ov[2]) inside the matched subject, into a buffer malloc'd for exactly that length + 1."
-      },
       {
         "rule": "cpp/InsecureHash",
         "location": "photonos-package-report/src/sha.c:18",
         "count": 1,
         "bucket": "DESIGN-DECISION",
-        "reason": "SHA-1 is computed only to reproduce '%define sha1' values that Photon spec files declare (column 9 parity with the PS script); it is not used for any trust decision."
-      },
-      {
-        "rule": "cpp/IntegerOverflow",
-        "location": "photonos-package-report/src/check_urlhealth.c:3233/3344",
-        "count": 2,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "Taint from getenv flag (PR_TEST_NETWORK / PR_SHA_CACHE presence) or a loop index; no arithmetic on the environment value itself."
-      },
-      {
-        "rule": "cpp/IntegerOverflow",
-        "location": "photonos-package-report/src/main.c:731",
-        "count": 1,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "Taint from getenv flag (PR_TEST_NETWORK / PR_SHA_CACHE presence) or a loop index; no arithmetic on the environment value itself."
-      },
-      {
-        "rule": "cpp/IntegerOverflow",
-        "location": "photonos-package-report/src/provenance.c:479",
-        "count": 2,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "read() into buf + used with length sizeof buf - 1 - used; loop breaks when full, so used never exceeds sizeof buf - 1."
+        "reason": "SHA-1 is computed only to reproduce the '%define sha1' values Photon spec files declare (column 9 parity with the PS script); it is not used for any trust decision. SHA-256/512 are used where the spec declares them."
       },
       {
         "rule": "cpp/PT",
-        "location": "photonos-package-report/src/check_urlhealth.c:3344",
-        "count": 1,
-        "bucket": "FALSE-POSITIVE-POST-FIX",
-        "reason": "Call into pr_modify_spec_file with the upstream UpdateAvailable; the callee now refuses a version containing '/' or '\\\\' or a dot-only name and checks snprintf truncation. Snyk carries taint across the call."
-      },
-      {
-        "rule": "cpp/PT",
-        "location": "photonos-package-report/src/main.c:405/454/699/731",
+        "location": "photonos-package-report/src/main.c:405/454/742/775",
         "count": 4,
         "bucket": "DESIGN-DECISION",
-        "reason": "Output dir is the operator's -workingDir/-scansDir ($PUBLIC/$HOME by PS L87 contract). Report paths are now checked for snprintf truncation instead of writing to a cut-off path."
-      },
-      {
-        "rule": "cpp/Ssrf",
-        "location": "photonos-package-report/src/koji.c:77",
-        "count": 1,
-        "bucket": "FALSE-POSITIVE-POST-FIX",
-        "reason": "Host is fixed (https://kojipkgs.fedoraproject.org/packages/...); version/release/src.rpm segments read from Fedora pages are now required to be plain URL segments. koji_fedora_lookup() is not called from production code."
-      },
-      {
-        "rule": "cpp/UseAfterFree/test",
-        "location": "photonos-package-report/tests/unit/test_phase3.c:224/232",
-        "count": 2,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "test_phase3: after free(buf) the code jumps straight to cleanup; buf is not used again."
-      },
-      {
-        "rule": "python/PT",
-        "location": "photonos-package-report/tools/diff_analyzer.py:111/189",
-        "count": 2,
-        "bucket": "DESIGN-DECISION",
-        "reason": "Developer tool: reads the PS/C snapshot directories named on its own command line."
-      },
-      {
-        "rule": "cpp/DoubleFree",
-        "location": "photonos-package-report/src/main.c:746/751",
-        "count": 2,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "Each free(clone_root) is on a separate early-return error path."
-      },
-      {
-        "rule": "cpp/DoubleFree/test",
-        "location": "photonos-package-report/tests/unit/test_phase3.c:236",
-        "count": 1,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "test_phase3: after free(buf) the code jumps straight to cleanup; buf is not used again."
-      },
-      {
-        "rule": "cpp/ImproperNullTermination",
-        "location": "photonos-package-report/src/check_urlhealth.c:149/152/227/231/232/234/251/624/1174/1495/1511/1574/1592/2196/2254/2294/2486/3034/3053/3084/3233",
-        "count": 22,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "Snyk models every memcpy/memmove of a sub-range as leaving an unterminated buffer; each flagged buffer is terminated in the next statement (explicit '\\0' after every segment in strutil.c's replace helpers, the M-strip memmoves, PCRE-capture copies). Satisfying the model would mean rewriting core string helpers that every .prn cell passes through."
-      },
-      {
-        "rule": "cpp/ImproperNullTermination",
-        "location": "photonos-package-report/src/source0_substitute.c:78/109",
-        "count": 2,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "Snyk models every memcpy/memmove of a sub-range as leaving an unterminated buffer; each flagged buffer is terminated in the next statement (explicit '\\0' after every segment in strutil.c's replace helpers, the M-strip memmoves, PCRE-capture copies). Satisfying the model would mean rewriting core string helpers that every .prn cell passes through."
-      },
-      {
-        "rule": "cpp/ImproperNullTermination",
-        "location": "photonos-package-report/src/koji.c:366/430",
-        "count": 3,
-        "bucket": "FALSE-POSITIVE",
-        "reason": "Snyk models every memcpy/memmove of a sub-range as leaving an unterminated buffer; each flagged buffer is terminated in the next statement (explicit '\\0' after every segment in strutil.c's replace helpers, the M-strip memmoves, PCRE-capture copies). Satisfying the model would mean rewriting core string helpers that every .prn cell passes through."
+        "reason": "The taint source is default_working_dir(): $PUBLIC, else $HOME, the PS L87 default for -workingDir. Reports and SPECS_NEW_C are written under that operator-chosen directory by contract; the process's own environment is the same trust level as the -workingDir/-scansDir options (which Snyk does not flag). Restricting it would reject working directories the PS original accepts. Every derived path is checked for snprintf truncation, and the only upstream-derived file-name parts (cache name, update version) are checked separately."
       }
     ]
-  }
+  },
+  "note": "2026-11-12 pass: Snyk Code over photonos-package-report/ 65 -> 7 open (21 MEDIUM -> 1, 44 LOW -> 6). Findings were triaged by root cause and fixed; the 7 that remain are listed per tool below with the reason they stay."
 }

@@ -21,22 +21,39 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  --help              Show this help message\n");
 }
 
+/* Check one path option with secure_cli_path(). Returns buf holding the
+   checked path, or NULL if the option was not given. Exits with a message
+   for a refused path. */
+static const char *checked_path(const char *opt, const char *raw, char *buf, size_t buf_sz)
+{
+    if (!raw)
+        return NULL;
+    if (secure_cli_path(raw, buf, buf_sz) != 0) {
+        fprintf(stderr, "Error: %s: use a path of at most %d characters from "
+                "[A-Za-z0-9/._-+~@:,] without '..' components\n", opt, MAX_PATH_LEN - 1);
+        exit(1);
+    }
+    return buf;
+}
+
 int main(int argc, char **argv)
 {
-    const char *db_path = NULL;
-    const char *import_dir = NULL;
-    const char *report_path = NULL;
-    const char *chart_png = NULL;
+    const char *db_arg = NULL;
+    const char *import_arg = NULL;
+    const char *report_arg = NULL;
+    const char *chart_arg = NULL;
+    static char db_buf[MAX_PATH_LEN], import_buf[MAX_PATH_LEN];
+    static char report_buf[MAX_PATH_LEN], chart_buf[MAX_PATH_LEN];
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
-            db_path = argv[++i];
+            db_arg = argv[++i];
         } else if (strcmp(argv[i], "--import") == 0 && i + 1 < argc) {
-            import_dir = argv[++i];
+            import_arg = argv[++i];
         } else if (strcmp(argv[i], "--report") == 0 && i + 1 < argc) {
-            report_path = argv[++i];
+            report_arg = argv[++i];
         } else if (strcmp(argv[i], "--chart-png") == 0 && i + 1 < argc) {
-            chart_png = argv[++i];
+            chart_arg = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -47,31 +64,23 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!db_path) {
+    if (!db_arg) {
         fprintf(stderr, "Error: --db is required\n");
         print_usage(argv[0]);
         return 1;
     }
 
-    if (!import_dir && !report_path) {
+    if (!import_arg && !report_arg) {
         fprintf(stderr, "Error: at least one of --import or --report is required\n");
         print_usage(argv[0]);
         return 1;
     }
 
     /* Validate paths */
-    if (db_path && strlen(db_path) >= MAX_PATH_LEN) {
-        fprintf(stderr, "Error: database path too long\n");
-        return 1;
-    }
-    if (import_dir && strlen(import_dir) >= MAX_PATH_LEN) {
-        fprintf(stderr, "Error: import directory path too long\n");
-        return 1;
-    }
-    if (report_path && strlen(report_path) >= MAX_PATH_LEN) {
-        fprintf(stderr, "Error: report path too long\n");
-        return 1;
-    }
+    const char *db_path = checked_path("--db", db_arg, db_buf, sizeof db_buf);
+    const char *import_dir = checked_path("--import", import_arg, import_buf, sizeof import_buf);
+    const char *report_path = checked_path("--report", report_arg, report_buf, sizeof report_buf);
+    const char *chart_png = checked_path("--chart-png", chart_arg, chart_buf, sizeof chart_buf);
 
     /* Open database */
     db_t db;
@@ -107,11 +116,16 @@ int main(int argc, char **argv)
         if (stat(report_path, &st_rp) == 0 && S_ISDIR(st_rp.st_mode)) {
             time_t now = time(NULL);
             struct tm *tm = gmtime(&now);
-            snprintf(resolved_report, sizeof(resolved_report),
-                     "%s/report-%04d%02d%02d%02d%02d.docx",
-                     report_path,
-                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-                     tm->tm_hour, tm->tm_min);
+            int rl = snprintf(resolved_report, sizeof(resolved_report),
+                              "%s/report-%04d%02d%02d%02d%02d.docx",
+                              report_path,
+                              tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                              tm->tm_hour, tm->tm_min);
+            if (rl < 0 || (size_t)rl >= sizeof(resolved_report)) {
+                fprintf(stderr, "Error: report path too long\n");
+                db_close(&db);
+                return 1;
+            }
             final_report = resolved_report;
         }
         printf("Generating report: %s\n", final_report);

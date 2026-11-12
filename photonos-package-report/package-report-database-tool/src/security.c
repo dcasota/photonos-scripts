@@ -87,6 +87,19 @@ int secure_validate_filename(const char *filename)
     return 0;
 }
 
+/* The XML entity for c, or NULL if c is written as is. */
+static const char *xml_entity(char c)
+{
+    switch (c) {
+    case '&':  return "&amp;";
+    case '<':  return "&lt;";
+    case '>':  return "&gt;";
+    case '"':  return "&quot;";
+    case '\'': return "&apos;";
+    default:   return NULL;
+    }
+}
+
 char *secure_xml_escape(const char *input)
 {
     if (!input)
@@ -94,14 +107,8 @@ char *secure_xml_escape(const char *input)
 
     size_t len = 0;
     for (const char *p = input; *p; p++) {
-        switch (*p) {
-        case '&':  len += 5; break;
-        case '<':  len += 4; break;
-        case '>':  len += 4; break;
-        case '"':  len += 6; break;
-        case '\'': len += 6; break;
-        default:   len += 1; break;
-        }
+        const char *e = xml_entity(*p);
+        len += e ? strlen(e) : 1;
     }
 
     char *out = malloc(len + 1);
@@ -110,17 +117,44 @@ char *secure_xml_escape(const char *input)
 
     char *d = out;
     for (const char *p = input; *p; p++) {
-        switch (*p) {
-        case '&':  memcpy(d, "&amp;", 5);  d += 5; break;
-        case '<':  memcpy(d, "&lt;", 4);   d += 4; break;
-        case '>':  memcpy(d, "&gt;", 4);   d += 4; break;
-        case '"':  memcpy(d, "&quot;", 6); d += 6; break;
-        case '\'': memcpy(d, "&apos;", 6); d += 6; break;
-        default:   *d++ = *p; break;
-        }
+        const char *e = xml_entity(*p);
+        if (!e)
+            *d++ = *p;
+        else
+            while (*e)
+                *d++ = *e++;
     }
     *d = '\0';
     return out;
+}
+
+int secure_cli_path(const char *input, char *out, size_t out_sz)
+{
+    static const char allowed[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/._-+~@:,";
+    if (!input || !out || out_sz == 0 || input[0] == '\0')
+        return -1;
+    size_t n = 0;
+    for (const char *p = input; *p; p++) {
+        const char *a = allowed;
+        while (*a && *a != *p)
+            a++;
+        if (*a == '\0' || n + 1 >= out_sz)
+            return -1;
+        out[n++] = *a;
+    }
+    out[n] = '\0';
+    /* Refuse a ".." component. */
+    for (const char *c = out;;) {
+        const char *slash = strchr(c, '/');
+        size_t clen = slash ? (size_t)(slash - c) : strlen(c);
+        if (clen == 2 && c[0] == '.' && c[1] == '.')
+            return -1;
+        if (!slash)
+            break;
+        c = slash + 1;
+    }
+    return 0;
 }
 
 void secure_strncpy(char *dst, const char *src, size_t dst_sz)

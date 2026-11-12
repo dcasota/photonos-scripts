@@ -24,6 +24,11 @@ int secure_validate_filename(const char *filename);
    Returns newly allocated string; caller must free. */
 char *secure_xml_escape(const char *input);
 
+/* Check a path given on the command line: every character must be a letter,
+   digit or one of "/._-+~@:," and no component may be "..". Copies the
+   checked path into out (out_sz bytes). Returns 0 if accepted, -1 if not. */
+int secure_cli_path(const char *input, char *out, size_t out_sz);
+
 /* Safe string copy with truncation. Always NUL-terminates. */
 void secure_strncpy(char *dst, const char *src, size_t dst_sz);
 

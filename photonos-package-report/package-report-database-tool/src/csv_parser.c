@@ -78,24 +78,27 @@ static int parse_csv_line(char *line, char **fields, int max_fields)
 
     while (*p && count < max_fields) {
         if (*p == '"') {
+            /* Quoted field: unescape "" to " in place. The write pointer w
+               never passes the read pointer p. */
             p++;
             fields[count] = p;
+            char *w = p;
             while (*p) {
                 if (*p == '"') {
                     if (*(p + 1) == '"') {
-                        memmove(p, p + 1, strlen(p));
-                        p++;
+                        *w++ = '"';
+                        p += 2;
                     } else {
-                        *p = '\0';
                         p++;
                         if (*p == ',')
                             p++;
                         break;
                     }
                 } else {
-                    p++;
+                    *w++ = *p++;
                 }
             }
+            *w = '\0';
         } else {
             fields[count] = p;
             while (*p && *p != ',')

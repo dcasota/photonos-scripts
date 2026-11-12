@@ -26,43 +26,28 @@ static const unsigned int K256[64] = {
 #define SIG0(x) (ROTR(x,7)^ROTR(x,18)^((x)>>3))
 #define SIG1(x) (ROTR(x,17)^ROTR(x,19)^((x)>>10))
 
-static void sha256_hash(const unsigned char *data, size_t len, char *hex_out)
+/* One 64-byte SHA-256 compression round over `blk`, updating h[0..7]. */
+static void sha256_block(unsigned int h[8], const unsigned char blk[64])
 {
-    unsigned int h0=0x6a09e667, h1=0xbb67ae85, h2=0x3c6ef372, h3=0xa54ff53a;
-    unsigned int h4=0x510e527f, h5=0x9b05688c, h6=0x1f83d9ab, h7=0x5be0cd19;
+    unsigned int w[64];
+    for (int i = 0; i < 16; i++)
+        w[i] = ((unsigned int)blk[i*4]<<24)|((unsigned int)blk[i*4+1]<<16)|
+                ((unsigned int)blk[i*4+2]<<8)|((unsigned int)blk[i*4+3]);
+    for (int i = 16; i < 64; i++)
+        w[i] = SIG1(w[i-2]) + w[i-7] + SIG0(w[i-15]) + w[i-16];
 
-    size_t new_len = len + 1;
-    while (new_len % 64 != 56) new_len++;
-    unsigned char *msg = calloc(new_len + 8, 1);
-    if (!msg) { hex_out[0] = '\0'; return; }
-    memcpy(msg, data, len);
-    msg[len] = 0x80;
-
-    unsigned long long bit_len = (unsigned long long)len * 8;
-    for (int i = 0; i < 8; i++)
-        msg[new_len + 7 - i] = (unsigned char)(bit_len >> (i * 8));
-
-    for (size_t offset = 0; offset < new_len + 8; offset += 64) {
-        unsigned int w[64];
-        for (int i = 0; i < 16; i++)
-            w[i] = ((unsigned int)msg[offset+i*4]<<24)|((unsigned int)msg[offset+i*4+1]<<16)|
-                    ((unsigned int)msg[offset+i*4+2]<<8)|((unsigned int)msg[offset+i*4+3]);
-        for (int i = 16; i < 64; i++)
-            w[i] = SIG1(w[i-2]) + w[i-7] + SIG0(w[i-15]) + w[i-16];
-
-        unsigned int a=h0,b=h1,c=h2,d=h3,e=h4,f=h5,g=h6,hh=h7;
-        for (int i = 0; i < 64; i++) {
-            unsigned int t1 = hh + EP1(e) + CH(e,f,g) + K256[i] + w[i];
-            unsigned int t2 = EP0(a) + MAJ(a,b,c);
-            hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
-        }
-        h0+=a; h1+=b; h2+=c; h3+=d; h4+=e; h5+=f; h6+=g; h7+=hh;
+    unsigned int a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+    for (int i = 0; i < 64; i++) {
+        unsigned int t1 = hh + EP1(e) + CH(e,f,g) + K256[i] + w[i];
+        unsigned int t2 = EP0(a) + MAJ(a,b,c);
+        hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
     }
-    free(msg);
-    snprintf(hex_out, 65, "%08x%08x%08x%08x%08x%08x%08x%08x",
-             h0, h1, h2, h3, h4, h5, h6, h7);
+    h[0]+=a; h[1]+=b; h[2]+=c; h[3]+=d; h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
 }
 
+/* SHA-256 of the file at `path`, streamed in 64-byte blocks (the file is
+ * never held in memory as a whole). Files that are empty, unreadable or
+ * larger than MAX_FILE_SIZE are refused. */
 static int compute_file_sha256(const char *path, char *hex_out)
 {
     hex_out[0] = '\0';
@@ -72,12 +57,33 @@ static int compute_file_sha256(const char *path, char *hex_out)
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (sz <= 0 || sz > MAX_FILE_SIZE) { fclose(f); return -1; }
-    unsigned char *buf = malloc((size_t)sz);
-    if (!buf) { fclose(f); return -1; }
-    size_t rd = fread(buf, 1, (size_t)sz, f);
+
+    unsigned int h[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                          0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+    unsigned char blk[64];
+    unsigned long long total = 0;
+    size_t n;
+    while ((n = fread(blk, 1, sizeof blk, f)) == sizeof blk) {
+        sha256_block(h, blk);
+        total += n;
+    }
+    total += n;
     fclose(f);
-    sha256_hash(buf, rd, hex_out);
-    free(buf);
+
+    /* Padding: 0x80, zeros, then the bit length in the last 8 bytes. */
+    blk[n] = 0x80;
+    memset(blk + n + 1, 0, sizeof blk - n - 1);
+    if (n >= 56) {
+        sha256_block(h, blk);
+        memset(blk, 0, sizeof blk);
+    }
+    unsigned long long bit_len = total * 8;
+    for (int i = 0; i < 8; i++)
+        blk[63 - i] = (unsigned char)(bit_len >> (i * 8));
+    sha256_block(h, blk);
+
+    snprintf(hex_out, 65, "%08x%08x%08x%08x%08x%08x%08x%08x",
+             h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
     return 0;
 }
 
@@ -243,8 +249,7 @@ static int parse_prn_filename(const char *filename, char *branch, size_t bsz,
     size_t branch_len = (size_t)(underscore - rest);
     if (branch_len >= bsz)
         return -1;
-    memcpy(branch, rest, branch_len);
-    branch[branch_len] = '\0';
+    snprintf(branch, bsz, "%.*s", (int)branch_len, rest);
 
     const char *dtstart = underscore + 1;
     const char *dot = strrchr(dtstart, '.');
@@ -253,8 +258,7 @@ static int parse_prn_filename(const char *filename, char *branch, size_t bsz,
     size_t dt_len = (size_t)(dot - dtstart);
     if (dt_len >= dsz || dt_len < 8)
         return -1;
-    memcpy(dt, dtstart, dt_len);
-    dt[dt_len] = '\0';
+    snprintf(dt, dsz, "%.*s", (int)dt_len, dtstart);
 
     return 0;
 }
@@ -326,7 +330,9 @@ int db_import_directory(db_t *db, const char *dirpath)
 
         file_count++;
         char fullpath[MAX_PATH_LEN];
-        snprintf(fullpath, sizeof(fullpath), "%s/%s", dirpath, ent->d_name);
+        int fl = snprintf(fullpath, sizeof(fullpath), "%s/%s", dirpath, ent->d_name);
+        if (fl < 0 || (size_t)fl >= sizeof(fullpath))
+            continue;
 
         struct stat st;
         if (stat(fullpath, &st) != 0 || st.st_size == 0)

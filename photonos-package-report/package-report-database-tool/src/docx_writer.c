@@ -2,6 +2,7 @@
 #include "chart_xml.h"
 #include "security.h"
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -57,32 +58,37 @@ static void zip_write32(FILE *f, unsigned int v)
 
 static int zip_add_file(zipwriter_t *z, const char *name, const void *data, size_t len)
 {
-    if (!z->fp || z->nentries >= 48)
+    /* Sizes are stored as 32-bit ZIP fields and passed to zlib as uInt. */
+    if (!z->fp || z->nentries >= 48 || len > UINT_MAX)
         return -1;
 
     unsigned int crc = crc32(0L, Z_NULL, 0);
     crc = crc32(crc, (const Bytef *)data, (uInt)len);
 
-    /* Deflate the data */
-    uLongf comp_bound = compressBound((uLong)len);
-    Bytef *comp = malloc(comp_bound);
-    if (!comp)
-        return -1;
-
+    /* Deflate the data in one call into a buffer of deflateBound() bytes,
+       the worst case for this stream's settings. */
     z_stream strm;
     memset(&strm, 0, sizeof(strm));
     /* Use raw deflate (windowBits = -15) for ZIP compatibility */
-    if (deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
-        free(comp);
+    if (deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+        return -1;
+    uLong comp_bound = deflateBound(&strm, (uLong)len);
+    Bytef *comp = comp_bound <= UINT_MAX ? malloc(comp_bound) : NULL;
+    if (!comp) {
+        deflateEnd(&strm);
         return -1;
     }
     strm.next_in = (Bytef *)data;
     strm.avail_in = (uInt)len;
     strm.next_out = comp;
     strm.avail_out = (uInt)comp_bound;
-    deflate(&strm, Z_FINISH);
+    int zrc = deflate(&strm, Z_FINISH);
     unsigned int comp_size = (unsigned int)strm.total_out;
     deflateEnd(&strm);
+    if (zrc != Z_STREAM_END) {
+        free(comp);
+        return -1;
+    }
 
     unsigned int local_offset = (unsigned int)ftell(z->fp);
     size_t name_len = strlen(name);

@@ -204,12 +204,9 @@ int pr_sourceforge_fetch_names(const char *url, char ***names_out, size_t *n_out
         if (hits < 0) break;
         PCRE2_SIZE *ov = pcre2_get_ovector_pointer(md);
         PCRE2_SIZE vs = ov[2], ve = ov[3];
-        if (vs != PCRE2_UNSET && ve > vs) {
-            size_t vlen = (size_t)(ve - vs);
-            char *val = (char *)malloc(vlen + 1);
+        if (vs != PCRE2_UNSET && ve > vs && ve <= region_len) {
+            char *val = strndup(region + vs, (size_t)(ve - vs));
             if (val) {
-                memcpy(val, region + vs, vlen);
-                val[vlen] = '\0';
                 strip_archive_ext(val);
                 if (n == cap) {
                     cap *= 2;

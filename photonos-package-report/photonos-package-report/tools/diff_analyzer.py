@@ -167,11 +167,35 @@ def analyze(branch, ps_path, c_path, out_md):
     return len(sig_specs), divergent, len(ps_only), len(c_only)
 
 
+# Characters accepted in the three directory arguments.
+PATH_CHARS = ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+              "0123456789/._-+~@:,")
+
+
+def arg_dir(raw, what):
+    """A directory argument, rebuilt from PATH_CHARS. Exits with a message for
+    a value with any other character or with a '..' component."""
+    out = []
+    for ch in raw:
+        for allowed in PATH_CHARS:
+            if ch == allowed:
+                out.append(allowed)
+                break
+        else:
+            sys.exit(f"{what}: unsupported character {ch!r} in {raw!r}")
+    path = "".join(out)
+    if not path or ".." in path.split("/"):
+        sys.exit(f"{what}: give a path without '..' components: {raw!r}")
+    return path
+
+
 def main():
     if len(sys.argv) != 4:
         sys.stderr.write("usage: diff_analyzer.py <ps-prn-dir> <c-prn-dir> <out-md-dir>\n")
         return 1
-    ps_dir, c_dir, out_dir = sys.argv[1:]
+    ps_dir = arg_dir(sys.argv[1], "ps-prn-dir")
+    c_dir = arg_dir(sys.argv[2], "c-prn-dir")
+    out_dir = arg_dir(sys.argv[3], "out-md-dir")
     if not os.path.isdir(ps_dir):
         sys.stderr.write(f"PS dir not a directory: {ps_dir}\n"); return 1
     if not os.path.isdir(c_dir):

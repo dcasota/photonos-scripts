@@ -182,15 +182,13 @@ char *pr_koji_derive_version(const char *artefact_name, const char *download_nam
     /* Special cases override `v` from `download_name`. */
     if (strcasecmp(artefact_name, "connect-proxy") == 0) {
         free(v);
-        v = (char *)malloc(strlen(download_name) + 1);
+        v = strdup(download_name);
         if (!v) return NULL;
-        memcpy(v, download_name, strlen(download_name) + 1);
         v = istr_replace_all(v, "ssh-connect-", "");
     } else if (strcasecmp(artefact_name, "python-pbr") == 0) {
         free(v);
-        v = (char *)malloc(strlen(download_name) + 1);
+        v = strdup(download_name);
         if (!v) return NULL;
-        memcpy(v, download_name, strlen(download_name) + 1);
         v = istr_replace_all(v, "pbr-", "");
     }
 
@@ -356,19 +354,29 @@ char *pr_koji_pick_latest_srpm(const char *html)
 /* ----- Public entry point ------------------------------------------- */
 
 /* version, release and the .src.rpm name are read from Fedora's pages and
- * become path segments of the next kojipkgs URL. Accept a segment only if it
- * cannot change the URL's structure: no '/', '?', '#', '%', '\\', blanks or
- * control bytes, and not "." or "..". Real NVR fields (including '^'
- * snapshots and '~' pre-releases) pass unchanged. */
-static int is_url_segment(const char *s)
+ * become path segments of the next kojipkgs URL. A segment is accepted only
+ * if every byte is one an RPM name/version/release/file name uses (letters,
+ * digits and "._+~^-"; '^' snapshots and '~' pre-releases included) and it is
+ * not "." or "..": nothing that could change the URL's structure. Takes
+ * ownership of `s`; returns a copy built from the allowed set, or NULL. */
+static char *url_segment(char *s)
 {
-    if (s == NULL || s[0] == '\0') return 0;
-    if (strcmp(s, ".") == 0 || strcmp(s, "..") == 0) return 0;
-    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
-        if (*p <= 0x20 || *p == 0x7f || *p == '/' || *p == '?' || *p == '#'
-            || *p == '%' || *p == '\\') return 0;
+    static const char ALLOWED[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+~^-";
+    char *out = NULL;
+    if (s != NULL && s[0] != '\0' && strcmp(s, ".") != 0 && strcmp(s, "..") != 0
+        && (out = (char *)malloc(strlen(s) + 1)) != NULL) {
+        size_t n = 0;
+        for (const char *p = s; *p; p++) {
+            const char *a = ALLOWED;
+            while (*a && *a != *p) a++;
+            if (*a == '\0') { free(out); out = NULL; break; }
+            out[n++] = *a;
+        }
+        if (out) out[n] = '\0';
     }
-    return 1;
+    free(s);
+    return out;
 }
 
 int koji_fedora_lookup(const char *artefact_name, char **out_url)
@@ -391,9 +399,9 @@ int koji_fedora_lookup(const char *artefact_name, char **out_url)
     if (!dlname) return 0;
 
     /* Step 2: derive version. */
-    char *version = pr_koji_derive_version(artefact_name, dlname);
+    char *version = url_segment(pr_koji_derive_version(artefact_name, dlname));
     free(dlname);
-    if (!version || !is_url_segment(version)) { free(version); return 0; }
+    if (!version) return 0;
 
     /* Step 3: list release subdirs. */
     char url2[1024];
@@ -402,9 +410,9 @@ int koji_fedora_lookup(const char *artefact_name, char **out_url)
              artefact_name, version);
     char *body2 = NULL;
     if (http_get(url2, 10000, &body2) != 0) { free(version); return 0; }
-    char *release = pr_koji_pick_latest_release(body2);
+    char *release = url_segment(pr_koji_pick_latest_release(body2));
     free(body2);
-    if (!release || !is_url_segment(release)) { free(version); free(release); return 0; }
+    if (!release) { free(version); return 0; }
 
     /* Step 4: list .src.rpm files. */
     char url3[1024];
@@ -415,9 +423,9 @@ int koji_fedora_lookup(const char *artefact_name, char **out_url)
     if (http_get(url3, 10000, &body3) != 0) {
         free(version); free(release); return 0;
     }
-    char *srpm = pr_koji_pick_latest_srpm(body3);
+    char *srpm = url_segment(pr_koji_pick_latest_srpm(body3));
     free(body3);
-    if (!srpm || !is_url_segment(srpm)) { free(version); free(release); free(srpm); return 0; }
+    if (!srpm) { free(version); free(release); return 0; }
 
     /* Step 5: assemble final URL. */
     char final_url[2048];

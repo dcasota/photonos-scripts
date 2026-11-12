@@ -16,7 +16,7 @@ echo ""
 echo "=== Integration Test: Import Real Scans ==="
 DB="/tmp/photon-integration-test.db"
 REPORT="/tmp/photon-test-report.docx"
-SCANS="$SCRIPT_DIR/../scans"
+SCANS="$(cd "$SCRIPT_DIR/.." && pwd)/scans"
 
 rm -f "$DB" "$REPORT"
 

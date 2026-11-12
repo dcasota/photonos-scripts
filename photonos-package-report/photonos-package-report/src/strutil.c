@@ -7,7 +7,15 @@
 #include <string.h>
 #include <strings.h>  /* strcasestr */
 
-char *str_replace_all(char *in, const char *a, const char *b)
+typedef const char *(*find_fn)(const char *haystack, const char *needle);
+
+static const char *find_cs(const char *h, const char *n) { return strstr(h, n); }
+static const char *find_ci(const char *h, const char *n) { return strcasestr(h, n); }
+
+/* Replace every non-overlapping occurrence of `a` (located by `find`) with
+ * `b`. Takes ownership of `in`; on no match or allocation failure returns
+ * `in` unchanged. */
+static char *replace_all(char *in, const char *a, const char *b, find_fn find)
 {
     if (in == NULL || a == NULL || a[0] == '\0') return in;
     size_t alen = strlen(a);
@@ -15,76 +23,36 @@ char *str_replace_all(char *in, const char *a, const char *b)
 
     /* Count occurrences. */
     size_t count = 0;
-    for (const char *p = in; (p = strstr(p, a)) != NULL; p += alen) count++;
+    for (const char *p = in; (p = find(p, a)) != NULL; p += alen) count++;
     if (count == 0) return in;
 
-    size_t in_len  = strlen(in);
-    size_t out_len = in_len + count * (blen > alen ? blen - alen : 0)
-                            - count * (alen > blen ? alen - blen : 0);
-    /* calloc: the buffer is NUL-terminated at every step, not only after
-     * the copy loop finishes. */
-    char *out = (char *)calloc(out_len + 1, 1);
+    /* The hits do not overlap, so strlen(in) >= count * alen. */
+    size_t out_len = strlen(in) - count * alen + count * blen;
+    char *out = (char *)malloc(out_len + 1);
     if (!out) return in;
 
+    /* Byte-wise copy: the output is the input with each of the `count` hits
+     * resized from alen to blen, so `o` ends exactly at out + out_len. */
     char *o = out;
     const char *cur = in;
-    for (;;) {
-        const char *hit = strstr(cur, a);
-        if (!hit) {
-            size_t tail = strlen(cur);
-            memcpy(o, cur, tail);
-            o += tail;
-            *o = '\0';
-            break;
-        }
-        memcpy(o, cur, (size_t)(hit - cur));
-        o += hit - cur;
-        if (blen) { memcpy(o, b, blen); o += blen; }
-        *o = '\0';
-        cur = hit + alen;
+    const char *hit;
+    while ((hit = find(cur, a)) != NULL) {
+        while (cur < hit) *o++ = *cur++;
+        for (size_t i = 0; i < blen; i++) *o++ = b[i];
+        cur += alen;
     }
+    while (*cur) *o++ = *cur++;
     *o = '\0';
     free(in);
     return out;
 }
 
+char *str_replace_all(char *in, const char *a, const char *b)
+{
+    return replace_all(in, a, b, find_cs);
+}
+
 char *istr_replace_all(char *in, const char *a, const char *b)
 {
-    if (in == NULL || a == NULL || a[0] == '\0') return in;
-    size_t alen = strlen(a);
-    size_t blen = b ? strlen(b) : 0;
-
-    /* Count occurrences case-insensitively. */
-    size_t count = 0;
-    for (const char *p = in; (p = strcasestr(p, a)) != NULL; p += alen) count++;
-    if (count == 0) return in;
-
-    size_t in_len  = strlen(in);
-    size_t out_len = in_len + count * (blen > alen ? blen - alen : 0)
-                            - count * (alen > blen ? alen - blen : 0);
-    /* calloc: the buffer is NUL-terminated at every step, not only after
-     * the copy loop finishes. */
-    char *out = (char *)calloc(out_len + 1, 1);
-    if (!out) return in;
-
-    char *o = out;
-    const char *cur = in;
-    for (;;) {
-        const char *hit = strcasestr(cur, a);
-        if (!hit) {
-            size_t tail = strlen(cur);
-            memcpy(o, cur, tail);
-            o += tail;
-            *o = '\0';
-            break;
-        }
-        memcpy(o, cur, (size_t)(hit - cur));
-        o += hit - cur;
-        if (blen) { memcpy(o, b, blen); o += blen; }
-        *o = '\0';
-        cur = hit + alen;
-    }
-    *o = '\0';
-    free(in);
-    return out;
+    return replace_all(in, a, b, find_ci);
 }

@@ -48,3 +48,27 @@ classified per location in `accepted/photonos-package-report.json` (`c_port`).
   all 8 branches' SPECS, 14/14 `.prn` byte-identical; `ctest` 15/15. The networked
   PS->C parity cycle could not run: PS snapshot artifacts have expired and the PS, C-side
   parity and PR-gate workflows are disabled.
+
+## Whole folder (C port + database tool + tools), 2026-11-12
+
+Snyk Code over `photonos-package-report/`: **65 -> 7** (21 MEDIUM -> 1, 44 LOW -> 6).
+The 2026-11-09 residuals and the database-tool rows above were re-examined by root
+cause; the per-location table above is superseded by `accepted/photonos-package-report.json`.
+
+- **Root causes fixed:** one `replace_all()` in `strutil.c` (behind 22
+  ImproperNullTermination findings); bounded `strndup` PCRE capture copies (github_api,
+  gnome_cache, pypi, sourceforge); `read()` straight into the git output buffer; a single
+  cleanup path in `generate_urlhealth_main`; allow-list checks for the SPECS_NEW_C version
+  part, Koji URL segments, the database tool's path options and `diff_analyzer.py`'s
+  directory arguments; streamed SHA-256 in the database tool; `deflate()` result checked
+  (a truncated .docx entry used to go unnoticed); snprintf truncation checks on two more
+  paths.
+- **Remaining 7:** SHA-1 for `%define sha1` parity; report output under the
+  operator's `$PUBLIC`/`$HOME` working directory (PS L87 contract, 4 sinks);
+  AllocOfStrlen on a binary deflate buffer; the SQLite file the database tool exists to
+  produce.
+- **Parity:** hermetic old-vs-new run over all 8 branches' SPECS, 14/14 `.prn`
+  byte-identical; `ctest` 15/15; database tool `make test` 12/12 and `test/run_tests.sh`
+  integration pass; old-vs-new import of 304 scan files gives an identical DB dump and
+  identical .docx contents. Network-only paths were checked with old-vs-new differential
+  tests (string replace helpers, git runner); the PS<->C parity workflows stay disabled.

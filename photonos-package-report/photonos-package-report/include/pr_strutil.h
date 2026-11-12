@@ -13,8 +13,8 @@
  * PCRE2 via Get-SpecValue / dedicated callsites.
  *
  * Both functions below take ownership of `in` (free it), allocate a new
- * heap string, and return it. They never return NULL on success.
- * On allocation failure they leave `in` untouched and return NULL.
+ * heap string, and return it. When `a` does not occur, or on allocation
+ * failure, they return `in` itself, unchanged.
  */
 #ifndef PR_STRUTIL_H
 #define PR_STRUTIL_H

@@ -64,10 +64,8 @@ static int push_name(char ***names, size_t *n, size_t *cap,
         if (!p) return -1;
         *names = p; *cap = nc;
     }
-    char *v = (char *)malloc(len + 1);
+    char *v = strndup(s, len);
     if (!v) return -1;
-    memcpy(v, s, len);
-    v[len] = '\0';
     (*names)[(*n)++] = v;
     return 0;
 }

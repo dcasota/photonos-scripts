@@ -1506,14 +1506,10 @@ static char *replace_leading_icase(char *s, const char *prefix,
 {
     if (s == NULL || prefix == NULL || *prefix == '\0') return s;
     if (!starts_with_icase(s, prefix)) return s;
-    size_t pl = strlen(prefix);
-    size_t rl = strlen(replacement ? replacement : "");
-    size_t sl = strlen(s);
-    size_t tail = sl - pl;
-    char *out = (char *)malloc(rl + tail + 1);
-    if (!out) return s;
-    if (rl) memcpy(out, replacement, rl);
-    memcpy(out + rl, s + pl, tail + 1);
+    char *out = NULL;
+    if (asprintf(&out, "%s%s", replacement ? replacement : "",
+                 s + strlen(prefix)) < 0)
+        return s;
     free(s);
     return out;
 }
@@ -1549,13 +1545,8 @@ static char *download_name_post(char *raw, const char *task_name,
             raw = replace_leading_icase(raw, "r", "libinih-");
         } else if (strcasecmp(task_spec, "open-vm-tools.spec") == 0) {
             /* PS L 4773: prepend "open-vm-tools-". Unconditional. */
-            const char *pfx = "open-vm-tools-";
-            size_t pl = strlen(pfx);
-            size_t rl = strlen(raw);
-            char *out = (char *)malloc(pl + rl + 1);
-            if (out) {
-                memcpy(out, pfx, pl);
-                memcpy(out + pl, raw, rl + 1);
+            char *out = NULL;
+            if (asprintf(&out, "open-vm-tools-%s", raw) >= 0) {
                 free(raw);
                 raw = out;
             }
@@ -1569,13 +1560,8 @@ static char *download_name_post(char *raw, const char *task_name,
              * unconditional. */
             raw = istr_replace_all(raw, "JK_", "");
             raw = istr_replace_all(raw, "_",   ".");
-            const char *pfx = "tomcat-connectors-";
-            size_t pl = strlen(pfx);
-            size_t rl = strlen(raw);
-            char *out = (char *)malloc(pl + rl + 1);
-            if (out) {
-                memcpy(out, pfx, pl);
-                memcpy(out + pl, raw, rl + 1);
+            char *out = NULL;
+            if (asprintf(&out, "tomcat-connectors-%s", raw) >= 0) {
                 free(raw);
                 raw = out;
             }
@@ -1608,12 +1594,8 @@ static char *download_name_post(char *raw, const char *task_name,
         }
         if (!has_alpha) {
             /* Prepend "<task_name>-". */
-            size_t nl = strlen(task_name);
-            char *out = (char *)malloc(nl + 1 + rl + 1);
-            if (out) {
-                memcpy(out, task_name, nl);
-                out[nl] = '-';
-                memcpy(out + nl + 1, raw, rl + 1);
+            char *out = NULL;
+            if (asprintf(&out, "%s-%s", task_name, raw) >= 0) {
                 free(raw);
                 raw = out;
             }
@@ -1626,12 +1608,8 @@ static char *download_name_post(char *raw, const char *task_name,
      * and final `_`→`.`. */
     if (task_name && task_name[0]
         && (starts_with_icase(raw, "Release") || starts_with_icase(raw, "Rel_"))) {
-        size_t nl = strlen(task_name);
-        char *name_dash = (char *)malloc(nl + 2);
-        if (name_dash) {
-            memcpy(name_dash, task_name, nl);
-            name_dash[nl] = '-';
-            name_dash[nl + 1] = '\0';
+        char *name_dash = NULL;
+        if (asprintf(&name_dash, "%s-", task_name) >= 0) {
             raw = replace_leading_icase(raw, "Release_", name_dash);
             raw = replace_leading_icase(raw, "Release-", name_dash);
             raw = replace_leading_icase(raw, "Rel_",     name_dash);
@@ -1645,12 +1623,8 @@ static char *download_name_post(char *raw, const char *task_name,
 
     /* M24 — PS L 4792-4793: `v-` prefix replacement. */
     if (task_name && task_name[0] && starts_with_icase(raw, "v-")) {
-        size_t nl = strlen(task_name);
-        char *name_dash = (char *)malloc(nl + 2);
-        if (name_dash) {
-            memcpy(name_dash, task_name, nl);
-            name_dash[nl] = '-';
-            name_dash[nl + 1] = '\0';
+        char *name_dash = NULL;
+        if (asprintf(&name_dash, "%s-", task_name) >= 0) {
             raw = replace_leading_icase(raw, "v-", name_dash);
             free(name_dash);
         }
