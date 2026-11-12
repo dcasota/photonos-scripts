@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn the_variant_spec_copy_is_a_release_tree_with_the_builds_dist_tag() {
-        let tmp = std::env::temp_dir().join(format!("shk-poi-variant-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-poi-variant-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let tree = tmp.join("5.0");
         fs::create_dir_all(tree.join(SPEC_DIR)).unwrap();
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn the_prepped_tree_is_found_below_an_rpm_4_20_build_level() {
-        let tmp = std::env::temp_dir().join(format!("shk-poi-tree-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-poi-tree-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let t = tmp.join("x-2.8-build/x-2.8");
         fs::create_dir_all(t.join("pkg")).unwrap();
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn manifest_skips_bytecode_and_refuses_symlinks() {
-        let tmp = std::env::temp_dir().join(format!("shk-poi-man-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-poi-man-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("__pycache__")).unwrap();
         fs::write(tmp.join("a.py"), "x").unwrap();
@@ -694,7 +694,7 @@ mod tests {
 
     #[test]
     fn build_config_is_pointed_and_read_back() {
-        let tmp = std::env::temp_dir().join(format!("shk-poi-cfg-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-poi-cfg-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         fs::write(

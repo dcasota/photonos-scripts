@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn check_against_reports_the_first_differing_line() {
-        let p = std::env::temp_dir().join(format!("sharukhan-drift-{}", std::process::id()));
+        let p = crate::safepath::test_base().join(format!("sharukhan-drift-{}", std::process::id()));
         std::fs::write(&p, "a\nb\nc\n").unwrap();
         assert!(check_against("a\nb\nc\n", &p).is_ok());
         let e = check_against("a\nB\nc\n", &p).unwrap_err().to_string();
@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn an_atomic_write_leaves_an_executable_file_and_no_temporary() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("sharukhan-atomic-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-atomic-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let p = d.join("x.sh");
         write_atomic(&p, "echo hi\n").unwrap();
@@ -546,7 +546,7 @@ mod controls {
         let start = b.find("pin_kernel_dir() {").expect("the base defines pin_kernel_dir");
         let end = start + b[start..].find("\nKDIRPY\n}\n").expect("its heredoc ends") + "\nKDIRPY\n}\n".len();
         let func = &b[start..end];
-        let root = std::env::temp_dir().join(format!("shk-kdir-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-kdir-{}", std::process::id()));
         let shell = |tree: &Path| -> (bool, String) {
             let o = std::process::Command::new("sh").arg("-c").arg(format!("{func}pin_kernel_dir")).current_dir(tree).output().unwrap();
             (o.status.success(), String::from_utf8_lossy(&o.stdout).trim().to_string())

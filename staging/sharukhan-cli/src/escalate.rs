@@ -26,7 +26,7 @@
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub const SCHEMA: &str = "
@@ -242,8 +242,7 @@ pub fn key_shape_ok(k: &str) -> bool {
 /// The key: MC_ANTHROPIC_KEY_FILE (a secret file, crate::secret) if set,
 /// else ANTHROPIC_API_KEY. Errors name the source, never the value.
 pub fn read_key() -> Result<String, String> {
-    if let Some(p) = std::env::var_os("MC_ANTHROPIC_KEY_FILE").filter(|v| !v.is_empty()) {
-        let p = PathBuf::from(p);
+    if let Some(p) = crate::safepath::env_path("MC_ANTHROPIC_KEY_FILE")? {
         let k = crate::secret::read(&p)?;
         return if key_shape_ok(&k) { Ok(k) } else { Err(format!("{}: does not hold an Anthropic API key", p.display())) };
     }

@@ -779,7 +779,7 @@ mod tests {
     use super::*;
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("shk-service-{tag}-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-service-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d

@@ -984,7 +984,7 @@ struct World {
 
 fn world(tag: &str) -> World {
     use std::str::FromStr;
-    let dir = std::env::temp_dir().join(format!("sharukhan-run-{}-{tag}", std::process::id()));
+    let dir = crate::safepath::test_base().join(format!("sharukhan-run-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("k09")).unwrap();
     let mut cfg = Config::for_test(&dir);

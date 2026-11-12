@@ -1460,7 +1460,7 @@ mod tests {
 
     #[test]
     fn sources_in_subdirectories_are_staged_by_name_as_photon_does() {
-        let d = std::env::temp_dir().join(format!("sharukhan-pe-{}-flat", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-pe-{}-flat", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("CVE/deeper")).unwrap();
         fs::write(d.join("x.spec"), "s").unwrap();
@@ -1546,7 +1546,7 @@ mod tests {
 
     #[test]
     fn a_cherry_pick_counts_as_contained() {
-        let d = std::env::temp_dir().join(format!("sharukhan-pe-{}-pick", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-pe-{}-pick", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         let g = |a: &[&str]| {
@@ -1619,7 +1619,7 @@ mod tests {
     }
 
     fn repo(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("sharukhan-pe-{}-{tag}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-pe-{}-{tag}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         let g = |a: &[&str]| assert!(Command::new("git").arg("-C").arg(&d).args(a).output().unwrap().status.success(), "{a:?}");
@@ -1676,7 +1676,7 @@ mod tests {
 
     #[test]
     fn the_symptom_record_counts_one_check_over_all_runs() {
-        let d = std::env::temp_dir().join(format!("sharukhan-pe-{}-sym", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-pe-{}-sym", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("k01")).unwrap();
         fs::write(d.join("k01/checks-20261106T110224Z.jsonl"), "{\"check\":\"g.x\",\"status\":\"fail\"}\n{\"check\":\"g.x\",\"status\":\"pass\"}\n{\"check\":\"g.y\",\"status\":\"fail\"}\nnot json\n").unwrap();

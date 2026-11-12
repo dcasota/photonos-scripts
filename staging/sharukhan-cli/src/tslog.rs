@@ -80,7 +80,7 @@ mod tests {
     /// without a newline and bytes that are not UTF-8; the status is the child's.
     #[test]
     fn both_streams_are_stamped_line_by_line() {
-        let log = std::env::temp_dir().join(format!("shk-tslog-{}.log", std::process::id()));
+        let log = crate::safepath::test_base().join(format!("shk-tslog-{}.log", std::process::id()));
         let _ = std::fs::remove_file(&log);
         std::fs::write(&log, "earlier\n").unwrap();
         let st = run_to_log(

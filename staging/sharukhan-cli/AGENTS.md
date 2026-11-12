@@ -28,7 +28,8 @@
 - **No credential is ever written to the memory database or a log.** Fields that could carry one are redacted at the boundary, and the redaction is tested.
 - **Every external command is invoked with an argument vector**, never a shell string. No interpolation of caller data into a shell.
 - **Every SQL statement is parameterised.** No string-built SQL, ever.
-- **Paths derived from configuration are validated** before use in destructive operations. A teardown that accepts an arbitrary path is a footgun.
+- **Paths derived from configuration are validated** before any use (`safepath`): a path setting must be absolute, without `.`/`..` components or control characters, or sharukhan stops with a configuration error (exit 78). A name read from a file or an argument and joined onto a directory must be one plain file name. A teardown that accepts an arbitrary path is a footgun.
+- **Scratch directories are private.** Never a predictable name in the shared temp directory, never `remove_dir_all` + `create_dir_all` of one: `safepath::private_tmp` makes a new directory with an unpredictable name and mode 0700 below a temp directory that must be sticky when world-writable. Tests use a private directory under `target/<profile>/test-scratch`, never `/tmp` or `$TMPDIR`.
 - **Destructive operations stash, never delete**, by default, and target one named VM. Blanket operations across a hypervisor are forbidden — this host runs other people's VMs.
 - Prerequisite checks report the *version and provenance* of each external binary, because a version-skewed dependency (openssh built against a different OpenSSL) presents exactly like an unreachable host.
 

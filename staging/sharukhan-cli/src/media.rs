@@ -278,7 +278,7 @@ mod tests {
 
     /// A git tree whose origin/5.0 carries an installer spec at `ver`-`rel`.
     fn pristine_tree(tag: &str, ver: &str, rel: &str) -> std::path::PathBuf {
-        let t = std::env::temp_dir().join(format!("sharukhan-media-{tag}-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("sharukhan-media-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&t);
         let d = t.join("SPECS/photon-os-installer");
         std::fs::create_dir_all(&d).unwrap();
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn a_freshly_written_file_is_young_and_says_why() {
-        let d = std::env::temp_dir().join(format!("sk-media-young-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sk-media-young-{}", std::process::id()));
         std::fs::write(&d, b"iso").unwrap();
         let got = settled(&d, 300);
         let _ = std::fs::remove_file(&d);

@@ -747,11 +747,10 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
         ));
         return Ok(());
     }
-    let tmp = std::env::temp_dir().join(format!(
-        "sharukhan-{}-{}.patch",
-        e.as_str(),
-        std::process::id()
-    ));
+    // a private directory: the patch is left there for inspection when it
+    // no longer applies, and nobody else can place or read anything in it
+    let tmp_dir = crate::safepath::private_tmp("sharukhan-embedded")?;
+    let tmp = tmp_dir.join(format!("{}.patch", e.as_str()));
     let text = match e {
         Embedded::CanisterEquivalent => {
             crate::caneq::align_changelog_context(e.patch(), &|f: &str| fs::read_to_string(dir.join(f)).ok())
@@ -774,7 +773,7 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
                         e.as_str(),
                         e.tree().as_str()
                     ));
-                    let _ = fs::remove_file(&tmp);
+                    let _ = fs::remove_dir_all(&tmp_dir);
                     return Ok(());
                 }
             }
@@ -788,7 +787,7 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
             e.as_str(),
             e.tree().as_str()
         ));
-        let _ = fs::remove_file(&tmp);
+        let _ = fs::remove_dir_all(&tmp_dir);
         return Ok(());
     } else {
         Err(format!(
@@ -807,7 +806,7 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
                 e.as_str(),
                 e.tree().as_str()
             ));
-            let _ = fs::remove_file(&tmp);
+            let _ = fs::remove_dir_all(&tmp_dir);
             Ok(())
         }
         Err(x) => Err(x),
@@ -4233,7 +4232,11 @@ fn write_sidecars(c: &mut Ctx, dest: &Path, sum: &str) {
     let Some(dir) = dest.parent() else { return };
     let name = basename(dest);
 
-    if let Some(store) = std::env::var_os("MC_ISO_STORE").filter(|v| !v.is_empty()) {
+    let store = crate::safepath::env_path("MC_ISO_STORE").unwrap_or_else(|e| {
+        c.say(&format!("  [warn] {e}; the ISO stays in the cache"));
+        None
+    });
+    if let Some(store) = store {
         match store_iso(dest, Path::new(&store)) {
             Ok(target) => c.say(&format!("  stored in {}, linked as {name}", target.display())),
             Err(e) => c.say(&format!("  [warn] MC_ISO_STORE: {e}; the ISO stays in the cache")),
@@ -4434,7 +4437,7 @@ mod tests {
     /// and the ones untouched by the attempt are not.
     #[test]
     fn a_failed_attempts_package_logs_are_kept() {
-        let d = std::env::temp_dir().join(format!("shk-keep-logs-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-keep-logs-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let stage = d.join("stage");
         let put = |rel: &str, text: &str| {
@@ -4485,7 +4488,7 @@ mod tests {
 
     #[test]
     fn a_stored_iso_moves_and_its_cache_name_links_to_it() {
-        let root = std::env::temp_dir().join(format!("shk-store-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-store-{}", std::process::id()));
         let cache = root.join("cache").join("minimal-poi2.8-prebuilt");
         let store = root.join("Ph-Builds");
         fs::create_dir_all(&cache).unwrap();
@@ -4529,7 +4532,7 @@ mod tests {
 
     #[test]
     fn iso_work_dirs_no_process_uses_are_stale_and_one_in_use_is_kept() {
-        let t = std::env::temp_dir().join(format!("sharukhan-isowork-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("sharukhan-isowork-{}", std::process::id()));
         let iso = t.join("iso");
         for d in ["photon-aaaaaaaa", "photon-bbbbbbbb", "photon-inuse01", "other-dir"] {
             fs::create_dir_all(iso.join(d)).unwrap();
@@ -4568,7 +4571,7 @@ mod tests {
 
     #[test]
     fn only_top_level_isos_of_the_stage_are_leftovers() {
-        let t = std::env::temp_dir().join(format!("shk-leftover-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-leftover-{}", std::process::id()));
         let _ = fs::remove_dir_all(&t);
         fs::create_dir_all(t.join("iso")).unwrap();
         fs::write(t.join("photon-5.0-a43a312c3.x86_64.iso"), "x").unwrap();
@@ -4582,7 +4585,7 @@ mod tests {
 
     #[test]
     fn an_iso_older_than_the_marker_is_not_this_builds_output() {
-        let t = std::env::temp_dir().join(format!("shk-findiso-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-findiso-{}", std::process::id()));
         let _ = fs::remove_dir_all(&t);
         fs::create_dir_all(t.join("common")).unwrap();
         fs::write(t.join("old.iso"), "x").unwrap();
@@ -4614,7 +4617,7 @@ mod tests {
 
     #[test]
     fn the_spec_dir_hash_follows_every_file_of_the_directory() {
-        let t = std::env::temp_dir().join(format!("shk-sdh-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-sdh-{}", std::process::id()));
         let _ = fs::remove_dir_all(&t);
         fs::create_dir_all(t.join("sub")).unwrap();
         fs::write(t.join("x.spec"), "Name: x\n").unwrap();
@@ -4640,7 +4643,7 @@ mod tests {
     /// build could not produce.
     #[test]
     fn release_bump_is_relative_to_an_already_bumped_release() {
-        let tmp = std::env::temp_dir().join(format!("shk-relbump-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-relbump-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("5.0/SPECS/linux");
         crate::specresolve::test_release_config(&tmp.join("5.0"), 92);
@@ -4673,7 +4676,7 @@ mod tests {
     /// would drift away from what the build produces.
     #[test]
     fn release_bump_is_idempotent_on_rerun() {
-        let tmp = std::env::temp_dir().join(format!("shk-relidem-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-relidem-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("5.0/SPECS/linux");
         crate::specresolve::test_release_config(&tmp.join("5.0"), 92);
@@ -4709,7 +4712,7 @@ mod tests {
 
     #[test]
     fn a_port_branchs_own_specs_are_in_the_purge_floor() {
-        let tmp = std::env::temp_dir().join(format!("shk-portfloor-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-portfloor-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let rel = tmp.join("experimental/systemd-262.2");
         fs::create_dir_all(rel.join("SPECS/systemd")).unwrap();
@@ -4742,7 +4745,7 @@ mod tests {
 
     #[test]
     fn a_rewritten_port_branch_is_followed_only_when_the_build_says_so() {
-        let tmp = std::env::temp_dir().join(format!("shk-rewrite-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-rewrite-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let g = |dir: &Path, a: &[&str]| {
             let o = Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]).args(a).current_dir(dir).output().unwrap();
@@ -4792,7 +4795,7 @@ mod tests {
         assert_eq!(common_path_for("5.0", "common"), "../common");
         assert_eq!(common_path_for("experimental/systemd-262.2", "common"), "../../common");
 
-        let tmp = std::env::temp_dir().join(format!("shk-commonpath-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-commonpath-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let rel = tmp.join("experimental/systemd-262.2");
         fs::create_dir_all(&rel).unwrap();
@@ -4852,7 +4855,7 @@ mod tests {
     /// 2026-09-11 prebuilt-rebuild failure.
     #[test]
     fn a_canister_that_is_not_the_pinned_one_is_moved_out_of_the_stage() {
-        let tmp = std::env::temp_dir().join(format!("shk-can-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-can-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("5.0/SPECS/linux");
         crate::specresolve::test_release_config(&tmp.join("5.0"), 92);
@@ -4898,7 +4901,7 @@ mod tests {
     /// multi-hour, two-tree mutation would do before consenting to it.
     #[test]
     fn a_dry_run_creates_no_files_and_still_names_every_stage() {
-        let tmp = std::env::temp_dir().join(format!("shk-dry-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-dry-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         let mut s = spec_at(&tmp);
@@ -4932,7 +4935,7 @@ mod tests {
     /// exact failure a dry run exists to prevent.
     #[test]
     fn a_compose_only_dry_run_promises_no_kernel_deletions() {
-        let tmp = std::env::temp_dir().join(format!("shk-dryco-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-dryco-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         let mut s = spec_at(&tmp);
@@ -4976,7 +4979,7 @@ mod tests {
     #[test]
     fn declared_sources_reads_the_shape_photon_actually_uses() {
         // Verbatim shape from /root/5.0/SPECS/*/config.yaml.
-        let tmp = std::env::temp_dir().join(format!("shk-yaml-{}.yaml", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-yaml-{}.yaml", std::process::id()));
         fs::write(
             &tmp,
             "sources:\n- archive: fuse-overlayfs-snapshotter-2.1.7.tar.gz\n  \
@@ -5002,7 +5005,7 @@ mod tests {
     /// spec that does not build here. Refused when the specs cannot decide.
     #[test]
     fn the_rpm_toolchain_purge_follows_the_specs() {
-        let root = std::env::temp_dir().join(format!("shk-rpmtc-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-rpmtc-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("build-config.json"), r#"{"photon-build-param": {"photon-dist-tag": ".ph5", "photon-subrelease": "92"}}"#).unwrap();
@@ -5119,7 +5122,7 @@ mod tests {
     /// a pristine 257.13-6 must not take a PR's 257.13-6 from the stage.
     #[test]
     fn a_recorded_nevr_is_judged_against_the_spec_that_declares_it_now() {
-        let root = std::env::temp_dir().join(format!("shk-ledger-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-ledger-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let tree = root.join("5.0");
         let stage = root.join("stage");
@@ -5274,7 +5277,7 @@ mod tests {
     /// quiet pass.
     #[test]
     fn compose_only_refuses_when_it_cannot_prove_phase_b() {
-        let tmp = std::env::temp_dir().join(format!("shk-co-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-co-{}", std::process::id()));
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
@@ -5390,7 +5393,7 @@ mod tests {
     /// the guard only ever covered half the comparison.
     #[test]
     fn a_higher_version_shadows_and_must_be_purged() {
-        let tmp = std::env::temp_dir().join(format!("shk-poi-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-poi-{}", std::process::id()));
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/photon-os-installer");
         let _ = fs::remove_dir_all(&tmp);
@@ -5452,7 +5455,7 @@ mod tests {
     /// checkout's index must not change.
     #[test]
     fn a_common_patch_partly_on_the_branch_applies_from_its_base() {
-        let tmp = std::env::temp_dir().join(format!("shk-commonbase-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-commonbase-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let repo = tmp.join("common");
         fs::create_dir_all(&repo).unwrap();
@@ -5533,7 +5536,7 @@ mod tests {
     /// a subdirectory belongs to the specs above it.
     #[test]
     fn patched_specs_counts_an_included_file_for_its_specs() {
-        let tmp = std::env::temp_dir().join(format!("shk-incspec-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-incspec-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("release/5.0/SPECS/linux");
         crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
@@ -5597,7 +5600,7 @@ mod tests {
     #[test]
     fn patched_specs_finds_linux_esx_in_the_real_embedded_patch() {
         // a tree laid out as the embedded patch expects, not this host's
-        let tmp = std::env::temp_dir().join(format!("shk-embspec-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-embspec-{}", std::process::id()));
         let kdir_of_patch = Embedded::CanisterEquivalent
             .patch()
             .lines()
@@ -5659,7 +5662,7 @@ mod tests {
     /// A common-tree patch is not a release-tree spec.
     #[test]
     fn patched_specs_ignores_the_common_tree_and_non_specs() {
-        let tmp = std::env::temp_dir().join(format!("shk-ps-{}.patch", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-ps-{}.patch", std::process::id()));
         fs::write(
             &tmp,
             "--- a/support/package-builder/ToolChainUtils.py\n\
@@ -5709,7 +5712,7 @@ mod tests {
     /// mariadb was built a second time in the same gate.
     #[test]
     fn a_spec_this_subrelease_does_not_build_shadows_nothing() {
-        let tmp = std::env::temp_dir().join(format!("shk-shadow-sr-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-shadow-sr-{}", std::process::id()));
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let _ = fs::remove_dir_all(&tmp);
         crate::specresolve::test_release_config(&tmp.join("release/5.0"), 92);
@@ -5757,7 +5760,7 @@ mod tests {
     /// The old prefix match `{pkg}-{ver}-` never covered a subpackage.
     #[test]
     fn the_shadowing_purge_covers_subpackages() {
-        let tmp = std::env::temp_dir().join(format!("shk-shadow-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-shadow-{}", std::process::id()));
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
@@ -5821,7 +5824,7 @@ mod tests {
     /// The families come from the spec text, including the `-n` form.
     #[test]
     fn spec_families_reads_every_declared_subpackage() {
-        let tmp = std::env::temp_dir().join(format!("shk-fam-{}.spec", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-fam-{}.spec", std::process::id()));
         fs::write(
             &tmp,
             "Name:       rpm\nVersion:    6.1.0\n%package devel\n%package libs\n\
@@ -5850,7 +5853,7 @@ mod tests {
 
     #[test]
     fn stage_rpms_of_a_nevr_include_dash_n_subpackages_and_nothing_else() {
-        let tmp = std::env::temp_dir().join(format!("shk-nevr-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-nevr-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let x = tmp.join("RPMS/x86_64");
         fs::create_dir_all(&x).unwrap();
@@ -5885,7 +5888,7 @@ mod tests {
 
     #[test]
     fn a_missing_patch_is_reported_as_skipped() {
-        let tmp = std::env::temp_dir().join(format!("shk-miss-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-miss-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         let s = spec_at(&tmp);
@@ -5908,7 +5911,7 @@ mod tests {
     /// scripts' fixup table growing back.
     #[test]
     fn a_fixup_that_is_already_correct_is_skipped() {
-        let tmp = std::env::temp_dir().join(format!("shk-fix-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-fix-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let spec_dir = tmp.join("5.0/SPECS/python3");
         fs::create_dir_all(&spec_dir).unwrap();
@@ -5933,7 +5936,7 @@ mod tests {
 
     #[test]
     fn a_fixup_whose_file_is_absent_is_skipped_not_failed() {
-        let tmp = std::env::temp_dir().join(format!("shk-abs-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-abs-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         let s = spec_at(&tmp);
@@ -5953,7 +5956,7 @@ mod tests {
     /// pinned90/pinned91 were separate scripts for this one edit.
     #[test]
     fn pinning_the_subrelease_rewrites_only_that_key() {
-        let tmp = std::env::temp_dir().join(format!("shk-pin-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-pin-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("5.0")).unwrap();
         fs::write(
@@ -5998,7 +6001,7 @@ mod parity_tests {
     #[test]
     #[ignore = "live: needs SHARUKHAN_LIVE_SPECS=<release tree>/SPECS"]
     fn live_the_parser_agrees_with_the_real_specs_tree() {
-        let specs_env = std::env::var("SHARUKHAN_LIVE_SPECS").expect("SHARUKHAN_LIVE_SPECS=<release tree>/SPECS");
+        let specs_env = crate::safepath::env_path("SHARUKHAN_LIVE_SPECS").unwrap_or_else(|e| panic!("{e}")).expect("SHARUKHAN_LIVE_SPECS=<release tree>/SPECS").to_string_lossy().into_owned();
         let specs = Path::new(&specs_env);
         assert!(specs.is_dir(), "{} is not a directory", specs.display());
         let mut files = 0;
@@ -6046,7 +6049,7 @@ mod parity_exact {
         //   SHARUKHAN_LIVE_SPECS=<tree>/SPECS cargo test --release live_dump_for_reference -- --ignored
         //   diff <(sort /tmp/py-sources.txt) <(sort /tmp/rust-sources.txt)
         // Last run: 0 differences over 1968 entries in 1745 files.
-        let specs_env = std::env::var("SHARUKHAN_LIVE_SPECS").expect("SHARUKHAN_LIVE_SPECS=<release tree>/SPECS");
+        let specs_env = crate::safepath::env_path("SHARUKHAN_LIVE_SPECS").unwrap_or_else(|e| panic!("{e}")).expect("SHARUKHAN_LIVE_SPECS=<release tree>/SPECS").to_string_lossy().into_owned();
         let specs = Path::new(&specs_env);
         assert!(specs.is_dir(), "{} is not a directory", specs.display());
         let mut lines: Vec<String> = Vec::new();
@@ -6102,7 +6105,7 @@ mod pkgopts_tests {
     /// to be written to mean anything.
     #[test]
     fn prebuilt_writes_an_empty_macro_list_rather_than_skipping() {
-        let tmp = std::env::temp_dir().join(format!("shk-opts-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-opts-{}", std::process::id()));
         let dir = tmp.join("common/common/data");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&dir).unwrap();
@@ -6197,7 +6200,7 @@ mod pkgopts_tests {
     /// the non-booting flavour came back.
     #[test]
     fn post_is_not_satisfied_by_linux_when_linux_esx_is_missing() {
-        let tmp = std::env::temp_dir().join(format!("shk-postesx-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-postesx-{}", std::process::id()));
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
@@ -6263,7 +6266,7 @@ mod pkgopts_tests {
     /// with no canister linkage.
     #[test]
     fn the_purge_covers_both_flavours_at_their_own_releases() {
-        let tmp = std::env::temp_dir().join(format!("shk-esx-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-esx-{}", std::process::id()));
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
         let specs = tmp.join("release/5.0/SPECS/linux");
         let _ = fs::remove_dir_all(&tmp);
@@ -6356,7 +6359,7 @@ mod pkgopts_tests {
     /// settle without booting anything.
     #[test]
     fn post_rejects_a_phase_a_that_produced_no_canister() {
-        let tmp = std::env::temp_dir().join(format!("shk-posta-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-posta-{}", std::process::id()));
         // tree(Release) is base_dir.join(release), so the stage lives one
         // level deeper than the base_dir handed to from_args.
         let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
@@ -6445,7 +6448,7 @@ mod pkgopts_tests {
     /// kernel on the ISO. So this test exercises the phase, not the predicate.
     #[test]
     fn cascade_purge_removes_phase_a_kernels_but_keeps_the_canister() {
-        let tmp = std::env::temp_dir().join(format!("shk-purgeb-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-purgeb-{}", std::process::id()));
         let rpms = tmp.join("release/stage/RPMS/x86_64");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&rpms).unwrap();
@@ -6506,7 +6509,7 @@ mod pkgopts_tests {
     /// them, and a phase A whose canister is back skips its make.
     #[test]
     fn the_cascade_stores_reuses_and_never_leaks_equivalent_kernels() {
-        let tmp = std::env::temp_dir().join(format!("shk-slot-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-slot-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("root/5.0/SPECS/linux");
         crate::specresolve::test_release_config(&tmp.join("root/5.0"), 92);
@@ -6616,7 +6619,7 @@ mod pkgopts_tests {
     /// Phase A must not purge its own inputs, and prebuilt has no phase at all.
     #[test]
     fn only_phase_b_purges_kernels() {
-        let tmp = std::env::temp_dir().join(format!("shk-purgea-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-purgea-{}", std::process::id()));
         let rpms = tmp.join("release/stage/RPMS/x86_64");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&rpms).unwrap();
@@ -6654,7 +6657,7 @@ mod pkgopts_tests {
     /// handing it phase A's macros would be a lie about what it does.
     #[test]
     fn phase_a_targets_linux_only_and_phase_b_targets_both() {
-        let tmp = std::env::temp_dir().join(format!("shk-opts2-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-opts2-{}", std::process::id()));
         let dir = tmp.join("common/common/data");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&dir).unwrap();

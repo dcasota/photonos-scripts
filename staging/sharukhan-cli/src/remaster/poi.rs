@@ -327,7 +327,7 @@ mod tests {
     /// four paths. It is found once; two real trees are still refused.
     #[test]
     fn linked_lib_directories_are_one_python_tree() {
-        let d = std::env::temp_dir().join(format!("shk-sp-{}-{}", std::process::id(), crate::job::stamp()));
+        let d = crate::safepath::test_base().join(format!("shk-sp-{}-{}", std::process::id(), crate::job::stamp()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("usr/lib/python3.14/site-packages/photon_installer")).unwrap();
         std::os::unix::fs::symlink("usr/lib", d.join("lib")).unwrap();
@@ -413,7 +413,7 @@ mod tests {
     /// the initrd stage on a tree an earlier run already touched.
     #[test]
     fn patching_an_already_patched_tree_changes_nothing() {
-        let d = std::env::temp_dir().join(format!("shk-poi-idem-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-poi-idem-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fake_poi(&d, "python3.14", "2.2");
         let spec = crate::remaster::tests_support::spec();
@@ -451,7 +451,7 @@ mod tests {
         let e = apply("def main():\n    pass\n", LIVE_ANCHOR, LIVE_FIXED).unwrap_err();
         assert!(e.contains("neither the expected code nor the fix"), "{e}");
 
-        let d = std::env::temp_dir().join(format!("shk-poi-neg-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-poi-neg-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let sp = fake_poi(&d, "python3.14", "2.2");
         fs::write(
@@ -483,7 +483,7 @@ mod tests {
     /// python3.11 would silently patch nothing on a python3.14 medium.
     #[test]
     fn the_python_tree_is_discovered_and_ambiguity_is_refused() {
-        let d = std::env::temp_dir().join(format!("shk-poi-sp-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-poi-sp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fake_poi(&d, "python3.14", "2.2");
         assert_eq!(
@@ -509,13 +509,13 @@ mod tests {
     /// nothing branches on it.
     #[test]
     fn the_version_is_read_from_the_egg_info_and_only_reported() {
-        let d = std::env::temp_dir().join(format!("shk-poi-ver-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-poi-ver-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let sp = fake_poi(&d, "python3.14", "2.2");
         assert_eq!(version(&sp).as_deref(), Some("2.2"));
 
         // An unreadable version must not stop the patch.
-        let d2 = std::env::temp_dir().join(format!("shk-poi-ver2-{}", std::process::id()));
+        let d2 = crate::safepath::test_base().join(format!("shk-poi-ver2-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d2);
         let sp2 = fake_poi(&d2, "python3.14", "2.2");
         fs::remove_dir_all(sp2.join("photon_installer-2.2-py3.14.egg-info")).unwrap();

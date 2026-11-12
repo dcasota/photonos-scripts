@@ -107,10 +107,23 @@ fn parse(args: &[String]) -> std::result::Result<Opts, String> {
     Ok(o)
 }
 
+/// A directory setting, checked (crate::safepath::env_path). A malformed one
+/// stops the command with a configuration error, as Config does: a value like
+/// `../x` must never name the directory wrappers are read from or written to.
+fn setting(key: &str) -> Option<PathBuf> {
+    match crate::safepath::env_path(key) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("sharukhan: configuration error: {e}");
+            std::process::exit(78)
+        }
+    }
+}
+
 fn profiles_dir(o: &Opts) -> PathBuf {
     o.profiles
         .clone()
-        .or_else(|| std::env::var_os("SHARUKHAN_WRAPPER_PROFILES").map(PathBuf::from))
+        .or_else(|| setting("SHARUKHAN_WRAPPER_PROFILES"))
         .unwrap_or_else(|| PathBuf::from("profiles/kernel"))
 }
 
@@ -132,7 +145,7 @@ fn wrappers_dir(o: &Opts, profile: &Path) -> Result<PathBuf> {
     if let Some(w) = o
         .wrappers
         .clone()
-        .or_else(|| std::env::var_os("SHARUKHAN_WRAPPERS").map(PathBuf::from))
+        .or_else(|| setting("SHARUKHAN_WRAPPERS"))
     {
         return Ok(w);
     }
@@ -147,7 +160,7 @@ fn wrappers_dir(o: &Opts, profile: &Path) -> Result<PathBuf> {
 /// built into the binary, standing at the default wrappers directory, which
 /// is then only where derived wrappers are written.
 fn base_for(o: &Opts, profile: &Path, name: &str) -> Result<(String, PathBuf)> {
-    let explicit = o.wrappers.clone().or_else(|| std::env::var_os("SHARUKHAN_WRAPPERS").map(PathBuf::from));
+    let explicit = o.wrappers.clone().or_else(|| setting("SHARUKHAN_WRAPPERS"));
     match explicit {
         Some(dir) => {
             let p = dir.join(name);
@@ -232,7 +245,7 @@ fn derive_one(o: &Opts, path: &Path) -> Result<Outcome> {
         let repo = o
             .repo
             .clone()
-            .or_else(|| std::env::var_os("SHARUKHAN_PHOTON_REPO").map(PathBuf::from))
+            .or_else(|| setting("SHARUKHAN_PHOTON_REPO"))
             .ok_or_else(|| {
                 io(
                     "branch check",
@@ -731,7 +744,7 @@ mod tests {
     impl Tree {
         fn new(tag: &str) -> Tree {
             let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-            let dir = std::env::temp_dir().join(format!("shk-cli-{tag}-{}", std::process::id()));
+            let dir = crate::safepath::test_base().join(format!("shk-cli-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             let prof = dir.join("sharukhan-cli/profiles/kernel");
             std::fs::create_dir_all(&prof).unwrap();

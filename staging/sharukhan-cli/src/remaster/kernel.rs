@@ -1132,7 +1132,7 @@ mod tests {
     /// and must be a no-op when there is nothing to remove.
     #[test]
     fn the_non_idempotent_efa_build_directory_is_cleared_before_repackaging() {
-        let tmp = std::env::temp_dir().join(format!("shk-efa-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-efa-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let mut sp = crate::remaster::tests_support::spec();
         sp.workdir = tmp.clone();
@@ -1182,7 +1182,7 @@ mod tests {
     /// stage that merely needs the name must not change it by asking.
     #[test]
     fn the_current_nevr_is_readable_without_bumping_the_release() {
-        let tmp = std::env::temp_dir().join(format!("shk-curvr-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-curvr-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("photon/SPECS/linux");
         fs::create_dir_all(&specs).unwrap();
@@ -1225,7 +1225,7 @@ mod tests {
     /// changed spuriously would discard every compiled object.
     #[test]
     fn the_prep_fingerprint_tracks_the_staged_spec_and_config_and_nothing_else() {
-        let tmp = std::env::temp_dir().join(format!("shk-fp-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-fp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("photon/SPECS/linux");
         fs::create_dir_all(&specs).unwrap();
@@ -1283,7 +1283,7 @@ mod tests {
     /// be skipped.
     #[test]
     fn staging_refreshes_the_spec_and_config_even_when_the_tarball_marker_exists() {
-        let tmp = std::env::temp_dir().join(format!("shk-restage-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-restage-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("photon/SPECS/linux");
         fs::create_dir_all(&specs).unwrap();
@@ -1358,7 +1358,7 @@ mod tests {
     /// successful `-bp` look like it produced nothing.
     #[test]
     fn the_prepared_tree_is_found_under_both_the_rpm_4_and_rpm_6_layouts() {
-        let d = std::env::temp_dir().join(format!("shk-treefind-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-treefind-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
 
         // rpm 4.18: _builddir/linux-<ver>
@@ -1453,7 +1453,7 @@ mod tests {
     /// fallback to the other kernel's config.
     #[test]
     fn kernel_config_path_never_resolves_to_the_acvp_config() {
-        let d = std::env::temp_dir().join(format!("shk-cfgpath-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-cfgpath-{}", std::process::id()));
         let base = d.join("SPECS/linux");
         fs::create_dir_all(base.join("6.1")).unwrap();
         fs::write(base.join("linux.spec"), "Name: linux\n").unwrap();
@@ -1496,7 +1496,7 @@ mod tests {
     /// boot, so the resolver must pick by number and fail loudly.
     #[test]
     fn kernel_config_path_resolves_6_1_single_source_names_by_subrelease() {
-        let d = std::env::temp_dir().join(format!("shk-cfg61-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-cfg61-{}", std::process::id()));
         let base = d.join("SPECS/linux");
         fs::create_dir_all(base.join("6.1")).unwrap();
         fs::write(base.join("config_aarch64"), "x").unwrap();
@@ -1514,7 +1514,7 @@ mod tests {
 
     #[test]
     fn a_missing_config_file_is_a_typed_error() {
-        let d = std::env::temp_dir().join(format!("shk-cfgmiss-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-cfgmiss-{}", std::process::id()));
         fs::create_dir_all(d.join("SPECS/linux")).unwrap();
         fs::write(d.join("SPECS/linux/linux.spec"), "Name: linux\n").unwrap();
         let e = kernel_config_path(&d, super::super::Arch::Aarch64, "linux", 92).unwrap_err();
@@ -1528,7 +1528,7 @@ mod tests {
     /// rather than default.
     #[test]
     fn the_photon_subrelease_is_read_from_the_tree_and_never_defaulted() {
-        let d = std::env::temp_dir().join(format!("shk-sr-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-sr-{}", std::process::id()));
         fs::create_dir_all(&d).unwrap();
         fs::write(
             d.join("build-config.json"),

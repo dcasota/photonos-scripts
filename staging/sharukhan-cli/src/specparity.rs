@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn exactly_one_spec_must_claim_a_subrelease() {
-        let d = std::env::temp_dir().join(format!("shk-parity-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-parity-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/linux")).unwrap();
         fs::create_dir_all(d.join("SPECS/90/linux")).unwrap();
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn staging_refuses_two_different_files_with_one_name() {
-        let d = std::env::temp_dir().join(format!("shk-stage-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-stage-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("t/a")).unwrap();
         fs::create_dir_all(d.join("t/b")).unwrap();

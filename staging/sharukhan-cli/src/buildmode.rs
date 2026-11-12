@@ -1097,7 +1097,7 @@ mod tests {
     #[test]
     fn the_common_prs_are_applied_when_the_variant_dir_has_them() {
         use std::fs;
-        let d = std::env::temp_dir().join(format!("shk-commonpatch-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-commonpatch-{}", std::process::id()));
         fs::create_dir_all(&d).unwrap();
         let pd = d.to_string_lossy().to_string();
         let names = |s: &BuildSpec| -> Vec<String> {

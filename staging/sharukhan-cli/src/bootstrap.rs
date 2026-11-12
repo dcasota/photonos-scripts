@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn a_bootstrap_rpm_is_retired_only_once_the_stage_has_its_own() {
-        let d = std::env::temp_dir().join(format!("shk-bootstrap-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-bootstrap-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let noarch = d.join("RPMS/noarch");
         fs::create_dir_all(&noarch).unwrap();
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn a_spec_that_needs_its_own_subpackage_is_found() {
-        let d = std::env::temp_dir().join(format!("shk-selfneed-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-selfneed-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/systemd")).unwrap();
         fs::create_dir_all(d.join("SPECS/other")).unwrap();

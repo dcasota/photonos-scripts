@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn a_file_digest_equals_the_bytes_digest() {
-        let p = std::env::temp_dir().join(format!("sharukhan-sha512-{}", std::process::id()));
+        let p = crate::safepath::test_base().join(format!("sharukhan-sha512-{}", std::process::id()));
         let data = vec![7u8; 3 * 1024 * 1024 + 5];
         std::fs::write(&p, &data).unwrap();
         assert_eq!(file(&p).unwrap(), bytes(&data));

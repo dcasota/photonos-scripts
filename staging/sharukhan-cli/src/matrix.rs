@@ -302,7 +302,7 @@ mod tests {
     /// the ISO cache: the same medium serves both firmwares.
     #[test]
     fn the_firmware_column_defaults_to_efi_accepts_bios_and_rejects_typos() {
-        let d = std::env::temp_dir().join(format!("sk-matrix-fw-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sk-matrix-fw-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("permutations.tsv");
         std::fs::write(
@@ -333,7 +333,7 @@ mod tests {
     /// separator is the property to pin.
     #[test]
     fn a_whitespace_aligned_row_parses_including_the_canister_column() {
-        let d = std::env::temp_dir().join(format!("sk-matrix-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sk-matrix-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("permutations.tsv");
         std::fs::write(
@@ -365,7 +365,7 @@ mod tests {
     /// axis nothing exercised.
     #[test]
     fn a_bad_net_token_fails_the_load_and_names_the_row() {
-        let d = std::env::temp_dir().join(format!("sk-matrix-net-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sk-matrix-net-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("permutations.tsv");
         std::fs::write(

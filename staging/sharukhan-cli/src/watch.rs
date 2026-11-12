@@ -562,7 +562,7 @@ mod tests {
         let c = db();
         assert!(record(&c, "something-else", "s", None, None, "d").is_err());
         let id = record(&c, "upstream-moved", "vmware/photon:5.0", Some("a"), Some("b"), "2 commit(s), ahead").unwrap();
-        let t = std::env::temp_dir().join(format!("shk-events-{}.log", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-events-{}.log", std::process::id()));
         let _ = std::fs::remove_file(&t);
         let bad = vec![Channel::File(t.to_string_lossy().into()), Channel::File("/nonexistent-dir/x.log".into())];
         assert_eq!(notify(&c, &bad).unwrap(), 0);

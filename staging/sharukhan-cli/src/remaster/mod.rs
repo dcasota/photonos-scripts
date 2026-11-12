@@ -775,7 +775,7 @@ pub mod tests_support {
             flavours: flavours_default(),
             photon_tree: "/photon".into(),
             sources: "/sources".into(),
-            workdir: std::env::temp_dir().join("shk-remaster-test"),
+            workdir: crate::safepath::test_base().join("shk-remaster-test"),
             builder_image: "photon:5.0-arm64".into(),
             jobs: 2,
             dry: false,

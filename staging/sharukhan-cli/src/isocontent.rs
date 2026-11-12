@@ -982,7 +982,7 @@ mod tests {
 
     #[test]
     fn a_report_replaces_a_planted_symlink_instead_of_following_it() {
-        let d = std::env::temp_dir().join(format!("shk-writebeside-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-writebeside-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("out")).unwrap();
         let victim = d.join("victim.txt");

@@ -2236,13 +2236,7 @@ pub fn run(
     }
 
     // One private directory for the ssh control socket.
-    let ctl_dir = std::env::temp_dir().join(format!("sharukhan-ssh-{}", nonce()));
-    std::fs::create_dir(&ctl_dir).map_err(|e| format!("{}: {e}", ctl_dir.display()))?;
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&ctl_dir, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| format!("{}: {e}", ctl_dir.display()))?;
-    }
+    let ctl_dir = crate::safepath::private_tmp("sharukhan-ssh")?;
     let mut g = Guest::new(&t.cfg.ssh_user, t.ip, &t.cfg.ssh_key(), 10);
     g.control = Some(ctl_dir.join("cm"));
     let result = {

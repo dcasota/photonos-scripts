@@ -87,11 +87,23 @@ pub fn mode() -> Result<Mode, String> {
 pub const DEFAULT_SHARED_ROOT: &str = "/root/photon-mc/gate";
 
 pub fn shared_root() -> PathBuf {
-    PathBuf::from(std::env::var("MC_BUILDER_SHARED_ROOT").unwrap_or_else(|_| DEFAULT_SHARED_ROOT.into()))
+    setting_or("MC_BUILDER_SHARED_ROOT", DEFAULT_SHARED_ROOT)
 }
 
 pub fn context_dir() -> PathBuf {
-    PathBuf::from(std::env::var("MC_BUILDER_DIR").unwrap_or_else(|_| "/root/photon-mc/gate/builder".into()))
+    setting_or("MC_BUILDER_DIR", "/root/photon-mc/gate/builder")
+}
+
+/// A path setting of the builder, checked (crate::safepath::env_path): a
+/// malformed one stops sharukhan with a configuration error, as Config does.
+fn setting_or(key: &str, default: &str) -> PathBuf {
+    match crate::safepath::env_path(key) {
+        Ok(p) => p.unwrap_or_else(|| PathBuf::from(default)),
+        Err(e) => {
+            eprintln!("sharukhan: configuration error: {e}");
+            std::process::exit(78)
+        }
+    }
 }
 
 fn run(prog: &str, args: &[&str]) -> Result<String, String> {
@@ -879,7 +891,7 @@ mod tests {
     fn a_lock_is_strict_and_a_directory_must_match_it_exactly() {
         assert!(parse_lock("abc  x.rpm\n").is_err());
         assert!(parse_lock("# only a comment\n").is_err());
-        let t = std::env::temp_dir().join(format!("shk-builder-lock-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-builder-lock-{}", std::process::id()));
         let _ = fs::remove_dir_all(&t);
         fs::create_dir_all(&t).unwrap();
         fs::write(t.join("a.rpm"), "A").unwrap();
@@ -925,7 +937,7 @@ mod tests {
 
     #[test]
     fn a_python_call_mounts_only_what_it_names_and_never_root() {
-        let t = std::env::temp_dir().join(format!("shk-builder-py-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-builder-py-{}", std::process::id()));
         fs::create_dir_all(t.join("a/b")).unwrap();
         let args: Vec<OsString> = vec![
             "-c".into(),

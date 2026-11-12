@@ -23,11 +23,11 @@ pub const EMBEDDED: &str = include_str!("../config/photon-matrix.vmx.template");
 /// experiment does not need a rebuild; without it the embedded copy is used,
 /// which is the one the placeholder test checks.
 pub fn template() -> Result<Cow<'static, str>, String> {
-    match std::env::var("MC_VMX_TEMPLATE") {
-        Ok(p) if !p.is_empty() => std::fs::read_to_string(&p)
+    match crate::safepath::env_path("MC_VMX_TEMPLATE")? {
+        Some(p) => std::fs::read_to_string(&p)
             .map(Cow::Owned)
-            .map_err(|e| format!("MC_VMX_TEMPLATE={p}: {e}")),
-        _ => Ok(Cow::Borrowed(EMBEDDED)),
+            .map_err(|e| format!("MC_VMX_TEMPLATE={}: {e}", p.display())),
+        None => Ok(Cow::Borrowed(EMBEDDED)),
     }
 }
 

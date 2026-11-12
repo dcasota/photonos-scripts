@@ -147,7 +147,7 @@ mod tests {
     /// the bound, and a checks file that still passes.
     #[test]
     fn a_result_is_reused_only_when_its_inputs_are_identical() {
-        let d = std::env::temp_dir().join(format!("shk-reuse-e2e-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-reuse-e2e-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let mut cfg = Config::defaults();
         cfg.results_dir = d.join("results");
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn a_checks_file_passes_only_without_failures_and_when_readable() {
-        let d = std::env::temp_dir().join(format!("shk-reuse-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-reuse-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         let f = d.join("checks-20261105T080743Z.jsonl");

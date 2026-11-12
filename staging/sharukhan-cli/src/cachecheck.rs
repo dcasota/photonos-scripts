@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn an_iso_rpm_must_be_the_stages_file_where_the_stage_still_has_it() {
-        let d = std::env::temp_dir().join(format!("shk-cachechk-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-cachechk-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("x86_64")).unwrap();
         fs::write(d.join("x86_64/systemd-262.2-1.ph5.x86_64.rpm"), "new").unwrap();
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn a_port_rpm_needs_a_record_of_the_committed_content() {
-        let d = std::env::temp_dir().join(format!("shk-portrec-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-portrec-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/systemd")).unwrap();
         fs::write(d.join("build-config.json"), r#"{"photon-build-param": {"photon-subrelease": "92"}}"#).unwrap();
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn a_spec_the_variant_patch_changes_is_not_a_port_spec_here() {
-        let d = std::env::temp_dir().join(format!("shk-portdirs-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-portdirs-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/systemd")).unwrap();
         fs::create_dir_all(d.join("SPECS/rsyslog")).unwrap();

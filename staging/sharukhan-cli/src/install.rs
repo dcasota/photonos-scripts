@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn facts_round_trip_in_the_format_the_operator_reads() {
-        let d = std::env::temp_dir().join(format!("sharukhan-facts-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-facts-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         write_facts(
@@ -440,7 +440,7 @@ mod tests {
     /// assume the phase failed.
     #[test]
     fn an_empty_ip_is_still_a_recorded_fact() {
-        let d = std::env::temp_dir().join(format!("sharukhan-facts2-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sharukhan-facts2-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         write_facts(

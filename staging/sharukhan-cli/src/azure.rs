@@ -73,10 +73,8 @@ pub fn installer_console_to(input: &Path, output: &Path, arch: Arch, say: &mut d
     // output may live on a Windows drive (drvfs). Beside the output otherwise,
     // so the result is a rename; from the temp directory it is a copy.
     let parent = output.parent().ok_or_else(|| format!("{}: no directory", output.display()))?;
-    let base = if is_drvfs(parent) { std::env::temp_dir() } else { parent.to_path_buf() };
-    let work = base.join(format!(".sharukhan-azure-{}-{}", std::process::id(), crate::job::stamp()));
+    let work = if is_drvfs(parent) { crate::safepath::private_tmp("sharukhan-azure")? } else { crate::safepath::private_dir_in(parent, ".sharukhan-azure")? };
     let r = (|| {
-        fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
         say(&format!("  azure: the installed system's console is {} ({})", arch.console(), arch.rpm()));
         let (root, pkg) = installer_of(iso, &work.join("in"))?;
         if !poi::patch_console(&pkg, arch, say)? {
@@ -244,7 +242,7 @@ mod tests {
             return;
         }
         for arch in [Arch::X86_64, Arch::Aarch64] {
-            let d = std::env::temp_dir().join(format!("shk-azure-{}-{}-{}", std::process::id(), crate::job::stamp(), arch.console()));
+            let d = crate::safepath::test_base().join(format!("shk-azure-{}-{}-{}", std::process::id(), crate::job::stamp(), arch.console()));
             let _ = fs::remove_dir_all(&d);
             let pkg = d.join("rd/usr/lib/python3.14/site-packages/photon_installer");
             fs::create_dir_all(&pkg).unwrap();

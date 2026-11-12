@@ -202,17 +202,11 @@ pub fn read(iso: &Path) -> Result<Layout, String> {
         }
     }
     if let Some(b) = &l.bios {
-        let tmp = std::env::temp_dir().join(format!(
-            "shk-isoboot-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
+        let tmp_dir = crate::safepath::private_tmp("shk-isoboot")?;
+        let tmp = tmp_dir.join("extracted");
         let r = xorriso(iso, &["-extract", &b.path, &tmp.to_string_lossy()])
             .and_then(|_| std::fs::read(&tmp).map_err(|e| format!("{}: {e}", tmp.display())));
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_dir_all(&tmp_dir);
         l.bios_loader = Some(classify_bios_image(&r?));
     }
     let sa = xorriso(iso, &["-report_system_area", "plain"])?;
@@ -346,17 +340,11 @@ fn medium_text(iso: &Path, path: &str) -> Result<Option<String>, String> {
     if !hit.lines().any(|x| x.trim().trim_matches('\'') == path) {
         return Ok(None);
     }
-    let tmp = std::env::temp_dir().join(format!(
-        "shk-isomenu-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
+    let tmp_dir = crate::safepath::private_tmp("shk-isomenu")?;
+    let tmp = tmp_dir.join("extracted");
     let r = xorriso(iso, &["-extract", path, &tmp.to_string_lossy()])
         .and_then(|_| std::fs::read(&tmp).map_err(|e| format!("{}: {e}", tmp.display())));
-    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_dir_all(&tmp_dir);
     Ok(Some(String::from_utf8_lossy(&r?).to_string()))
 }
 

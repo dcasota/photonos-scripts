@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn a_changelog_moved_into_an_include_is_checked_against_the_package() {
         use std::process::Command;
-        let d = std::env::temp_dir().join(format!("shk-bg-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("shk-bg-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("SPECS/linux")).unwrap();
         let g = |a: &[&str]| {

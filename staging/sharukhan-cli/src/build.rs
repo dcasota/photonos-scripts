@@ -805,7 +805,7 @@ and none is built for {nevr}: phase A has to build it first. Run without --compo
     }
     // The ISO store, as the cascade does it (buildexec::write_sidecars): this
     // path left every prebuilt ISO in the cache.
-    if let Some(store) = std::env::var_os("MC_ISO_STORE").filter(|v| !v.is_empty()) {
+    if let Some(store) = crate::safepath::env_path("MC_ISO_STORE")? {
         match crate::buildexec::store_iso(&produced, Path::new(&store)) {
             Ok(target) => log(&format!("stored in {}, linked as {}", target.display(), produced.display())),
             Err(e) => log(&format!("[warn] MC_ISO_STORE: {e}; the ISO stays in the cache")),
@@ -1041,10 +1041,9 @@ fn kernel_nevr_from_index(
     sub: Option<u32>,
     dist: &str,
 ) -> Result<String, String> {
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let index = std::env::temp_dir().join(format!("shk-nevr-index-{}-{n}", std::process::id()));
-    let embedded = index.with_extension("embedded.patch");
+    let scratch = crate::safepath::private_tmp("shk-nevr-index")?;
+    let index = scratch.join("index");
+    let embedded = scratch.join("embedded.patch");
     let run = |args: &[&str]| -> Result<(), String> {
         let out = Command::new("git")
             .arg("-C")
@@ -1097,8 +1096,7 @@ fn kernel_nevr_from_index(
         let r = r.split('%').next().unwrap_or(&r).trim().to_string();
         Ok(format!("{v}-{r}{dist}"))
     })();
-    let _ = fs::remove_file(&index);
-    let _ = fs::remove_file(&embedded);
+    let _ = fs::remove_dir_all(&scratch);
     result
 }
 
@@ -1694,7 +1692,7 @@ mod tests {
 
     #[test]
     fn variants_are_checked_with_the_common_prs_not_the_shared_tree() {
-        let root = std::env::temp_dir().join(format!("shk-commoncheck-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("shk-commoncheck-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let clone = root.join("clone");
         fs::create_dir_all(&clone).unwrap();
@@ -1721,7 +1719,7 @@ mod tests {
 
     #[test]
     fn the_file_walk_stays_out_of_symlinked_dirs_and_skipped_ones() {
-        let t = std::env::temp_dir().join(format!("shk-walk-{}", std::process::id()));
+        let t = crate::safepath::test_base().join(format!("shk-walk-{}", std::process::id()));
         let _ = fs::remove_dir_all(&t);
         fs::create_dir_all(t.join("RPMS/x86_64")).unwrap();
         fs::create_dir_all(t.join("photonroot/sb/proc")).unwrap();
@@ -1799,7 +1797,7 @@ mod tests {
     }
 
     fn plan_cfg(tag: &str) -> (Config, std::path::PathBuf) {
-        let root = std::env::temp_dir().join(format!("sharukhan-plan-{tag}-{}", std::process::id()));
+        let root = crate::safepath::test_base().join(format!("sharukhan-plan-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("patches")).unwrap();
         let mut c = Config::defaults();
@@ -1914,7 +1912,7 @@ mod tests {
     /// pristine tree would stamp the wrong kernel whenever a PR bumps it.
     #[test]
     fn the_kernel_nevr_is_read_from_the_variant_patch() {
-        let tmp = std::env::temp_dir().join(format!("shk-nevr-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-nevr-{}", std::process::id()));
         fs::create_dir_all(&tmp).unwrap();
         let patch = tmp.join("poi-2.8.patch");
         // Built line by line on purpose: a Rust \-continuation swallows the
@@ -1943,7 +1941,7 @@ mod tests {
     /// answer - it falls back to the tree.
     #[test]
     fn a_patch_without_linux_spec_falls_back_to_the_tree() {
-        let tmp = std::env::temp_dir().join(format!("shk-nevr2-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-nevr2-{}", std::process::id()));
         fs::create_dir_all(tmp.join("SPECS/linux")).unwrap();
         fs::write(
             tmp.join("SPECS/linux/linux.spec"),
@@ -1968,7 +1966,7 @@ mod tests {
     /// patch's Release - not the first Version line of the raw spec.
     #[test]
     fn the_kernel_nevr_follows_the_single_source_spec() {
-        let tmp = std::env::temp_dir().join(format!("shk-nevr-ss-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-nevr-ss-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("SPECS/linux")).unwrap();
         let git = |args: &[&str]| {
@@ -2051,7 +2049,7 @@ mod tests {
     /// nothing, which is how a 2.9-3 installer reached an ISO built for 2.8.
     #[test]
     fn the_installer_purge_reaches_into_the_arch_subdirectory() {
-        let tmp = std::env::temp_dir().join(format!("shk-purge-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-purge-{}", std::process::id()));
         let arch = tmp.join("x86_64");
         fs::create_dir_all(&arch).unwrap();
         fs::write(arch.join("photon-os-installer-2.8-7.ph5.x86_64.rpm"), "").unwrap();
@@ -2156,7 +2154,7 @@ mod tests {
     /// the parser must decline rather than invent a NEVR to delete on.
     #[test]
     fn an_unexpanded_release_yields_no_flavour_nevr() {
-        let tmp = std::env::temp_dir().join(format!("shk-flav-{}", std::process::id()));
+        let tmp = crate::safepath::test_base().join(format!("shk-flav-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         fs::write(
@@ -2465,8 +2463,10 @@ pub fn verify_mirrors(cfg: &Config, photon_branch: &str) -> Result<Vec<MirrorSta
 /// the one they do not ("no worktree could be created") read identically
 /// otherwise.
 pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
-    let tmp = std::env::temp_dir().join(format!("shk-embcheck-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
+    let tmp = match crate::safepath::private_tmp("shk-embcheck") {
+        Ok(p) => p,
+        Err(e) => return (false, e),
+    };
     let tree = tmp.join("t");
     let rel = cfg.photon_tree.clone();
 
@@ -2605,13 +2605,13 @@ pub fn spec_canister_pin(cfg: &Config) -> Option<String> {
 /// doctor has to answer is about the pristine ref, not the tree. A temporary
 /// index answers it without checking out a second worktree.
 pub fn applies_to_pristine(tree: &Path, base_ref: &str, patch: &Path) -> (bool, String) {
-    // Unique per call, not per process: every thread of one process shares a
-    // pid, and parallel tests collided on a single index ("a.txt: does not
-    // exist in index").
-    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let index =
-        std::env::temp_dir().join(format!("shk-pristine-{}-{call}.index", std::process::id()));
+    // A private directory per call: unique without a counter, so parallel
+    // tests never share an index.
+    let index_dir = match crate::safepath::private_tmp("shk-pristine") {
+        Ok(p) => p,
+        Err(e) => return (false, e),
+    };
+    let index = index_dir.join("index");
     let run = |args: &[&str]| {
         Command::new("git")
             .arg("-C")
@@ -2653,7 +2653,7 @@ pub fn applies_to_pristine(tree: &Path, base_ref: &str, patch: &Path) -> (bool, 
             ),
         },
     };
-    let _ = fs::remove_file(&index);
+    let _ = fs::remove_dir_all(&index_dir);
     verdict
 }
 
@@ -2684,7 +2684,7 @@ mod pristine_tests {
     /// A repo whose committed `origin/5.0` holds "x", with the working tree
     /// changed to "q" - the state a build leaves SPECS in.
     fn dirty_repo(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("sk-pristine-{tag}-{}", std::process::id()));
+        let d = crate::safepath::test_base().join(format!("sk-pristine-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         assert!(git(&d, &["init", "-q"]));
