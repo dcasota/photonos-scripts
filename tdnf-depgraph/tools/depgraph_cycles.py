@@ -29,6 +29,32 @@ CYCLES_ENGINE = "tarjan-py-v1"
 CYCLE_EDGE_TYPES = ("buildrequires", "requires")
 
 
+_PATH_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-+@=,/ ")
+
+
+def checked_path(value, what):
+    """Return a path argument as a checked string, or exit with status 2.
+
+    The path may be relative or absolute, but only plain path characters
+    (no control characters, no shell or glob syntax) and no ".." component.
+    The value is rebuilt from the allowed-character table, so the string the
+    program uses is exactly the one that was checked.
+    """
+    rebuilt = []
+    for ch in value:
+        for allowed in _PATH_CHARS:
+            if ch == allowed:
+                rebuilt.append(allowed)
+                break
+        else:
+            sys.exit(f"error: {what}: character {ch!r} is not allowed in a path: {value!r}")
+    path = "".join(rebuilt)
+    if not path or ".." in path.split("/"):
+        sys.exit(f"error: {what}: empty path or '..' component: {value!r}")
+    return path
+
+
 # ----- I/O helpers ---------------------------------------------------------
 
 def load_input(path: str) -> dict:
@@ -512,9 +538,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Human-readable overlay descriptor for metadata.specsdir.",
     )
     args = p.parse_args(argv)
+    input_path = checked_path(args.input, "--input")
+    preq_path = checked_path(args.preq, "--preq") if args.preq else None
 
-    d = run(args.input, args.preq, args.flavor, args.specsdir_meta)
-    write_output(args.input, d)
+    d = run(input_path, preq_path, args.flavor, args.specsdir_meta)
+    write_output(input_path, d)
     print(emit_summary_line(d), file=sys.stderr)
     return 0
 
