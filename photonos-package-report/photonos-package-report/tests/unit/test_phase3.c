@@ -216,23 +216,16 @@ static void test_roundtrip(void)
     rewind(stdout);
     char *buf = (char *)malloc((size_t)sz + 1);
     if (!buf) { failures++; goto cleanup; }
-    if (fread(buf, 1, (size_t)sz, stdout) != (size_t)sz) {
+    if (fread(buf, 1, (size_t)sz, stdout) == (size_t)sz) {
+        buf[sz] = '\0';
+        /* The parser is internal to source0_lookup.c; we re-validate by
+         * counting rows in `buf`. Expect: 1 header + t1.count data rows. */
+        long n_lines = 0;
+        for (long i = 0; i < sz; i++) if (buf[i] == '\n') n_lines++;
+        EXPECT_INT_EQ(n_lines, (long)t1.count + 1);
+    } else {
         failures++;
-        free(buf);
-        goto cleanup;   /* buf is not used after this point */
     }
-    buf[sz] = '\0';
-
-    /* Re-parse: temporarily swap out the embedded CSV pointer. This is
-     * done via the same parsing primitives by repointing the source.
-     * We achieve it by directly re-running the parser logic on `buf`. */
-    /* The parser is internal to source0_lookup.c; we re-validate by
-     * counting rows in `buf` and spot-checking key fields textually. */
-    long n_lines = 0;
-    for (long i = 0; i < sz; i++) if (buf[i] == '\n') n_lines++;
-    /* Expect: 1 header + t1.count data rows. */
-    EXPECT_INT_EQ(n_lines, (long)t1.count + 1);
-
     free(buf);
 
 cleanup:

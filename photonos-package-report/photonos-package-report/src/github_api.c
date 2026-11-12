@@ -104,11 +104,9 @@ static void collect_all(pcre2_code *re, const char *body, size_t len,
         int rc = pcre2_match(re, (PCRE2_SPTR)body, len, off, 0, md, NULL);
         if (rc < 0) break;
         PCRE2_SIZE *ov = pcre2_get_ovector_pointer(md);
-        if (rc >= 2 && ov[2] != PCRE2_UNSET && ov[3] >= ov[2]) {
-            size_t l = (size_t)(ov[3] - ov[2]);
-            char *s = (char *)malloc(l + 1);
+        if (rc >= 2 && ov[2] != PCRE2_UNSET && ov[2] <= ov[3] && ov[3] <= len) {
+            char *s = strndup(body + ov[2], (size_t)(ov[3] - ov[2]));
             if (s) {
-                memcpy(s, body + ov[2], l); s[l] = '\0';
                 if (*n >= *cap) {
                     size_t nc = *cap ? *cap * 2 : 32;
                     char **p = (char **)realloc(*names, nc * sizeof(char *));

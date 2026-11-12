@@ -476,10 +476,9 @@ int pr_prov_gpgv(const char *gpgv, const char *keyring, const char *sig_path,
     char buf[8192];
     size_t used = 0;
     ssize_t n;
-    while ((n = read(pfd[0], buf + used, sizeof buf - 1 - used)) > 0) {
+    while (used < sizeof buf - 1
+           && (n = read(pfd[0], buf + used, sizeof buf - 1 - used)) > 0)
         used += (size_t)n;
-        if (used >= sizeof buf - 1) break;
-    }
     /* Drain whatever remains so gpgv never blocks on a full pipe. */
     char sink[1024];
     while (read(pfd[0], sink, sizeof sink) > 0) {}

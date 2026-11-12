@@ -83,10 +83,8 @@ static char *capture(pcre2_code *re, const char *s, size_t len, size_t from,
     if (rc >= 0) {
         PCRE2_SIZE *ov = pcre2_get_ovector_pointer(md);
         if (match_end) *match_end = ov[1];
-        if (rc >= 2 && ov[2] != PCRE2_UNSET) {
-            size_t l = (size_t)(ov[3] - ov[2]);
-            out = (char *)malloc(l + 1);
-            if (out) { memcpy(out, s + ov[2], l); out[l] = '\0'; }
+        if (rc >= 2 && ov[2] != PCRE2_UNSET && ov[2] <= ov[3] && ov[3] <= len) {
+            out = strndup(s + ov[2], (size_t)(ov[3] - ov[2]));
         } else if (match_end) {
             /* matched, no capture group requested */
         }

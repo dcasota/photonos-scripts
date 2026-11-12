@@ -110,26 +110,31 @@ static void free_argv(char **argv)
     free(argv);
 }
 
-/* Append n bytes of `src` to a growable buffer `*dst` (size `*len`, cap `*cap`). */
-static int append_buf(char **dst, size_t *len, size_t *cap, const char *src, size_t n)
+/* One read() from `fd` straight into the growable buffer `*dst` (length
+ * `*len`, capacity `*cap`), which stays NUL-terminated. Returns read()'s
+ * result, or -1 if the buffer cannot grow. */
+#define READ_CHUNK 4096
+static ssize_t read_append(int fd, char **dst, size_t *len, size_t *cap)
 {
-    if (n > SIZE_MAX - *len - 1) return -1;          /* *len + n + 1 would wrap */
-    size_t need = *len + n + 1;
-    if (need > *cap) {
-        size_t nc = (*cap ? *cap : 2048);
-        while (nc < need) {
-            if (nc > SIZE_MAX / 2) { nc = need; break; }
-            nc *= 2;
-        }
+    if (*cap - *len < READ_CHUNK + 1) {
+        if (*len > SIZE_MAX / 2 - READ_CHUNK) return -1;
+        size_t nc = *cap ? *cap : 2048;
+        while (nc - *len < READ_CHUNK + 1) nc *= 2;
         char *nb = realloc(*dst, nc);
         if (!nb) return -1;
         *dst = nb;
         *cap = nc;
     }
-    memcpy(*dst + *len, src, n);
-    *len += n;
+    ssize_t n = read(fd, *dst + *len, READ_CHUNK);
+    if (n > 0) *len += (size_t)n;
     (*dst)[*len] = '\0';
-    return 0;
+    return n;
+}
+
+/* Buffers that received no bytes are handed back as NULL. */
+static void drop_if_empty(char **buf, size_t len)
+{
+    if (len == 0) { free(*buf); *buf = NULL; }
 }
 
 int invoke_git_with_timeout(const char *arguments,
@@ -238,16 +243,10 @@ int invoke_git_with_timeout(const char *arguments,
 
         int pr = poll(pfd, 2, 200);  /* 200ms tick */
         if (pr > 0) {
-            char chunk[4096];
-            for (int i = 0; i < 2; i++) {
-                if (pfd[i].revents & (POLLIN | POLLHUP)) {
-                    ssize_t n = read(pfd[i].fd, chunk, sizeof chunk);
-                    if (n > 0) {
-                        if (i == 0) append_buf(&stdout_buf, &out_len, &out_cap, chunk, n);
-                        else        append_buf(&stderr_buf, &err_len, &err_cap, chunk, n);
-                    }
-                }
-            }
+            if (pfd[0].revents & (POLLIN | POLLHUP))
+                read_append(pfd[0].fd, &stdout_buf, &out_len, &out_cap);
+            if (pfd[1].revents & (POLLIN | POLLHUP))
+                read_append(pfd[1].fd, &stderr_buf, &err_len, &err_cap);
         }
 
         int wr = waitpid(pid, &wstatus, WNOHANG);
@@ -263,12 +262,10 @@ int invoke_git_with_timeout(const char *arguments,
     }
 
     /* Final drain after reap */
-    char chunk[4096];
-    ssize_t n;
-    while ((n = read(outpipe[0], chunk, sizeof chunk)) > 0)
-        append_buf(&stdout_buf, &out_len, &out_cap, chunk, n);
-    while ((n = read(errpipe[0], chunk, sizeof chunk)) > 0)
-        append_buf(&stderr_buf, &err_len, &err_cap, chunk, n);
+    while (read_append(outpipe[0], &stdout_buf, &out_len, &out_cap) > 0) {}
+    while (read_append(errpipe[0], &stderr_buf, &err_len, &err_cap) > 0) {}
+    drop_if_empty(&stdout_buf, out_len);
+    drop_if_empty(&stderr_buf, err_len);
     close(outpipe[0]);
     close(errpipe[0]);
     free_argv(gargv);

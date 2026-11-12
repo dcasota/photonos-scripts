@@ -32,6 +32,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -107,14 +108,31 @@ static char *strip_asc_suffix_dup(const char *s)
 {
     if (s == NULL) return strdup("");
     size_t sl = strlen(s);
-    if (sl >= 4 && strcasecmp(s + sl - 4, ".asc") == 0) {
-        char *out = malloc(sl - 4 + 1);
-        if (out == NULL) return NULL;
-        memcpy(out, s, sl - 4);
-        out[sl - 4] = '\0';
-        return out;
-    }
+    if (sl >= 4 && strcasecmp(s + sl - 4, ".asc") == 0) return strndup(s, sl - 4);
     return strdup(s);
+}
+
+/* The update version comes from upstream (tag/release names, scraped
+ * listings, PyPI) and becomes part of the SPECS_NEW file name. Accept it only
+ * if every byte is one a version string uses (letters, digits, "._+~^-") and
+ * it is not "." or "..". Returns a copy built from that set, or NULL. */
+static char *file_name_version(const char *v)
+{
+    static const char ALLOWED[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+~^-";
+    if (v == NULL || v[0] == '\0' || strcmp(v, ".") == 0 || strcmp(v, "..") == 0)
+        return NULL;
+    char *out = malloc(strlen(v) + 1);
+    if (out == NULL) return NULL;
+    size_t n = 0;
+    for (const char *p = v; *p; p++) {
+        const char *a = ALLOWED;
+        while (*a && *a != *p) a++;
+        if (*a == '\0') { free(out); return NULL; }
+        out[n++] = *a;
+    }
+    out[n] = '\0';
+    return out;
 }
 
 int pr_modify_spec_file(const pr_task_t *task,
@@ -256,17 +274,13 @@ int pr_modify_spec_file(const pr_task_t *task,
                         found_len = strlen(exts[e]);
                     }
                 }
-                if (found && strcmp(found, source0_new_ext) != 0) {
-                    size_t new_len = strlen(source0_new_ext);
-                    size_t tail_len = strlen(found + found_len);
-                    swapped = (char *)malloc(found_pos + new_len + tail_len + 1);
-                    if (swapped) {
-                        memcpy(swapped, src0_line, found_pos);
-                        memcpy(swapped + found_pos, source0_new_ext, new_len);
-                        memcpy(swapped + found_pos + new_len,
-                               found + found_len, tail_len + 1);
-                        src0_line = swapped;
-                    }
+                if (found && strcmp(found, source0_new_ext) != 0
+                    && found_pos <= INT_MAX
+                    && asprintf(&swapped, "%.*s%s%s", (int)found_pos, src0_line,
+                                source0_new_ext, found + found_len) >= 0) {
+                    src0_line = swapped;
+                } else {
+                    swapped = NULL;
                 }
             }
             EMIT(src0_line);
@@ -320,18 +334,16 @@ int pr_modify_spec_file(const pr_task_t *task,
     size_t bl = strlen(base);
     if (bl >= 5 && strcasecmp(base + bl - 5, ".spec") == 0) base[bl - 5] = '\0';
 
-    char *upd_clean = strip_asc_suffix_dup(update_avail);
-    if (upd_clean == NULL) { free(base); free(out_buf); return -2; }
-
-    /* The update version comes from upstream (tag/release names, scraped
-     * listings, PyPI). It is part of the output file name, so it must not
-     * carry a path separator or a dot-only name; such a version gets no
-     * SPECS_NEW file (the .prn is not affected). */
-    if (strchr(upd_clean, '/') != NULL || strchr(upd_clean, '\\') != NULL
-        || strcmp(upd_clean, ".") == 0 || strcmp(upd_clean, "..") == 0) {
-        fprintf(stderr, "::warning::modify_spec: refusing update version with a path "
-                        "separator for %s\n", task->Spec);
-        free(base); free(upd_clean); free(out_buf); return -2;
+    char *upd_asc = strip_asc_suffix_dup(update_avail);
+    if (upd_asc == NULL) { free(base); free(out_buf); return -2; }
+    /* A version that is not a plain version string gets no SPECS_NEW file
+     * (the .prn is not affected). */
+    char *upd_clean = file_name_version(upd_asc);
+    free(upd_asc);
+    if (upd_clean == NULL) {
+        fprintf(stderr, "::warning::modify_spec: refusing update version that is not "
+                        "a plain version string for %s\n", task->Spec);
+        free(base); free(out_buf); return -2;
     }
 
     char out_path[2048];

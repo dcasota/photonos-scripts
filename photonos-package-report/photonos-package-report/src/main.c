@@ -606,6 +606,49 @@ static int dump_tasks_main(const char *working_dir, const char *branch)
     return 0;
 }
 
+/* Phase 7 worker thunk. Closure: { pr_task_t *, source0 lookup,
+ * clone_root, exclusion_list, working_dir }. Returns a malloc'd row
+ * string the parent collects. */
+typedef struct {
+    pr_task_t                       *task;
+    const pr_source0_lookup_table_t *lut;
+    const char                      *clone_root;
+    const char                      *exclusion_list;
+    const char                      *working_dir;
+} pr_check_urlhealth_closure_t;
+
+static void *pr_check_urlhealth_worker(void *arg)
+{
+    pr_check_urlhealth_closure_t *c = (pr_check_urlhealth_closure_t *)arg;
+    return (void *)check_urlhealth(c->task, c->lut, c->clone_root,
+                                   c->exclusion_list, c->working_dir);
+}
+
+/* Phase 7: run check_urlhealth for every task on a pool of `workers`
+ * threads, storing each row in rows[i]. Returns 0, or -1 if the pool
+ * could not be set up (rows untouched). */
+static int run_parallel(pr_task_list_t *list, const pr_source0_lookup_table_t *lut,
+                        const char *clone_root, const char *exclusion_list,
+                        const char *working_dir, int workers, char **rows)
+{
+    pr_check_urlhealth_closure_t *closures =
+        (pr_check_urlhealth_closure_t *)calloc(list->count, sizeof *closures);
+    if (!closures) return -1;
+    pr_pool_t *pool = pr_pool_create(workers);
+    if (!pool) { free(closures); return -1; }
+    for (size_t i = 0; i < list->count; i++) {
+        closures[i] = (pr_check_urlhealth_closure_t){ &list->items[i], lut,
+                        clone_root, exclusion_list, working_dir };
+        pr_pool_submit(pool, pr_check_urlhealth_worker, &closures[i]);
+    }
+    size_t n_out = 0;
+    void **results = pr_pool_run(pool, &n_out);
+    for (size_t i = 0; i < list->count && i < n_out; i++) rows[i] = (char *)results[i];
+    free(results);
+    free(closures);
+    return 0;
+}
+
 /* ===== Phase 6a: --generate-urlhealth-report <branch> ===============
  *
  * Walks parse_directory(workingDir, branch) → for each task, calls
@@ -705,6 +748,7 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
     }
 
     /* Build rows for every task. */
+    int rc = 0;
     char **rows = (char **)calloc(list.count, sizeof *rows);
     if (!rows) {
         pr_prn_close(p); pr_source0_lookup_free(&lut); pr_task_list_free(&list);
@@ -731,71 +775,19 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
             rows[i] = check_urlhealth(&list.items[i], &lut, clone_root,
                                       exclusion_list, params->workingDir);
         }
-    } else {
-        /* Per-task closure capturing (task, lut, clone_root, exclusion_list,
-         * working_dir) so the worker function only takes one `void *`. */
-        typedef struct {
-            pr_task_t                       *task;
-            const pr_source0_lookup_table_t *lut;
-            const char                      *clone_root;
-            const char                      *exclusion_list;
-            const char                      *working_dir;
-        } closure_t;
-        closure_t *closures = (closure_t *)calloc(list.count, sizeof *closures);
-        if (!closures) {
-            free(rows); free(clone_root);
-            pr_prn_close(p); pr_source0_lookup_free(&lut); pr_task_list_free(&list);
-            return 1;
-        }
-        pr_pool_t *pool = pr_pool_create(params->ThrottleLimit);
-        if (!pool) { free(closures); free(rows); free(clone_root);
-                     pr_prn_close(p); pr_source0_lookup_free(&lut);
-                     pr_task_list_free(&list); return 1; }
-        for (size_t i = 0; i < list.count; i++) {
-            closures[i] = (closure_t){ &list.items[i], &lut, clone_root,
-                                       exclusion_list, params->workingDir };
-        }
-        /* Worker thunk — declared inline via a static helper. */
-        extern void *pr_check_urlhealth_worker(void *arg);  /* below */
-        for (size_t i = 0; i < list.count; i++) {
-            pr_pool_submit(pool, pr_check_urlhealth_worker, &closures[i]);
-        }
-        size_t n_out = 0;
-        void **results = pr_pool_run(pool, &n_out);
-        for (size_t i = 0; i < list.count && i < n_out; i++) {
-            rows[i] = (char *)results[i];
-        }
-        free(results);
-        free(closures);
+    } else if (run_parallel(&list, &lut, clone_root, exclusion_list,
+                            params->workingDir, params->ThrottleLimit, rows) != 0) {
+        rc = 1;
     }
-    free(clone_root);
-    pr_prn_append_rows(p, rows, list.count);
-
+    if (rc == 0) pr_prn_append_rows(p, rows, list.count);
     for (size_t i = 0; i < list.count; i++) free(rows[i]);
-    free(rows);
 
+    free(clone_root);
+    free(rows);
     pr_prn_close(p);
     pr_source0_lookup_free(&lut);
     pr_task_list_free(&list);
 
-    fprintf(stderr, "Wrote %s\n", out_path);
-    return 0;
-}
-
-/* Phase 7 worker thunk. Closure: { pr_task_t *, source0 lookup,
- * clone_root, exclusion_list, working_dir }. Returns a malloc'd row
- * string the parent collects. */
-typedef struct {
-    pr_task_t                       *task;
-    const pr_source0_lookup_table_t *lut;
-    const char                      *clone_root;
-    const char                      *exclusion_list;
-    const char                      *working_dir;
-} pr_check_urlhealth_closure_t;
-
-void *pr_check_urlhealth_worker(void *arg)
-{
-    pr_check_urlhealth_closure_t *c = (pr_check_urlhealth_closure_t *)arg;
-    return (void *)check_urlhealth(c->task, c->lut, c->clone_root,
-                                   c->exclusion_list, c->working_dir);
+    if (rc == 0) fprintf(stderr, "Wrote %s\n", out_path);
+    return rc;
 }
