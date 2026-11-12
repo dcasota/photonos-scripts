@@ -91,23 +91,34 @@ jobs:
           gh --version | head -1
 
       - name: Prepare workspace + summary
+        env:
+          IN_SOURCE: ${{ github.event.inputs.source }}
+          IN_RUNID: ${{ github.event.inputs.runId || '(latest success)' }}
+          IN_MAXURLS: ${{ github.event.inputs.maxUrls }}
+          IN_MAXALTERNATIVES: ${{ github.event.inputs.maxAlternatives }}
+          IN_MODEL: ${{ github.event.inputs.model }}
+          IN_EMITTSV: ${{ github.event.inputs.emitTsv }}
+          IN_RESUME: ${{ github.event.inputs.resume }}
         run: |
           mkdir -p "$WORKING_DIR"
           echo "## Package Classifier"        >> "$GITHUB_STEP_SUMMARY"
           echo ""                             >> "$GITHUB_STEP_SUMMARY"
           echo "| Parameter | Value |"        >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|"                    >> "$GITHUB_STEP_SUMMARY"
-          echo "| source | ${{ github.event.inputs.source }} |"                     >> "$GITHUB_STEP_SUMMARY"
-          echo "| runId | ${{ github.event.inputs.runId || '(latest success)' }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| maxUrls | ${{ github.event.inputs.maxUrls }} |"                   >> "$GITHUB_STEP_SUMMARY"
-          echo "| maxAlternatives | ${{ github.event.inputs.maxAlternatives }} |"   >> "$GITHUB_STEP_SUMMARY"
-          echo "| model | ${{ github.event.inputs.model }} |"                       >> "$GITHUB_STEP_SUMMARY"
-          echo "| emitTsv | ${{ github.event.inputs.emitTsv }} |"                   >> "$GITHUB_STEP_SUMMARY"
-          echo "| resume | ${{ github.event.inputs.resume }} |"                     >> "$GITHUB_STEP_SUMMARY"
+          echo "| source | ${IN_SOURCE} |"                     >> "$GITHUB_STEP_SUMMARY"
+          echo "| runId | ${IN_RUNID} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| maxUrls | ${IN_MAXURLS} |"                   >> "$GITHUB_STEP_SUMMARY"
+          echo "| maxAlternatives | ${IN_MAXALTERNATIVES} |"   >> "$GITHUB_STEP_SUMMARY"
+          echo "| model | ${IN_MODEL} |"                       >> "$GITHUB_STEP_SUMMARY"
+          echo "| emitTsv | ${IN_EMITTSV} |"                   >> "$GITHUB_STEP_SUMMARY"
+          echo "| resume | ${IN_RESUME} |"                     >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build urls.txt
         id: urls
         env:
+          IN_SOURCE: ${{ github.event.inputs.source }}
+          IN_RUNID: ${{ github.event.inputs.runId }}
+          IN_MAXURLS: ${{ github.event.inputs.maxUrls }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
@@ -115,15 +126,15 @@ jobs:
           # to its source branch(es); the per-branch summary builder uses it
           # to attribute classifier records back to branches.
           BRANCH_MAP="$WORKING_DIR/urls-by-branch.json"
-          if [ "${{ github.event.inputs.source }}" = "latest_artifact" ]; then
-            ARGS=""
-            if [ -n "${{ github.event.inputs.runId }}" ]; then
-              ARGS="-RunId ${{ github.event.inputs.runId }}"
+          if [ "${IN_SOURCE}" = "latest_artifact" ]; then
+            ARGS=()
+            if [ -n "${IN_RUNID}" ]; then
+              ARGS=(-RunId "${IN_RUNID}")
             fi
             pwsh -File ci/package-classifier/Get-PackageReportUrls.ps1 \
               -OutputFile "$WORKING_DIR/urls.txt" \
               -BranchMapFile "$BRANCH_MAP" \
-              $ARGS \
+              "${ARGS[@]}" \
               -Verbose
           else
             # committed_scans: read directly from the repo checkout
@@ -135,7 +146,7 @@ jobs:
           fi
 
           # Optional cap (smoke tests)
-          MAX="${{ github.event.inputs.maxUrls }}"
+          MAX="${IN_MAXURLS}"
           if [ "$MAX" != "0" ] && [ -n "$MAX" ]; then
             head -n "$MAX" "$WORKING_DIR/urls.txt" > "$WORKING_DIR/urls.capped.txt"
             mv "$WORKING_DIR/urls.capped.txt" "$WORKING_DIR/urls.txt"
@@ -149,6 +160,10 @@ jobs:
 
       - name: Classify URLs with Grok
         env:
+          IN_MODEL: ${{ github.event.inputs.model }}
+          IN_MAXALTERNATIVES: ${{ github.event.inputs.maxAlternatives }}
+          IN_EMITTSV: ${{ github.event.inputs.emitTsv }}
+          IN_RESUME: ${{ github.event.inputs.resume }}
           # Same coalesce shape as the verify step.
           XAI_API_KEY_SECRET: ${{ secrets.XAI_API_KEY }}
         run: |
@@ -168,17 +183,17 @@ jobs:
             -File ci/package-classifier/Get-CybersecurityToolsWithGrok.ps1
             -InputFile  "$WORKING_DIR/urls.txt"
             -OutputFile "$WORKING_DIR/cybersecurity_tools.jsonl"
-            -Model           "${{ github.event.inputs.model }}"
-            -MaxAlternatives "${{ github.event.inputs.maxAlternatives }}"
+            -Model           "${IN_MODEL}"
+            -MaxAlternatives "${IN_MAXALTERNATIVES}"
             -Verbose
           )
-          if [ "${{ github.event.inputs.emitTsv }}" = "true" ]; then
+          if [ "${IN_EMITTSV}" = "true" ]; then
             PWSH_ARGS+=(-EmitTsv)
           fi
           # Pass -Resume:<bool> using the colon syntax + literal $true/$false.
           # Single quotes prevent bash from expanding the dollar-sigil; pwsh's
           # parameter parser handles the colon-bound PowerShell boolean token.
-          if [ "${{ github.event.inputs.resume }}" = "true" ]; then
+          if [ "${IN_RESUME}" = "true" ]; then
             PWSH_ARGS+=('-Resume:$true')
           else
             PWSH_ARGS+=('-Resume:$false')
@@ -188,6 +203,8 @@ jobs:
       - name: Compute per-branch summaries
         id: stats
         if: always()
+        env:
+          IN_BRANCHES: ${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,common,dev,master' }}
         run: |
           OUT="$WORKING_DIR/cybersecurity_tools.jsonl"
           MAP="$WORKING_DIR/urls-by-branch.json"
@@ -217,7 +234,7 @@ jobs:
             --jsonl "$OUT" \
             --url-map "$MAP" \
             --out-dir "$BRANCH_OUT" \
-            --branches "${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,common,dev,master' }}" \
+            --branches "${IN_BRANCHES}" \
             --top-n 10 \
             --stamp "$STAMP" \
             > "$BRANCH_OUT/_combined_${STAMP}.md"

@@ -97,12 +97,15 @@ jobs:
 
       - name: Seed database from local copy
         id: seed
+        env:
+          IN_SEED_DB_PATH: ${{ github.event.inputs.seed_db_path }}
+          IN_SEED_FROM_LOCAL: ${{ github.event.inputs.seed_from_local }}
         run: |
-          LOCAL_DB="${{ github.event.inputs.seed_db_path }}"
+          LOCAL_DB="${IN_SEED_DB_PATH}"
           if [ -z "$LOCAL_DB" ]; then
             LOCAL_DB="$HOME/photonos-scripts/docsystem/photon_commits.db"
           fi
-          SEED="${{ github.event.inputs.seed_from_local }}"
+          SEED="${IN_SEED_FROM_LOCAL}"
           if [ "$SEED" != "false" ] && [ -f "$LOCAL_DB" ]; then
             echo "Seeding from $LOCAL_DB ($(du -h "$LOCAL_DB" | cut -f1))..."
             cp "$LOCAL_DB" photon_commits.db
@@ -143,16 +146,22 @@ jobs:
           echo "Quota check passed"
 
       - name: Import commits
+        env:
+          IN_BRANCHES: ${{ github.event.inputs.branches || '3.0 4.0 5.0 6.0 common master' }}
+          IN_SINCE_DATE: ${{ github.event.inputs.since_date }}
         run: |
-          BRANCHES="${{ github.event.inputs.branches || '3.0 4.0 5.0 6.0 common master' }}"
-          SINCE="${{ github.event.inputs.since_date }}"
+          BRANCHES="${IN_BRANCHES}"
+          SINCE="${IN_SINCE_DATE}"
 
-          ARGS="--db-path photon_commits.db --repo-dir photon --branches $BRANCHES"
+          # Branches are space-separated; split them into words without
+          # glob expansion and pass every argument as its own array element.
+          read -r -a BRANCH_LIST <<< "$BRANCHES"
+          ARGS=(--db-path photon_commits.db --repo-dir photon --branches "${BRANCH_LIST[@]}")
           if [ -n "$SINCE" ]; then
-            ARGS="$ARGS --since-date $SINCE"
+            ARGS+=(--since-date "$SINCE")
           fi
 
-          python3 repo/docsystem/.factory/skills/photon-import/importer.py $ARGS
+          python3 repo/docsystem/.factory/skills/photon-import/importer.py "${ARGS[@]}"
 
       - name: Check database status (post-import)
         id: post

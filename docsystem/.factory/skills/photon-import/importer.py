@@ -102,6 +102,22 @@ except ImportError:
     from tqdm import tqdm
 
 
+def trust_repo(repo_dir):
+    """Let git work in repo_dir even if another user owns it, for this run only.
+
+    The checkout may belong to a different user (a CI container, a shared
+    work tree). Instead of appending a safe.directory entry to the user's
+    ~/.gitconfig on every run, pass it to the git processes this script
+    starts through GIT_CONFIG_COUNT/KEY/VALUE, which git treats like a -c
+    option on the command line.
+    """
+    count = os.environ.get('GIT_CONFIG_COUNT', '0')
+    index = int(count) if count.isdigit() else 0
+    os.environ[f'GIT_CONFIG_KEY_{index}'] = 'safe.directory'
+    os.environ[f'GIT_CONFIG_VALUE_{index}'] = repo_dir
+    os.environ['GIT_CONFIG_COUNT'] = str(index + 1)
+
+
 def run_command(cmd, cwd=None):
     """Run a subprocess command and return output as string."""
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, check=True)
@@ -226,7 +242,7 @@ def import_commits(db_path, repo_dir, branches, since_date=None):
         run_command(['git', 'clone', REPO_URL, repo_dir])
 
     run_command(['git', 'fetch', '--all'], cwd=repo_dir)
-    run_command(['git', 'config', '--global', '--add', 'safe.directory', repo_dir])
+    trust_repo(repo_dir)
 
     conn = init_db(db_path)
     cur = conn.cursor()

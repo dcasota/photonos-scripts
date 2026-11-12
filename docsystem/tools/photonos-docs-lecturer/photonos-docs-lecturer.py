@@ -332,6 +332,9 @@ Version: {VERSION}
     # Install-tools command
     install_parser = subparsers.add_parser('install-tools', help='Install required tools (Java, language-tool-python)')
     
+    # Test command
+    subparsers.add_parser('test', help='Run unit tests for the tool')
+    
     # Analyze command
     analyze_parser = subparsers.add_parser('analyze', help='Generate report only')
     _add_common_args(analyze_parser)
@@ -549,12 +552,14 @@ def run_tests():
     import sys
     import os
     
-    # Add plugins directory to path
-    plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'plugins')
-    sys.path.insert(0, plugins_dir)
+    # Import the tests as part of the plugins package, so their relative
+    # imports (from .apply_fixes import ...) resolve.
+    tool_dir = os.path.dirname(os.path.abspath(__file__))
+    if tool_dir not in sys.path:
+        sys.path.insert(0, tool_dir)
     
     try:
-        from tests import run_tests as _run_tests
+        from plugins.tests import run_tests as _run_tests
         return _run_tests()
     except ImportError as e:
         print(f"ERROR: Could not import tests module: {e}", file=sys.stderr)
@@ -624,8 +629,8 @@ def main():
     # For analyze/run commands, check and import dependencies first
     check_and_import_dependencies()
     
-    # Handle test flag
-    if hasattr(args, 'test') and args.test:
+    # Handle test command
+    if args.command == 'test':
         sys.exit(run_tests())
     
     # Validate arguments

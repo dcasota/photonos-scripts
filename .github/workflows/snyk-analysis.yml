@@ -143,10 +143,20 @@ jobs:
 
       - name: Resolve directories
         id: dirs
+        env:
+          IN_WORKINGDIR: ${{ github.event.inputs.workingDir }}
+          IN_UPSTREAMSDIR: ${{ github.event.inputs.upstreamsDir }}
+          IN_BRANCHES: ${{ github.event.inputs.branches }}
+          IN_MAXSUBDIRS: ${{ github.event.inputs.maxSubdirs }}
+          IN_FORCE: ${{ github.event.inputs.force }}
+          IN_REPARSE: ${{ github.event.inputs.reparse }}
+          IN_RUNAGENTSCAN: ${{ github.event.inputs.runAgentScan }}
+          IN_AGENTSCANARGS: ${{ github.event.inputs.agentScanArgs }}
+          IN_AGENTSCANFORCE: ${{ github.event.inputs.agentScanForce }}
         run: |
-          WDIR="${{ github.event.inputs.workingDir }}"
+          WDIR="${IN_WORKINGDIR}"
           if [ -z "$WDIR" ]; then WDIR="${{ github.workspace }}/reports"; fi
-          UDIR="${{ github.event.inputs.upstreamsDir }}"
+          UDIR="${IN_UPSTREAMSDIR}"
           if [ -z "$UDIR" ]; then UDIR="$WDIR/photon-upstreams"; fi
           mkdir -p "$WDIR" "$UDIR"
           echo "workingDir=$WDIR"   >> "$GITHUB_OUTPUT"
@@ -155,15 +165,15 @@ jobs:
           echo ""                               >> "$GITHUB_STEP_SUMMARY"
           echo "| Parameter | Value |"          >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|"                      >> "$GITHUB_STEP_SUMMARY"
-          echo "| branches | ${{ github.event.inputs.branches }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| branches | ${IN_BRANCHES} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| workingDir | \`$WDIR\` |"     >> "$GITHUB_STEP_SUMMARY"
           echo "| upstreamsDir | \`$UDIR\` |"   >> "$GITHUB_STEP_SUMMARY"
-          echo "| maxSubdirs | ${{ github.event.inputs.maxSubdirs }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| force | ${{ github.event.inputs.force }} |"   >> "$GITHUB_STEP_SUMMARY"
-          echo "| reparse | ${{ github.event.inputs.reparse }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| runAgentScan | ${{ github.event.inputs.runAgentScan }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| agentScanArgs | \`${{ github.event.inputs.agentScanArgs }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| agentScanForce | ${{ github.event.inputs.agentScanForce }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| maxSubdirs | ${IN_MAXSUBDIRS} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| force | ${IN_FORCE} |"   >> "$GITHUB_STEP_SUMMARY"
+          echo "| reparse | ${IN_REPARSE} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| runAgentScan | ${IN_RUNAGENTSCAN} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| agentScanArgs | \`${IN_AGENTSCANARGS}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| agentScanForce | ${IN_AGENTSCANFORCE} |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Scan branches
         env:
@@ -373,6 +383,8 @@ jobs:
 
       - name: Generate reports
         id: report
+        env:
+          IN_BRANCHES: ${{ github.event.inputs.branches }}
         run: |
           STAMP=$(date -u +%Y%m%d_%H%M%S)
           OUTDIR="ci/SnykAnalysis/scans"
@@ -394,7 +406,7 @@ jobs:
           # blob view), and json (programmatic consumers). Each per-branch
           # report inlines its own "Processing status" snippet (SAST status +
           # agent-scan coverage), assembled in the two scan steps above.
-          for B in $(echo "${{ github.event.inputs.branches }}" | tr ',' ' '); do
+          for B in $(echo "${IN_BRANCHES}" | tr ',' ' '); do
             STATUS_FILE="$RUNNER_TEMP/branch_status/branch_${B}.md"
             STATUS_ARGS=()
             if [ -f "$STATUS_FILE" ]; then
@@ -416,7 +428,7 @@ jobs:
           # "(all branches)" combined report is preserved as a file artifact
           # but no longer pasted into the step summary -- per request.
           echo ""                                               >> "$GITHUB_STEP_SUMMARY"
-          for B in $(echo "${{ github.event.inputs.branches }}" | tr ',' ' '); do
+          for B in $(echo "${IN_BRANCHES}" | tr ',' ' '); do
             BRMD="$OUTDIR/SnykReport_${B}_${STAMP}.md"
             if [ -f "$BRMD" ]; then
               echo ""                                            >> "$GITHUB_STEP_SUMMARY"

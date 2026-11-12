@@ -61,21 +61,26 @@ jobs:
         run: pip install requests jsonschema
 
       - name: Phase 0 -- Build Tree Inventory
+        env:
+          IN_BRANCHES: ${{ github.event.inputs.branches || '4.0,5.0,6.0' }}
         run: |
           python3 ci/photon-gating-conflict-detection/.github/scripts/photon-gating-agent.py \
             --base-dir workspace \
-            --branches "${{ github.event.inputs.branches || '4.0,5.0,6.0' }}" \
+            --branches "${IN_BRANCHES}" \
             --arch x86_64 \
             --phase inventory \
             --output gating-inventory.json
 
       - name: Phase 1 -- Conflict Detection
+        env:
+          IN_BRANCHES: ${{ github.event.inputs.branches || '4.0,5.0,6.0' }}
+          IN_CHECK_URLS_FLAG: ${{ github.event.inputs.check_urls == 'true' && '--check-urls' || '' }}
         run: |
           python3 ci/photon-gating-conflict-detection/.github/scripts/photon-gating-agent.py \
             --base-dir workspace \
-            --branches "${{ github.event.inputs.branches || '4.0,5.0,6.0' }}" \
+            --branches "${IN_BRANCHES}" \
             --arch x86_64 \
-            ${{ github.event.inputs.check_urls == 'true' && '--check-urls' || '' }} \
+            ${IN_CHECK_URLS_FLAG} \
             --inventory gating-inventory.json \
             --json-output findings.json \
             --md-output findings.md

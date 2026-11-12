@@ -93,9 +93,11 @@ jobs:
     steps:
       - name: Determine PS run id
         id: ps_run
+        env:
+          IN_SNAPSHOT_RUN_ID: ${{ github.event.inputs.snapshot_run_id }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ID="${{ github.event.inputs.snapshot_run_id }}"
+            ID="${IN_SNAPSHOT_RUN_ID}"
           else
             ID="${{ github.event.workflow_run.id }}"
           fi
@@ -271,6 +273,8 @@ jobs:
       - name: Run C binary
         id: c_run
         env:
+          IN_UPSTREAMS_EXCLUSION_LIST: ${{ github.event.inputs.upstreams_exclusion_list }}
+          IN_THROTTLE_LIMIT: ${{ github.event.inputs.throttle_limit }}
           GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
           # M154: GitLab freedesktop.org credentials — same cascade as PS
           # (repo secret > runner host env > literal fallback "ci-runner"/"none").
@@ -367,7 +371,7 @@ jobs:
           # the same clones (firmware ~55 GB, chromium ~67 GB per branch).
           # On workflow_run (auto), inputs context is empty → fall back
           # to the same baseline default as PS.
-          UPSTREAMS_EXCL="${{ github.event.inputs.upstreams_exclusion_list }}"
+          UPSTREAMS_EXCL="${IN_UPSTREAMS_EXCLUSION_LIST}"
           if [ -z "$UPSTREAMS_EXCL" ]; then
             UPSTREAMS_EXCL="firmware,chromium,aufs-linux"
           fi
@@ -381,7 +385,7 @@ jobs:
           # we can safely parallelise the runtime. Drop back to 1 via
           # workflow_dispatch input when chasing a strict-diff that
           # needs deterministic stderr.
-          THROTTLE="${{ github.event.inputs.throttle_limit }}"
+          THROTTLE="${IN_THROTTLE_LIMIT}"
           if [ -z "$THROTTLE" ]; then
             THROTTLE="8"
           fi

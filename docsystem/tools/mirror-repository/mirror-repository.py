@@ -166,6 +166,23 @@ def run_command(cmd: list[str], cwd: str = None, check: bool = True) -> subproce
     return result
 
 
+# Git asks this helper for credentials when it pushes. The helper reads the
+# user name and token from the environment at that moment, so the token is
+# never part of a command line (which other local users can read in the
+# process list) and never written to a config file. The empty
+# credential.helper entry first clears any helper configured elsewhere.
+_CREDENTIAL_HELPER = (
+    '!f() { test "$1" = get || exit 0; '
+    'echo "username=$MIRROR_GIT_USERNAME"; echo "password=$GITHUB_TOKEN"; }; f'
+)
+
+
+def git_auth(username: str) -> list[str]:
+    """Return the git -c options that authenticate a push from the environment."""
+    os.environ['MIRROR_GIT_USERNAME'] = username
+    return ['-c', 'credential.helper=', '-c', 'credential.helper=' + _CREDENTIAL_HELPER]
+
+
 def delete_refs(clone_dir: str, ref_prefix: str):
     """Delete refs matching a prefix."""
     result = subprocess.run(
@@ -263,10 +280,6 @@ Environment variables:
                 sys.exit(1)
         print("Git LFS detected in original repository.")
     
-    # Configure git
-    subprocess.run(['git', 'config', '--global', 'user.email', f'{github_username}@gmail.com'])
-    subprocess.run(['git', 'config', '--global', 'user.name', github_username])
-    
     # Check if target repo exists, create if not
     if check_repo_exists(target_owner, target_repo, github_token):
         print("Target repository already exists. Proceeding with mirroring (note: this will overwrite existing content).")
@@ -286,6 +299,9 @@ Environment variables:
     
     print(f"Clone directory: {clone_dir}")
     
+    # No credentials in the URL; git_auth() supplies them from the environment.
+    mirror_url = f'https://github.com/{target_owner}/{target_repo}.git'
+
     try:
         # Clone the original repository as a mirror
         run_command(['git', 'clone', '--mirror', '--progress', args.original_repo, clone_dir])
@@ -306,13 +322,13 @@ Environment variables:
                     if not check_command('git-lfs'):
                         if not install_git_lfs():
                             raise subprocess.CalledProcessError(1, ['git-lfs'])
-                    mirror_url = f'https://{github_username}:{github_token}@github.com/{target_owner}/{target_repo}.git'
                     run_command(['git', 'lfs', 'fetch', '--all'], cwd=clone_dir)
-                    run_command(['git', 'lfs', 'push', '--all', mirror_url], cwd=clone_dir)
+                    run_command(['git', *git_auth(github_username), 'lfs', 'push', '--all', mirror_url],
+                                cwd=clone_dir)
         
         # Push to mirror (--force ensures all refs are updated even if up-to-date)
-        mirror_url = f'https://{github_username}:{github_token}@github.com/{target_owner}/{target_repo}.git'
-        run_command(['git', 'push', '--mirror', '--force', '--progress', mirror_url], cwd=clone_dir)
+        run_command(['git', *git_auth(github_username), 'push', '--mirror', '--force', '--progress',
+                     mirror_url], cwd=clone_dir)
         
         # Show summary of all branches pushed
         result = subprocess.run(
