@@ -50,3 +50,22 @@ Verification: `pytest` 186 passed, 1 pre-existing failure
 (`test_config.py::test_default_config`, `cve_patch_max` 9999 vs 499, unrelated);
 new `tests/test_safe_io.py` covers both filter modes; real-tarball extraction of
 linux-6.12.113 matched `tar -t` (92471 entries, 62 symlinks).
+
+## Iter 3 (2026-11-12)
+
+| Phase    | Total | Medium | Low |
+|----------|-------|--------|-----|
+| Before   | 9     | 0      | 9   |
+| Iter 3   | 0     | 0      | 0   |
+| Accepted | 0     | -      | -   |
+
+- PT (9) -> HARD-FIX. The residuals were taint from the operator's `--output` /
+  `--repo-base` directories and the CVE list argument. `safe_io.require_path()`
+  accepts plain path characters only and no `..` component, rebuilding the value
+  from a constant table; `resolve_dir()` and the CVE list use it.
+- `cve_gap_detection.py` run as a script wrote reports to the shared, predictable
+  `/tmp/gap_reports`, where another local user could pre-create the directory or
+  a symlink; it now writes to `./gap_reports`.
+
+Verification: `pytest` 208 passed, same pre-existing failure as iter 2; new
+`TestRequirePath` cases; CLI refuses `../etc/passwd` and `x;id` as CVE list.

@@ -1,63 +1,7 @@
 {
   "subdir": "kernelpatches",
-  "scan_date": "2026-11-09",
-  "note": "kernelpatches is a CLI tool for orchestrating Photon kernel CVE backports. Iter 2 (2026-11-09) validated every derived path component and replaced the bypassable TarSlip guard; the residual findings are taint from the operator's own --output directory / input file, which Snyk cannot model as a sanitized source. Snyk CLI 1.1304.2 does not honor inline 'deepcode ignore' comments, so they are recorded here.",
-  "accepted": [
-    {
-      "rule": "python/PT",
-      "location": "scripts/cve_coverage_build_workflow.py:458",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (matrix.save_json)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/cve_coverage_build_workflow.py:515",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (CVE patch download; name = 12-hex sha + NVD CVE id, require_filename-checked)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/cve_coverage_build_workflow.py:666",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (stable patch download; target_version require_version-checked)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/generate_full_matrix.py:452",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (tarball integrity check after wget)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/generate_full_matrix.py:471",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (tarball integrity check after curl)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/generate_full_matrix.py:501",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (aiohttp download target)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/generate_full_matrix.py:515",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (tarball integrity check after aiohttp)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/generate_full_matrix.py:668",
-      "bucket": "DESIGN-DECISION",
-      "reason": "Operator-chosen --output directory; every component appended to it (kernel series, versions, phase and file names) is validated by scripts/safe_io.py and confine()d under it. Writing where the operator points is the tool's contract. (call site of download_kernel_tarball; photon_ver require_version-checked)"
-    },
-    {
-      "rule": "python/PT",
-      "location": "scripts/cve_gap_detection.py:740",
-      "bucket": "DESIGN-DECISION",
-      "reason": "__main__ test helper reads the CVE list file the operator names on the command line; realpath'd, must be a regular file, only CVE-ID-shaped lines are used."
-    }
-  ],
+  "scan_date": "2026-11-12",
+  "note": "kernelpatches is a CLI tool for orchestrating Photon kernel CVE backports. Iter 3 (2026-11-12) checks the operator's own path inputs too (safe_io.require_path via resolve_dir, and the CVE list argument): plain path characters only, no '..' component. Snyk Code re-scan: 0 open; nothing is accepted any more.",
   "hard_fixes": [
     {
       "rule": "python/TarSlip",
@@ -118,6 +62,13 @@
       "location": "scripts/cve_coverage_build_workflow.py:439",
       "fix": "Same fix.",
       "iteration": 1
+    },
+    {
+      "rule": "python/PT",
+      "location": "scripts/cve_coverage_build_workflow.py:458, scripts/cve_coverage_build_workflow.py:515, scripts/cve_coverage_build_workflow.py:666, scripts/generate_full_matrix.py:452, scripts/generate_full_matrix.py:471, scripts/generate_full_matrix.py:501, scripts/generate_full_matrix.py:515, scripts/generate_full_matrix.py:668, scripts/cve_gap_detection.py:740",
+      "iteration": 3,
+      "fix": "The 9 iter-2 residuals traced back to --output/--repo-base and the CVE-list argument. resolve_dir() now runs every operator directory through require_path(), which rebuilds the value from a constant allowed-character table and refuses '..' components; the CVE list goes through the same check. cve_gap_detection's __main__ no longer writes to the shared, predictable /tmp/gap_reports but to ./gap_reports."
     }
-  ]
+  ],
+  "accepted": []
 }
