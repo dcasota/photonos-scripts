@@ -16,6 +16,7 @@ import requests
 import json
 import hashlib
 import argparse
+import string
 import time
 from datetime import datetime, timezone
 from collections import defaultdict
@@ -44,6 +45,54 @@ DEFAULT_BRANCHES = ['3.0', '4.0', '5.0', '6.0', 'common', 'master']
 XAI_API_URL = 'https://api.x.ai/v1/chat/completions'
 BATCH_SIZE = 40
 REPO_COMMIT_URL = 'https://github.com/vmware/photon/commit'
+
+# Checks for values taken from the command line and for file paths read
+# back from the summaries table. Each check returns the value rebuilt only
+# from characters of a fixed table; a value that does not pass is refused
+# with ValueError, never silently altered.
+_ALNUM = string.ascii_letters + string.digits
+
+# Branch names: the subset of git refnames used by vmware/photon (3.0, 5.0,
+# common, master, ...). The name becomes part of a post file name and of the
+# YAML front matter, so '/' and quotes are not allowed.
+_BRANCH_CHARS = _ALNUM + '._-'
+
+# Characters allowed in --db-path, --output-dir and stored post paths.
+_PATH_CHARS = _ALNUM + '/._-+@,=~ '
+
+
+def _rebuild(raw, table):
+    """Return raw rebuilt from table, or None if a character is not in it."""
+    out = []
+    for ch in raw:
+        for allowed in table:
+            if ch == allowed:
+                out.append(allowed)
+                break
+        else:
+            return None
+    return ''.join(out)
+
+
+def checked_branch(raw):
+    """Return a branch name that is safe as part of a post file name."""
+    name = _rebuild(raw, _BRANCH_CHARS) if isinstance(raw, str) else None
+    if (not name or name[0] not in _ALNUM or '..' in name
+            or name.endswith(('.', '.lock'))):
+        raise ValueError(f'unsafe branch name {raw!r}: use letters, digits '
+                         f'and . _ -, starting with a letter or digit')
+    return name
+
+
+def checked_path(raw, option):
+    """Return raw as a normalised absolute path built from _PATH_CHARS."""
+    if not isinstance(raw, str) or not raw:
+        raise ValueError(f'{option}: empty path')
+    path = _rebuild(os.path.abspath(raw), _PATH_CHARS)
+    if path is None:
+        raise ValueError(f'{option}: unsupported character in {raw!r}; '
+                         f'use letters, digits and / . _ - + @ , = ~ space')
+    return path
 
 SYSTEM_PROMPT = """\
 You are a technical writer producing scannable, user-friendly monthly \
@@ -168,6 +217,18 @@ def check_summaries(db_path, branches):
     return status
 
 
+def post_file_name(branch, year, month):
+    """File name of a monthly post; the branch must be a plain name (no '/')."""
+    branch = checked_branch(branch)
+    return f'photon-{branch}-monthly-{int(year)}-{int(month):02d}.md'
+
+
+def post_path(output_dir, branch, year, month):
+    """Return (directory, file path) of a monthly post under output_dir."""
+    file_dir = os.path.join(output_dir, str(int(year)), f'{int(month):02d}')
+    return file_dir, os.path.join(file_dir, post_file_name(branch, year, month))
+
+
 def export_summaries(db_path, output_dir, branches):
     """Write all changelogs from DB to disk. Returns manifest dict."""
     conn, cur = schema_init_db(db_path)
@@ -179,10 +240,8 @@ def export_summaries(db_path, output_dir, branches):
             ORDER BY year, month
         """, (branch,))
         for year, month, changelog_md in cur.fetchall():
-            file_dir = os.path.join(output_dir, str(year), f'{month:02d}')
+            file_dir, file_path = post_path(output_dir, branch, year, month)
             os.makedirs(file_dir, exist_ok=True)
-            file_path = os.path.join(
-                file_dir, f'photon-{branch}-monthly-{year}-{month:02d}.md')
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(changelog_md)
@@ -200,10 +259,15 @@ def export_summaries(db_path, output_dir, branches):
 
 
 def sync_check(db_path, branches):
-    """Compare DB changelogs against files on disk. Returns drift report."""
+    """Compare DB changelogs against files on disk. Returns drift report.
+
+    The file path comes from the summaries table; it is only read if it
+    names the post file for that row (photon-<branch>-monthly-YYYY-MM.md),
+    otherwise the row is listed under 'unexpected_path'.
+    """
     conn, cur = schema_init_db(db_path)
     report = {'in_sync': [], 'file_missing': [], 'content_mismatch': [],
-              'orphan_in_db': []}
+              'orphan_in_db': [], 'unexpected_path': []}
     for branch in branches:
         cur.execute("""
             SELECT year, month, file_path, changelog_md
@@ -213,6 +277,14 @@ def sync_check(db_path, branches):
             key = f'{branch}/{year}-{month:02d}'
             if not file_path or not os.path.exists(file_path):
                 report['file_missing'].append(key)
+                continue
+            try:
+                file_path = checked_path(file_path, 'summaries.file_path')
+            except ValueError:
+                file_path = None
+            if (file_path is None or os.path.basename(file_path)
+                    != post_file_name(branch, year, month)):
+                report['unexpected_path'].append(key)
                 continue
             with open(file_path, 'r', encoding='utf-8') as f:
                 disk_content = f.read()
@@ -426,10 +498,8 @@ def generate_markdown(branch, year, month, ai_summary, output_dir):
     month_name = datetime(year, month, 1).strftime('%B')
     now = datetime.now(timezone.utc).isoformat()
 
-    file_dir = os.path.join(output_dir, str(year), f'{month:02d}')
+    file_dir, file_path = post_path(output_dir, branch, year, month)
     os.makedirs(file_dir, exist_ok=True)
-    file_path = os.path.join(file_dir,
-                             f'photon-{branch}-monthly-{year}-{month:02d}.md')
 
     front_matter = f"""---
 title: "Photon OS {branch} Changelog: {month_name} {year}"
@@ -500,16 +570,23 @@ def main():
     DEBUG = args.debug
     debug('Debug mode enabled')
 
-    db_path = os.path.abspath(args.db_path)
-    output_dir = os.path.abspath(args.output_dir)
+    # Branch names become part of post file names and front matter, so
+    # they must be plain names (no '/', no '..', no quotes).
+    try:
+        db_path = checked_path(args.db_path, '--db-path')
+        output_dir = checked_path(args.output_dir, '--output-dir')
+        branches = [checked_branch(b)
+                    for b in args.branches]
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.check:
-        status = check_summaries(db_path, args.branches)
+        status = check_summaries(db_path, branches)
         print(json.dumps(status, indent=2))
         return
 
     if args.sync_check:
-        report = sync_check(db_path, args.branches)
+        report = sync_check(db_path, branches)
         print(json.dumps(report, indent=2))
         return
 
@@ -517,7 +594,7 @@ def main():
         if not os.path.exists(db_path):
             print(json.dumps({'error': f'Database not found: {db_path}'}))
             sys.exit(1)
-        manifest = export_summaries(db_path, output_dir, args.branches)
+        manifest = export_summaries(db_path, output_dir, branches)
         print(json.dumps(manifest, indent=2))
         return
 
@@ -553,7 +630,7 @@ def main():
     debug('Database connection established')
     manifest = {'generated': [], 'skipped': [], 'errors': []}
 
-    for branch in args.branches:
+    for branch in branches:
         print(f'Processing branch: {branch}', file=sys.stderr)
         debug(f'Starting branch: {branch}')
         cur.execute("""

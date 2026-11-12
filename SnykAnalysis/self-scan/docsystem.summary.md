@@ -54,3 +54,31 @@ Snyk on `docsystem/tools`: 6 findings (4 MEDIUM, 2 LOW). Runtime-fixed: 6; Snyk 
 Verification: traversal PoC (`..`, `%2e%2e`, symlink) refused, legitimate, mixed-case and
 content-based mappings unchanged vs HEAD; lecturer test suite 22 pass / same 12 pre-existing
 errors before and after (stale tests calling removed methods); mirror URL/redaction cases pass.
+
+## Processing pass (2026-11-12)
+
+Scope: tracked files only (`git archive HEAD docsystem`); the untracked `docsystem/photon/`
+upstream checkout is out of scope. Snyk: **21 open (10 MEDIUM, 11 LOW) -> 4 open (4 MEDIUM)**.
+
+- **Duplicate Factory scripts removed.** `.factory/teams/docs-blogger/{importer,summarizer,db_schema}.py`
+  were byte-identical stale copies of `.factory/skills/`; everything (workflow, tests, droids,
+  SKILL.md, `generate_all_missing.sh`) uses the skills/ copies. 7 findings gone.
+- **importer.py CommandInjection x3 -> FIXED.** Branch names, `--since-date` and commit hashes are
+  rebuilt from fixed character tables and refused otherwise; `--since` is passed as
+  `--since=<date>`. Before, `--since-date=--output=x` was accepted silently, and the old
+  `validate_refname` regex (`$`) let a trailing newline, `a..b` and `a/` reach git.
+- **summarizer.py PT x4 -> FIXED.** The branch is part of the post file name and the YAML front
+  matter and must now be a plain name (no `/`, `..`, quotes). `--sync-check` only opens a stored
+  `file_path` that names that row's post file (others: `unexpected_path`).
+- **validate_hugo_frontmatter.py PT -> FIXED.** `FACTORY_PROJECT_DIR` is checked; symlinks out
+  of `content/blog` are not read.
+- **mirror-repository.py PT x2 -> FIXED.** `--local-path` is checked before any GitHub call or
+  repository creation (it used to be checked only after the target repo was created).
+- **documentation_lecturer.py PT x4 -> still accepted (FALSE-POSITIVE-POST-FIX).** Re-verified:
+  the mapper fix from PR #331 refuses `..`, `%2e%2e` and symlink escapes, valid pages still map.
+  Snyk cannot resolve the `self.fix_applicator.map_url_to_local_path()` call.
+
+Verification: `pytest docsystem/tests` 14 passed; old-vs-new runs against a local git repo /
+summaries DB / hook test tree give identical output for valid input (importer rows, exported
+posts, generated markdown, hook verdicts), hostile values are refused with a message. Only
+visible difference: `importer.py --check` now reports `db_path` as an absolute path.

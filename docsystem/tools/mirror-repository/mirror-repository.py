@@ -13,6 +13,7 @@ import base64
 import os
 import re
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,28 @@ def parse_github_url(url: str) -> tuple[str, str] | None:
     if not match or match.group(2) in ('.', '..'):
         return None
     return match.group(1), match.group(2)
+
+
+# Characters accepted in --local-path.
+_PATH_CHARS = string.ascii_letters + string.digits + '/._-+@,=~ '
+
+
+def checked_local_path(raw: str) -> str | None:
+    """Return --local-path as an absolute real path built from _PATH_CHARS.
+
+    None if the path contains any other character (control characters,
+    quotes, shell metacharacters, non-ASCII).
+    """
+    path = os.path.realpath(os.path.expanduser(raw))
+    out = []
+    for ch in path:
+        for allowed in _PATH_CHARS:
+            if ch == allowed:
+                out.append(allowed)
+                break
+        else:
+            return None
+    return ''.join(out)
 
 
 def check_lfs(owner: str, repo: str, token: str) -> bool:
@@ -190,6 +213,16 @@ Environment variables:
     )
     
     args = parser.parse_args()
+
+    local_path = None
+    if args.local_path:
+        local_path = checked_local_path(args.local_path)
+        if local_path is None:
+            print(f"Error: --local-path contains an unsupported character: {args.local_path!r}")
+            sys.exit(1)
+        if os.path.exists(local_path) and not os.path.isdir(local_path):
+            print(f"Error: --local-path is not a directory: {local_path}")
+            sys.exit(1)
     
     # Check required commands
     for cmd in ['git', 'curl']:
@@ -245,11 +278,7 @@ Environment variables:
     
     # Determine clone directory
     # If local_path is provided, create temp directory inside it; otherwise use system temp
-    if args.local_path:
-        local_path = os.path.realpath(os.path.expanduser(args.local_path))
-        if os.path.exists(local_path) and not os.path.isdir(local_path):
-            print(f"Error: --local-path is not a directory: {local_path}")
-            sys.exit(1)
+    if local_path:
         os.makedirs(local_path, exist_ok=True)
         clone_dir = tempfile.mkdtemp(prefix=f"{original_repo}.", dir=local_path)
     else:
