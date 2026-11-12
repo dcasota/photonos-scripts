@@ -367,6 +367,32 @@ def render_json(branch: str, records: list[dict], top_n: int,
     return json.dumps(payload, indent=2)
 
 
+_PATH_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-+@=,/ ")
+
+
+def checked_path(value, what):
+    """Return a path argument as a checked string, or exit with status 2.
+
+    The path may be relative or absolute, but only plain path characters
+    (no control characters, no shell or glob syntax) and no ".." component.
+    The value is rebuilt from the allowed-character table, so the string the
+    program uses is exactly the one that was checked.
+    """
+    rebuilt = []
+    for ch in value:
+        for allowed in _PATH_CHARS:
+            if ch == allowed:
+                rebuilt.append(allowed)
+                break
+        else:
+            sys.exit(f"error: {what}: character {ch!r} is not allowed in a path: {value!r}")
+    path = "".join(rebuilt)
+    if not path or ".." in path.split("/"):
+        sys.exit(f"error: {what}: empty path or '..' component: {value!r}")
+    return path
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--jsonl", required=True, help="cybersecurity_tools.jsonl path")
@@ -378,6 +404,9 @@ def main() -> int:
     ap.add_argument("--stamp", default=dt.datetime.now(dt.timezone.utc)
                     .strftime("%Y%m%d_%H%M%S"))
     args = ap.parse_args()
+    args.jsonl = checked_path(args.jsonl, "--jsonl")
+    args.url_map = checked_path(args.url_map, "--url-map")
+    args.out_dir = checked_path(args.out_dir, "--out-dir")
 
     if not os.path.isfile(args.jsonl):
         sys.stderr.write(f"error: jsonl not found: {args.jsonl}\n"); return 2
