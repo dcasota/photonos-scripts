@@ -32,6 +32,12 @@ _VERSION_RE = re.compile(r"^[0-9]{1,4}(?:\.[0-9]{1,6}){1,3}$")
 # A single file name: no separators, no NUL, not "." or "..".
 _FILENAME_RE = re.compile(r"^[A-Za-z0-9._+-]{1,255}$")
 
+# Characters an operator-supplied path may contain: no control characters,
+# no shell or glob syntax. "~" is accepted because resolve_dir() expands it.
+_PATH_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-+@=,/~ "
+)
+
 
 def require_supported_kernel(kernel_version: str) -> str:
     """Return the canonical kernel series for ``kernel_version``.
@@ -68,6 +74,31 @@ def require_filename(name: str, what: str = "file name") -> str:
     return name
 
 
+def require_path(path: PathLike, what: str = "path") -> str:
+    """Return an operator-supplied path as a checked string.
+
+    The path may be relative or absolute, but every character must be a plain
+    path character and no component may be "..". Raises ValueError otherwise.
+    The result is rebuilt from the allowed-character table, so the string the
+    caller uses is exactly the one that was checked.
+    """
+    raw = os.fspath(path)
+    if not isinstance(raw, str) or not raw:
+        raise ValueError(f"Invalid {what}: {raw!r}")
+    rebuilt = []
+    for ch in raw:
+        for allowed in _PATH_CHARS:
+            if ch == allowed:
+                rebuilt.append(allowed)
+                break
+        else:
+            raise ValueError(f"Invalid {what}: character {ch!r} is not allowed in {raw!r}")
+    value = "".join(rebuilt)
+    if ".." in value.split("/"):
+        raise ValueError(f"Invalid {what}: '..' component in {raw!r}")
+    return value
+
+
 def _is_within(root: str, candidate: str) -> bool:
     return candidate == root or candidate.startswith(root + os.sep)
 
@@ -88,9 +119,11 @@ def confine(base: PathLike, *parts: str) -> Path:
 def resolve_dir(path: PathLike, what: str = "directory") -> Path:
     """Return the absolute, symlink-resolved form of an operator-chosen directory.
 
-    Raises ValueError when the path exists and is not a directory.
+    Raises ValueError when the path is malformed (see require_path) or exists
+    and is not a directory.
     """
-    resolved = Path(os.path.realpath(os.path.expanduser(os.fspath(path))))
+    checked = require_path(path, what)
+    resolved = Path(os.path.realpath(os.path.expanduser(checked)))
     if resolved.exists() and not resolved.is_dir():
         raise ValueError(f"{what} is not a directory: {resolved}")
     return resolved

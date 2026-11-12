@@ -19,7 +19,13 @@ import requests
 
 from scripts.common import logger
 from scripts.config import DEFAULT_CONFIG, KernelConfig, SUPPORTED_KERNELS
-from scripts.safe_io import confine, require_supported_kernel, require_version, resolve_dir
+from scripts.safe_io import (
+    confine,
+    require_path,
+    require_supported_kernel,
+    require_version,
+    resolve_dir,
+)
 from scripts.models import (
     CVE,
     GapAnalysisResult,
@@ -737,7 +743,11 @@ if __name__ == "__main__":
     
     cves = None
     if len(sys.argv) > 3:
-        cve_file = Path(os.path.realpath(sys.argv[3]))
+        try:
+            cve_file = Path(os.path.realpath(require_path(sys.argv[3], "CVE list")))
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(2)
         if not cve_file.is_file():
             print(f"Error: CVE list is not a regular file: {cve_file}")
             sys.exit(2)
@@ -757,7 +767,7 @@ if __name__ == "__main__":
     
     report_path = run_gap_detection(
         kernel, version, cves,
-        Path("/tmp/gap_reports"),
+        Path.cwd() / "gap_reports",
         progress_callback=progress,
     )
     

@@ -8,6 +8,7 @@ import pytest
 from scripts.safe_io import (
     confine,
     require_filename,
+    require_path,
     require_supported_kernel,
     require_version,
     resolve_dir,
@@ -69,6 +70,31 @@ class TestValidators:
     def test_filename_rejected(self, bad):
         with pytest.raises(ValueError):
             require_filename(bad)
+
+
+class TestRequirePath:
+    @pytest.mark.parametrize("good", [
+        "out", "./out", "/var/log/photon-kernel-backport/gap_reports",
+        "~/reports", "dir with space/x.txt", "a..b/c", "/tmp/x-1.2_3+4@5=6,7",
+    ])
+    def test_accepts_plain_paths(self, good):
+        assert require_path(good) == good
+
+    def test_accepts_pathlike(self, tmp_path):
+        assert require_path(tmp_path) == str(tmp_path)
+
+    @pytest.mark.parametrize("bad", [
+        "", "..", "../x", "a/../b", "a/..", "x\ny", "x\x00y", "$(id)", "a;b",
+        "a`b`", "a*b", "a|b", "a\tb",
+    ])
+    def test_rejects_malformed_paths(self, bad):
+        with pytest.raises(ValueError):
+            require_path(bad)
+
+    def test_resolve_dir_checks_the_path(self, tmp_path):
+        with pytest.raises(ValueError):
+            resolve_dir(str(tmp_path) + "/../escape")
+        assert resolve_dir(tmp_path / "new") == (tmp_path / "new").resolve()
 
 
 class TestConfine:
