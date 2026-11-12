@@ -48,6 +48,9 @@ jobs:
       - name: Resolve targetDir
         id: target
         env:
+          IN_IMAGETAG: ${{ github.event.inputs.imageTag }}
+          IN_KEEPIMAGE: ${{ github.event.inputs.keepImage }}
+          IN_CLEANTARGET: ${{ github.event.inputs.cleanTarget }}
           INPUT_TARGET: ${{ github.event.inputs.targetDir }}
         run: |
           TGT="$INPUT_TARGET"
@@ -64,9 +67,9 @@ jobs:
           echo "| Parameter | Value |"                  >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|"                              >> "$GITHUB_STEP_SUMMARY"
           echo "| targetDir | \`$TGT\` |"               >> "$GITHUB_STEP_SUMMARY"
-          echo "| imageTag | \`${{ github.event.inputs.imageTag }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| keepImage | ${{ github.event.inputs.keepImage }} |"   >> "$GITHUB_STEP_SUMMARY"
-          echo "| cleanTarget | ${{ github.event.inputs.cleanTarget }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| imageTag | \`${IN_IMAGETAG}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| keepImage | ${IN_KEEPIMAGE} |"   >> "$GITHUB_STEP_SUMMARY"
+          echo "| cleanTarget | ${IN_CLEANTARGET} |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare target directory
         env:

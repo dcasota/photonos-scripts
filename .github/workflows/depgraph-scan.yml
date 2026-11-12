@@ -151,11 +151,13 @@ jobs:
 
       - name: Clone vmware/photon branches and generate dependency graphs
         id: generate
+        env:
+          IN_BRANCHES: ${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,common,master,dev' }}
         run: |
           DATETIME=$(date -u +%Y%m%d_%H%M%S)
           echo "datetime=$DATETIME" >> "$GITHUB_OUTPUT"
 
-          BRANCHES="${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,common,master,dev' }}"
+          BRANCHES="${IN_BRANCHES}"
           TDNF="tdnf-src/build/bin/tdnf"
           TDNF_ENV="LD_LIBRARY_PATH=tdnf-src/build/lib"
 

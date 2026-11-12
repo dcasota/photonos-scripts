@@ -93,18 +93,22 @@ jobs:
 
       - name: Resolve paths
         id: paths
+        env:
+          IN_SCANSDIR: ${{ github.event.inputs.scansDir }}
+          IN_DBPATH: ${{ github.event.inputs.dbPath }}
+          IN_REPORTPATH: ${{ github.event.inputs.reportPath }}
         run: |
-          SCANS="${{ github.event.inputs.scansDir }}"
+          SCANS="${IN_SCANSDIR}"
           if [ -z "$SCANS" ]; then
             SCANS="$GITHUB_WORKSPACE/repo/photonos-package-report/scans"
           fi
 
-          DB="${{ github.event.inputs.dbPath }}"
+          DB="${IN_DBPATH}"
           if [ -z "$DB" ]; then
             DB="$GITHUB_WORKSPACE/photon-scans.db"
           fi
 
-          REPORT="${{ github.event.inputs.reportPath }}"
+          REPORT="${IN_REPORTPATH}"
           if [ -z "$REPORT" ]; then
             REPORT="$GITHUB_WORKSPACE/repo/${{ env.TOOL_DIR }}/reports"
           fi
