@@ -16,10 +16,34 @@ import sys
 import os
 import re
 import glob as globmod
+import string
 
 
 REQUIRED_FIELDS = {'title', 'date', 'author', 'tags', 'categories', 'summary'}
 BLOG_DIR_PATTERN = '**/content/blog/**/*.md'
+
+# Characters accepted in FACTORY_PROJECT_DIR.
+_PATH_CHARS = string.ascii_letters + string.digits + '/._-+@,=~ '
+
+
+def project_dir_from_env():
+    """Return FACTORY_PROJECT_DIR (default: cwd) as a normalised absolute path.
+
+    The value is rebuilt from _PATH_CHARS; any other character stops the
+    hook with a message instead of being silently dropped.
+    """
+    raw = os.path.abspath(os.environ.get('FACTORY_PROJECT_DIR') or os.getcwd())
+    out = []
+    for ch in raw:
+        for allowed in _PATH_CHARS:
+            if ch == allowed:
+                out.append(allowed)
+                break
+        else:
+            print(f'validate_hugo_frontmatter: unsupported character in '
+                  f'FACTORY_PROJECT_DIR {raw!r}', file=sys.stderr)
+            sys.exit(1)
+    return ''.join(out)
 
 
 def extract_front_matter(text):
@@ -45,14 +69,19 @@ def main():
     if tool_name not in ('Execute', 'Create', 'Edit'):
         sys.exit(0)
 
-    project_dir = os.environ.get('FACTORY_PROJECT_DIR', os.getcwd())
+    project_dir = project_dir_from_env()
     blog_dir = os.path.join(project_dir, 'content', 'blog')
     if not os.path.isdir(blog_dir):
         sys.exit(0)
+    blog_root = os.path.realpath(blog_dir)
 
     issues = []
     for md_path in globmod.glob(os.path.join(blog_dir, '**', '*.md'),
                                 recursive=True):
+        # Only posts inside the blog tree: a symlink pointing elsewhere is
+        # not read.
+        if not os.path.realpath(md_path).startswith(blog_root + os.sep):
+            continue
         try:
             with open(md_path, 'r', encoding='utf-8') as f:
                 content = f.read(2048)

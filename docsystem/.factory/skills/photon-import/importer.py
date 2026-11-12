@@ -15,6 +15,7 @@ import sqlite3
 import re
 import json
 import argparse
+import string
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -23,18 +24,75 @@ from db_schema import init_db as schema_init_db
 REPO_URL = 'https://github.com/vmware/photon.git'
 DEFAULT_BRANCHES = ['3.0', '4.0', '5.0', '6.0', 'common', 'master']
 
-# Security: refnames passed to git must match this conservative subset to
-# block names that look like CLI options (e.g. '-c', '--exec') or contain
-# shell metacharacters. Pre-validated by validate_refname() at every entry
-# point that takes a branch/commit-hash value from argv.
-_REFNAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]*$')
+# Checks for values taken from the command line (and for commit hashes read
+# back from git). Each check returns the value rebuilt only from characters
+# of a fixed table, so nothing else reaches git or the file system; a value
+# that does not pass is refused with ValueError, never silently altered.
+_ALNUM = string.ascii_letters + string.digits
+
+# Branch names: the conservative subset of git refnames used by vmware/photon
+# (3.0, 5.0, common, master, ...).
+_BRANCH_CHARS = _ALNUM + '._-/'
+
+# Hex digits of a git object name (SHA-1: 40, SHA-256: 64).
+_HEX_CHARS = string.hexdigits
+
+# Characters that occur in git date expressions: 2021-01-01,
+# 2021-01-01T00:00:00+02:00, "2 weeks ago", 2021/01/01, "Jan 1, 2021".
+_DATE_CHARS = _ALNUM + ' -:+./,'
+
+# Characters allowed in --db-path and --repo-dir.
+_PATH_CHARS = _ALNUM + '/._-+@,=~ '
 
 
-def validate_refname(name):
-    """Return name unchanged if it is a safe git refname, else raise ValueError."""
-    if not isinstance(name, str) or not _REFNAME_RE.match(name):
-        raise ValueError(f'unsafe git refname: {name!r}')
+def _rebuild(raw, table):
+    """Return raw rebuilt from table, or None if a character is not in it."""
+    out = []
+    for ch in raw:
+        for allowed in table:
+            if ch == allowed:
+                out.append(allowed)
+                break
+        else:
+            return None
+    return ''.join(out)
+
+
+def checked_branch(raw):
+    """Return a branch name that is safe as a git argument."""
+    name = _rebuild(raw, _BRANCH_CHARS) if isinstance(raw, str) else None
+    if (not name or name[0] not in _ALNUM or '..' in name or '//' in name
+            or name.endswith(('/', '.', '.lock'))):
+        raise ValueError(f'unsafe branch name {raw!r}: use letters, digits '
+                         f'and . _ - /, starting with a letter or digit')
     return name
+
+
+def checked_commit(raw):
+    """Return a full git object name (40 or 64 hex digits)."""
+    name = _rebuild(raw, _HEX_CHARS) if isinstance(raw, str) else None
+    if not name or len(name) not in (40, 64):
+        raise ValueError(f'not a full git commit hash: {raw!r}')
+    return name
+
+
+def checked_since(raw):
+    """Return a git date expression for --since."""
+    value = _rebuild(raw, _DATE_CHARS) if isinstance(raw, str) else None
+    if not value or value[0] not in _ALNUM:
+        raise ValueError(f'unsupported --since-date {raw!r}: use e.g. 2021-01-01')
+    return value
+
+
+def checked_path(raw, option):
+    """Return raw as a normalised absolute path built from _PATH_CHARS."""
+    if not isinstance(raw, str) or not raw:
+        raise ValueError(f'{option}: empty path')
+    path = _rebuild(os.path.abspath(raw), _PATH_CHARS)
+    if path is None:
+        raise ValueError(f'{option}: unsupported character in {raw!r}; '
+                         f'use letters, digits and / . _ - + @ , = ~ space')
+    return path
 
 try:
     from tqdm import tqdm
@@ -151,9 +209,17 @@ def check_db(db_path, branches):
 
 
 def import_commits(db_path, repo_dir, branches, since_date=None):
-    """Clone/update repo and import commits into the database."""
-    repo_dir = os.path.abspath(repo_dir)
-    db_path = os.path.abspath(db_path)
+    """Clone/update repo and import commits into the database.
+
+    Every value that reaches git is checked first (checked_* above): branch
+    names must look like refnames and cannot be taken for options, commit
+    hashes must be full hex object names, and --since-date is passed as
+    --since=<date> so it is always the option's value.
+    """
+    repo_dir = checked_path(repo_dir, '--repo-dir')
+    db_path = checked_path(db_path, '--db-path')
+    if since_date:
+        since_date = checked_since(since_date)
 
     if not os.path.exists(repo_dir):
         print(f'Cloning {REPO_URL} into {repo_dir} ...', file=sys.stderr)
@@ -167,16 +233,14 @@ def import_commits(db_path, repo_dir, branches, since_date=None):
 
     result = {'branches': {}, 'total_new': 0}
 
-    for branch in branches:
-        # Security: refuse branch names that look like git CLI options or
-        # contain shell metacharacters. branches is operator-supplied.
-        validate_refname(branch)
+    for raw_branch in branches:
+        branch = checked_branch(raw_branch)
         print(f'Processing branch: {branch}', file=sys.stderr)
         run_command(['git', 'checkout', '-B', branch, f'origin/{branch}'], cwd=repo_dir)
 
         rev_list_cmd = ['git', 'rev-list', '--reverse', 'HEAD']
         if since_date:
-            rev_list_cmd.extend(['--since', since_date])
+            rev_list_cmd.append(f'--since={since_date}')
         all_hashes = run_command(rev_list_cmd, cwd=repo_dir).split('\n')
         commit_hashes = [h for h in all_hashes if h]
 
@@ -184,13 +248,11 @@ def import_commits(db_path, repo_dir, branches, since_date=None):
         existing = set(row[0] for row in cur.fetchall())
         new_commits = [h for h in commit_hashes if h not in existing]
 
-        for commit_hash in tqdm(new_commits,
-                                desc=f'Importing {branch}',
-                                unit='commit',
-                                file=sys.stderr):
-            # Security: commit_hash came out of `git rev-list HEAD` so it is
-            # already a SHA; re-validate defensively.
-            validate_refname(commit_hash)
+        for raw_hash in tqdm(new_commits,
+                             desc=f'Importing {branch}',
+                             unit='commit',
+                             file=sys.stderr):
+            commit_hash = checked_commit(raw_hash)
             output = run_command(
                 ['git', 'show', '--pretty=fuller', '-p', commit_hash],
                 cwd=repo_dir)
@@ -228,12 +290,19 @@ def main():
                         help='Report DB status without importing')
     args = parser.parse_args()
 
-    if args.check:
-        status = check_db(args.db_path, args.branches)
-        print(json.dumps(status, indent=2))
-        return
+    try:
+        db_path = checked_path(args.db_path, '--db-path')
+        branches = [checked_branch(b) for b in args.branches]
+        if args.check:
+            status = check_db(db_path, branches)
+            print(json.dumps(status, indent=2))
+            return
+        repo_dir = checked_path(args.repo_dir, '--repo-dir')
+        since_date = checked_since(args.since_date) if args.since_date else None
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    result = import_commits(args.db_path, args.repo_dir, args.branches, args.since_date)
+    result = import_commits(db_path, repo_dir, branches, since_date)
     print(json.dumps(result, indent=2))
 
 
