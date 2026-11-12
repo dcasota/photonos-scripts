@@ -31,6 +31,56 @@ except ImportError:
     HAS_JSONSCHEMA = False
 
 
+_PATH_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-+@=,/ ")
+
+
+def checked_path(value, what):
+    """Return a path argument as a checked string, or exit with status 2.
+
+    The path may be relative or absolute, but only plain path characters
+    (no control characters, no shell or glob syntax) and no ".." component.
+    The value is rebuilt from the allowed-character table, so the string the
+    program uses is exactly the one that was checked.
+    """
+    rebuilt = []
+    for ch in value:
+        for allowed in _PATH_CHARS:
+            if ch == allowed:
+                rebuilt.append(allowed)
+                break
+        else:
+            sys.exit(f"error: {what}: character {ch!r} is not allowed in a path: {value!r}")
+    path = "".join(rebuilt)
+    if not path or ".." in path.split("/"):
+        sys.exit(f"error: {what}: empty path or '..' component: {value!r}")
+    return path
+
+
+def checked_branch(value):
+    """Return a branch name as a checked string, or exit with status 2.
+
+    A branch name is joined onto --base-dir, so it must be one plain
+    directory name: letters, digits, ".", "_" and "-", and not "." or "..".
+    """
+    rebuilt = []
+    for ch in value:
+        for allowed in _BRANCH_CHARS:
+            if ch == allowed:
+                rebuilt.append(allowed)
+                break
+        else:
+            sys.exit(f"error: --branches: character {ch!r} is not allowed in a branch name: {value!r}")
+    name = "".join(rebuilt)
+    if name in ("", ".", ".."):
+        sys.exit(f"error: --branches: not a branch name: {value!r}")
+    return name
+
+
+_BRANCH_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="Photon OS Gating Conflict Detection")
     p.add_argument("--base-dir", required=True, help="Root directory containing branch checkouts")
@@ -43,7 +93,21 @@ def parse_args():
     p.add_argument("--json-output", default="findings.json", help="JSON findings output")
     p.add_argument("--md-output", default="findings.md", help="Markdown findings output")
     p.add_argument("--schema", help="Path to JSON schema for validation")
-    return p.parse_args()
+    args = p.parse_args()
+    args.base_dir = checked_path(args.base_dir, "--base-dir")
+    args.inventory = checked_path(args.inventory, "--inventory") if args.inventory else None
+    args.output = checked_path(args.output, "--output") if args.output else None
+    args.json_output = checked_path(args.json_output, "--json-output")
+    args.md_output = checked_path(args.md_output, "--md-output")
+    args.schema = checked_path(args.schema, "--schema") if args.schema else None
+    # Each branch name becomes a directory below --base-dir: one plain name.
+    branch_list = []
+    for item in args.branches.split(","):
+        item = item.strip()
+        if item:
+            branch_list.append(checked_branch(item))
+    args.branch_list = branch_list
+    return args
 
 
 # ---------------------------------------------------------------------------
@@ -1189,7 +1253,7 @@ def generate_md_output(findings_doc):
 def main():
     args = parse_args()
     base_dir = os.path.abspath(args.base_dir)
-    branches = [b.strip() for b in args.branches.split(",") if b.strip()]
+    branches = args.branch_list
 
     common_dir = os.path.join(base_dir, "common")
     if not os.path.isdir(common_dir):
