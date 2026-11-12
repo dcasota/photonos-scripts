@@ -1,0 +1,12 @@
+{
+ "subdir": "tdnf-depgraph",
+ "accepted": [],
+ "resolved": [
+  {
+   "date": "2026-11-12",
+   "ruleId": "python/PT",
+   "count": 3,
+   "fix": "tools/depgraph_cycles.py: --input and --preq go through checked_path(): plain path characters only, no '..' component. Snyk Code re-scan: 0 open."
+  }
+ ]
+}
