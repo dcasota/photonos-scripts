@@ -84,21 +84,25 @@ pub fn mode() -> Result<Mode, String> {
     parse_mode(std::env::var("MC_BUILDER").ok().as_deref())
 }
 
-pub const DEFAULT_SHARED_ROOT: &str = "/root/photon-mc/gate";
+/// The shared root's default below a work root: `<MC_ROOT>/gate` (U6), so
+/// `/root/photon-mc/gate` unless `MC_ROOT` names another root.
+pub fn default_shared_root(root: &Path) -> PathBuf {
+    root.join("gate")
+}
 
 pub fn shared_root() -> PathBuf {
-    setting_or("MC_BUILDER_SHARED_ROOT", DEFAULT_SHARED_ROOT)
+    setting_or("MC_BUILDER_SHARED_ROOT", &default_shared_root(&crate::config::root_from_env()))
 }
 
 pub fn context_dir() -> PathBuf {
-    setting_or("MC_BUILDER_DIR", "/root/photon-mc/gate/builder")
+    setting_or("MC_BUILDER_DIR", &default_shared_root(&crate::config::root_from_env()).join("builder"))
 }
 
 /// A path setting of the builder, checked (crate::safepath::env_path): a
 /// malformed one stops sharukhan with a configuration error, as Config does.
-fn setting_or(key: &str, default: &str) -> PathBuf {
+fn setting_or(key: &str, default: &Path) -> PathBuf {
     match crate::safepath::env_path(key) {
-        Ok(p) => p.unwrap_or_else(|| PathBuf::from(default)),
+        Ok(p) => p.unwrap_or_else(|| default.to_path_buf()),
         Err(e) => {
             eprintln!("sharukhan: configuration error: {e}");
             std::process::exit(78)

@@ -50,6 +50,11 @@ pub struct Config {
     pub vdiskmanager: PathBuf,
 
     // ---- where VMs and artefacts live ------------------------------------
+    /// `MC_ROOT`: the work root the host-local defaults are derived from.
+    pub root: PathBuf,
+    /// `MC_WIN_ROOT`: the Windows-visible root the VM and ISO-cache defaults
+    /// are derived from.
+    pub win_root: PathBuf,
     /// MUST be on a Windows-visible volume. VMware cannot see a WSL path at
     /// all: an ISO at /root/... becomes the nonsense VMX value "\root\..." and
     /// vmrun fails with only "Error: The operation was canceled".
@@ -278,6 +283,28 @@ fn n_or<T: std::str::FromStr + Copy>(get: Get, key: &str, default: T) -> T {
     }
 }
 
+/// The work root every host-local default is derived from (`MC_ROOT`): results,
+/// logs, the work tree, the memory database, the gate. The one place the lab
+/// host's layout is named; everything else is `<MC_ROOT>/...` (U6).
+pub const DEFAULT_ROOT: &str = "/root/photon-mc";
+
+/// The Windows-visible root (`MC_WIN_ROOT`, as its WSL path): the VMs and the
+/// ISO cache, which VMware must see (see [`Config::vm_root`]).
+pub const DEFAULT_WIN_ROOT: &str = "/mnt/c/photon-mc";
+
+/// `MC_ROOT` as the modules outside [`Config`] read it (the builder, the
+/// watcher, the service files): checked like every path setting, a malformed
+/// value stops sharukhan with a configuration error (EX_CONFIG).
+pub fn root_from_env() -> PathBuf {
+    match crate::safepath::env_path("MC_ROOT") {
+        Ok(p) => p.unwrap_or_else(|| PathBuf::from(DEFAULT_ROOT)),
+        Err(e) => {
+            eprintln!("sharukhan: configuration error: {e}");
+            std::process::exit(78)
+        }
+    }
+}
+
 /// Settings the bash defined and nothing ever read. Accepted silently they
 /// would look like knobs; they are named instead.
 const NO_EFFECT: &[&str] = &["MC_BOOT_TIMEOUT_SEC", "MC_SSH_TIMEOUT_SEC", "MC_SAMPLE_SEC"];
@@ -312,6 +339,11 @@ impl Config {
             }
         }
         let net_prefix = s_or(get, "MC_NET_PREFIX", "192.168.225");
+        // the two roots every host-local default below is derived from (U6):
+        // a host other than the lab host sets these, not a path per directory
+        let root = var_or(get, "MC_ROOT", DEFAULT_ROOT);
+        let win_root = var_or(get, "MC_WIN_ROOT", DEFAULT_WIN_ROOT);
+        let under = |r: &PathBuf, rest: &str| r.join(rest).to_string_lossy().into_owned();
         Config {
             vmrun: var_or(get, "VMRUN",
                 "/mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe",
@@ -320,17 +352,19 @@ impl Config {
                 "/mnt/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe",
             ),
 
-            vm_root: var_or(get, "MC_VM_ROOT_WSL", "/mnt/c/photon-mc/vm"),
+            root: root.clone(),
+            win_root: win_root.clone(),
+            vm_root: var_or(get, "MC_VM_ROOT_WSL", &under(&win_root, "vm")),
             dhcp_leases: var_or(get, "MC_DHCP_LEASES",
                 "/mnt/c/ProgramData/VMware/vmnetdhcp.leases",
             ),
-            iso_cache: var_or(get, "MC_ISO_CACHE", "/mnt/c/photon-mc/iso-cache"),
-            results_dir: var_or(get, "MC_RESULTS_DIR", "/root/photon-mc/results"),
-            build_log_dir: var_or(get, "MC_BUILD_LOG_DIR", "/root/photon-mc/build-logs"),
-            work: var_or(get, "MC_WORK", "/root/photon-mc/work"),
-            variant_patches: var_or(get, "MC_VARIANT_PATCH_DIR", "/root/photon-mc/variant-patches"),
-            run_log_dir: var_or(get, "MC_RUN_LOG_DIR", "/root/photon-mc/run-logs"),
-            memory_db: var_or(get, "SHARUKHAN_DB", "/root/photon-mc/memory.db"),
+            iso_cache: var_or(get, "MC_ISO_CACHE", &under(&win_root, "iso-cache")),
+            results_dir: var_or(get, "MC_RESULTS_DIR", &under(&root, "results")),
+            build_log_dir: var_or(get, "MC_BUILD_LOG_DIR", &under(&root, "build-logs")),
+            work: var_or(get, "MC_WORK", &under(&root, "work")),
+            variant_patches: var_or(get, "MC_VARIANT_PATCH_DIR", &under(&root, "variant-patches")),
+            run_log_dir: var_or(get, "MC_RUN_LOG_DIR", &under(&root, "run-logs")),
+            memory_db: var_or(get, "SHARUKHAN_DB", &under(&root, "memory.db")),
             matrix_tsv: DataFile::from_setting(get, "SHARUKHAN_MATRIX", "permutations.tsv", BUILTIN_MATRIX),
             variants_file: DataFile::from_setting(get, "SHARUKHAN_VARIANTS", "variants.conf", BUILTIN_VARIANTS),
             check_prs: DataFile::from_setting(get, "SHARUKHAN_CHECK_PRS", "check-prs.tsv", BUILTIN_CHECK_PRS),
@@ -345,7 +379,7 @@ impl Config {
             photon_remote: s_or(get, "MC_PHOTON_REMOTE", "https://github.com/dcasota/photon.git"),
             fork: s_or(get, "MC_FORK", "dcasota/photon"),
             upstream: s_or(get, "MC_UPSTREAM", "vmware/photon"),
-            gate_repo: var_or(get, "MC_GATE_REPO", "/root/photon-mc/gate/photon.git"),
+            gate_repo: var_or(get, "MC_GATE_REPO", &under(&root, "gate/photon.git")),
             fork_installer: s_or(get, "MC_FORK_INSTALLER", "dcasota/photon-os-installer"),
             upstream_installer: s_or(get, "MC_UPSTREAM_INSTALLER", "vmware/photon-os-installer"),
             installer_branch: s_or(get, "MC_INSTALLER_BRANCH", "master"),
@@ -399,6 +433,8 @@ impl Config {
     pub fn effective(&self) -> Vec<(&'static str, String)> {
         let p = |v: &PathBuf| v.to_string_lossy().into_owned();
         vec![
+            ("MC_ROOT", p(&self.root)),
+            ("MC_WIN_ROOT", p(&self.win_root)),
             ("MC_RELEASE", self.release.clone()),
             ("MC_BUILD_COMMON", self.build_common.clone()),
             ("MC_BUILD_ROOT", p(&self.build_root)),
@@ -509,6 +545,68 @@ mod tests {
         for p in [&c.vmrun, &c.vm_root, &c.iso_cache, &c.results_dir, &c.work, &c.memory_db, &c.photon_tree, &c.gate_repo, &c.build_root] {
             crate::safepath::check_path("default", p).unwrap();
         }
+    }
+
+    #[test]
+    fn the_host_local_defaults_derive_from_the_two_roots() {
+        // unchanged: with nothing set, every default is what it always was
+        let c = Config::defaults();
+        assert_eq!(c.root, PathBuf::from("/root/photon-mc"));
+        assert_eq!(c.win_root, PathBuf::from("/mnt/c/photon-mc"));
+        assert_eq!(c.vm_root, PathBuf::from("/mnt/c/photon-mc/vm"));
+        assert_eq!(c.iso_cache, PathBuf::from("/mnt/c/photon-mc/iso-cache"));
+        assert_eq!(c.results_dir, PathBuf::from("/root/photon-mc/results"));
+        assert_eq!(c.build_log_dir, PathBuf::from("/root/photon-mc/build-logs"));
+        assert_eq!(c.work, PathBuf::from("/root/photon-mc/work"));
+        assert_eq!(c.variant_patches, PathBuf::from("/root/photon-mc/variant-patches"));
+        assert_eq!(c.run_log_dir, PathBuf::from("/root/photon-mc/run-logs"));
+        assert_eq!(c.memory_db, PathBuf::from("/root/photon-mc/memory.db"));
+        assert_eq!(c.gate_repo, PathBuf::from("/root/photon-mc/gate/photon.git"));
+
+        // moved: only the two roots set, every derived default follows them
+        let roots = |k: &str| match k {
+            "MC_ROOT" => Some("/srv/shk".to_string()),
+            "MC_WIN_ROOT" => Some("/mnt/d/shk".to_string()),
+            _ => None,
+        };
+        let m = Config::from(&roots);
+        assert_eq!(m.vm_root, PathBuf::from("/mnt/d/shk/vm"));
+        assert_eq!(m.iso_cache, PathBuf::from("/mnt/d/shk/iso-cache"));
+        for (p, rest) in [
+            (&m.results_dir, "results"),
+            (&m.build_log_dir, "build-logs"),
+            (&m.work, "work"),
+            (&m.variant_patches, "variant-patches"),
+            (&m.run_log_dir, "run-logs"),
+            (&m.memory_db, "memory.db"),
+            (&m.gate_repo, "gate/photon.git"),
+        ] {
+            assert_eq!(p, &PathBuf::from("/srv/shk").join(rest), "{rest}");
+        }
+        // negative control: no derived default still names the lab host
+        for p in [&m.vm_root, &m.iso_cache, &m.results_dir, &m.work, &m.memory_db, &m.gate_repo] {
+            assert!(!p.to_string_lossy().contains("photon-mc"), "{}", p.display());
+        }
+
+        // a per-path setting still wins over its root
+        let both = |k: &str| match k {
+            "MC_ROOT" => Some("/srv/shk".to_string()),
+            "MC_WORK" => Some("/data/work".to_string()),
+            _ => None,
+        };
+        let w = Config::from(&both);
+        assert_eq!(w.work, PathBuf::from("/data/work"));
+        assert_eq!(w.results_dir, PathBuf::from("/srv/shk/results"));
+
+        // the roots are path settings: a malformed one is refused, never used
+        for bad in ["shk", "/srv/../etc", "/srv/a\nb"] {
+            assert!(path_setting("MC_ROOT", Some(bad.into()), DEFAULT_ROOT).is_err(), "{bad:?}");
+            assert!(path_setting("MC_WIN_ROOT", Some(bad.into()), DEFAULT_WIN_ROOT).is_err(), "{bad:?}");
+        }
+        // and both appear among the effective settings
+        let e = m.effective();
+        assert!(e.iter().any(|(k, v)| *k == "MC_ROOT" && v == "/srv/shk"));
+        assert!(e.iter().any(|(k, v)| *k == "MC_WIN_ROOT" && v == "/mnt/d/shk"));
     }
 
     #[test]

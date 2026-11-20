@@ -17,7 +17,7 @@
 //! The first cycle records what it sees without an event per item (one
 //! `watch-seeded` event), so starting the watcher does not flood the channel.
 //! Notification channels come from MC_NOTIFY, comma-separated:
-//! `file:<path>` (the default, /root/photon-mc/events.log), `ntfy:<url>`,
+//! `file:<path>` (the default, `<MC_ROOT>/events.log`), `ntfy:<url>`,
 //! `gh-issue:<owner>/<repo>#<number>`. Nothing leaves the host unless a remote
 //! channel is configured. An event stays `new` until every channel took it.
 
@@ -368,7 +368,14 @@ pub enum Channel {
 }
 
 pub fn parse_channels(v: Option<&str>) -> Result<Vec<Channel>, String> {
-    let v = v.map(str::trim).filter(|s| !s.is_empty()).unwrap_or("file:/root/photon-mc/events.log");
+    parse_channels_in(v, &crate::config::root_from_env())
+}
+
+/// [`parse_channels`] with the work root given: the default channel is the
+/// file `<MC_ROOT>/events.log` (U6).
+pub fn parse_channels_in(v: Option<&str>, root: &std::path::Path) -> Result<Vec<Channel>, String> {
+    let default = format!("file:{}", root.join("events.log").display());
+    let v = v.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&default);
     let mut out = Vec::new();
     for c in v.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         let (k, rest) = c.split_once(':').ok_or_else(|| format!("MC_NOTIFY entry {c}: expected kind:target"))?;
@@ -548,7 +555,11 @@ mod tests {
 
     #[test]
     fn channels_default_to_a_local_file_and_refuse_anything_unclear() {
-        assert_eq!(parse_channels(None).unwrap(), vec![Channel::File("/root/photon-mc/events.log".into())]);
+        let lab = std::path::Path::new(crate::config::DEFAULT_ROOT);
+        assert_eq!(parse_channels_in(None, lab).unwrap(), vec![Channel::File("/root/photon-mc/events.log".into())]);
+        // the default file follows the work root (U6)
+        let other = std::path::Path::new("/srv/shk");
+        assert_eq!(parse_channels_in(Some(" "), other).unwrap(), vec![Channel::File("/srv/shk/events.log".into())]);
         let c = parse_channels(Some("file:/tmp/e.log, ntfy:https://ntfy.example/t, gh-issue:dcasota/photon#7")).unwrap();
         assert_eq!(c[2], Channel::GhIssue { repo: "dcasota/photon".into(), number: 7 });
         assert!(parse_channels(Some("file:relative.log")).is_err());

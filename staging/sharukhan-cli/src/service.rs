@@ -88,12 +88,14 @@ pub const SETTINGS: &[&str] = &[
     "MC_NOTIFY",
     "MC_PHOTON_REMOTE",
     "MC_POI_BASE_IMAGE",
+    "MC_POWERSHELL",
     "MC_PUBLISH_DCASOTA",
     "MC_RELEASE",
     "MC_REMASTER_PHOTON_TREE",
     "MC_REMASTER_SOURCES",
     "MC_REMASTER_WORKDIR",
     "MC_RESULTS_DIR",
+    "MC_ROOT",
     "MC_RUN_LOG_DIR",
     "MC_STAGED_ROWS",
     "MC_START_TIMEOUT",
@@ -102,6 +104,7 @@ pub const SETTINGS: &[&str] = &[
     "MC_VARIANT_PATCH_DIR",
     "MC_VM_ROOT_WSL",
     "MC_VMX_TEMPLATE",
+    "MC_WIN_ROOT",
     "MC_WORK",
     "PHOTON_KERNEL_TREE",
     "PHOTON_TREE",
@@ -313,7 +316,12 @@ pub struct File {
 }
 
 fn shared_root(m: &BTreeMap<String, String>) -> String {
-    m.get("MC_BUILDER_SHARED_ROOT").cloned().unwrap_or_else(|| crate::builder::DEFAULT_SHARED_ROOT.to_string())
+    m.get("MC_BUILDER_SHARED_ROOT").filter(|v| !v.is_empty()).cloned().unwrap_or_else(|| {
+        // the settings being installed name the work root, not this process's
+        // environment (U6): `<MC_ROOT>/gate`, `/root/photon-mc/gate` by default
+        let root = m.get("MC_ROOT").filter(|v| !v.is_empty()).map(String::as_str).unwrap_or(crate::config::DEFAULT_ROOT);
+        crate::builder::default_shared_root(std::path::Path::new(root)).to_string_lossy().into_owned()
+    })
 }
 
 fn container(m: &BTreeMap<String, String>) -> bool {
