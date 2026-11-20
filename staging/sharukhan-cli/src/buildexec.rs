@@ -1249,7 +1249,51 @@ fn spec_blank_lines(c: &mut Ctx) -> Result<(), String> {
 ///    and a copy counts only when its sha512 is the declared one.
 /// Photon's source mirror: the second place an archive is fetched from when
 /// its declared upstream url fails.
-pub(crate) const SOURCES_MIRROR: &str = "https://packages.broadcom.com/photon/photon_sources/1.0";
+///
+/// `MC_SOURCES_MIRROR` names another, e.g. a local `file://` mirror (the
+/// source-of-record profile requires one, U4).
+pub(crate) const DEFAULT_SOURCES_MIRROR: &str = "https://packages.broadcom.com/photon/photon_sources/1.0";
+
+/// The source mirror `get` configures, without a trailing slash.
+pub(crate) fn sources_mirror_from(get: &dyn Fn(&str) -> Option<String>) -> String {
+    get("MC_SOURCES_MIRROR")
+        .map(|v| v.trim().trim_end_matches('/').to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| DEFAULT_SOURCES_MIRROR.to_string())
+}
+
+/// The source mirror of this process's environment.
+pub(crate) fn sources_mirror() -> String {
+    sources_mirror_from(&|k: &str| std::env::var(k).ok())
+}
+
+/// Where an archive is fetched from, in order: its declared upstream url, then
+/// the mirror. Under the source-of-record profile the mirror only: a record
+/// run sees nothing but its mirror (crate::sor).
+pub(crate) fn fetch_order<'a>(url: &'a str, mirror: &'a str, sor: bool) -> Vec<&'a str> {
+    let first = if sor { "" } else { url };
+    [first, mirror].into_iter().filter(|s| !s.is_empty()).collect()
+}
+
+/// Fetch `src` into `tmp`. A `file://` URL is copied from the mirror's own
+/// directory: the path must be an acceptable one (crate::safepath::check_path),
+/// and wget, which cannot read file URLs, is not involved. Anything else goes
+/// through `wget` run in `cwd`.
+pub(crate) fn fetch_to(src: &str, cwd: &Path, tmp: &Path) -> bool {
+    match src.strip_prefix("file://") {
+        Some(p) => {
+            let p = Path::new(p);
+            crate::safepath::check_path("MC_SOURCES_MIRROR", p).is_ok() && p.is_file() && fs::copy(p, tmp).is_ok()
+        }
+        None => Command::new("wget")
+            .args(["-q", src, "-O"])
+            .arg(tmp)
+            .current_dir(cwd)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false),
+    }
+}
 
 /// The SOURCES caches an archive may be restored from, other than `dest`:
 /// this build's common tree, then the configured build root's release and
@@ -1322,15 +1366,12 @@ pub fn sources(c: &mut Ctx) -> Result<(), String> {
                     let _ = fs::remove_file(&tmp);
                 }
             }
-            let mirror = format!("{SOURCES_MIRROR}/{archive}");
+            let mirror = format!("{}/{archive}", sources_mirror());
             let mut got = false;
-            for src in [url.as_str(), mirror.as_str()] {
-                if src.is_empty() {
-                    continue;
-                }
+            for src in fetch_order(url.as_str(), mirror.as_str(), crate::sor::active()) {
                 let tmp = dest.join(format!("{archive}.tmp"));
                 let _ = fs::remove_file(&tmp);
-                if !ok(&dest, "wget", &["-q", src, "-O", &tmp.to_string_lossy()]) {
+                if !fetch_to(src, &dest, &tmp) {
                     let _ = fs::remove_file(&tmp);
                     continue;
                 }
@@ -4431,6 +4472,33 @@ fn subrelease_enter(c: &mut Ctx, stage: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The source mirror is a setting; under the source-of-record profile an
+    /// archive is fetched from the mirror only, and a file:// mirror is read
+    /// without wget (U4).
+    #[test]
+    fn the_source_mirror_is_a_setting_and_the_profile_skips_the_upstream_url() {
+        use super::{fetch_order, fetch_to, sources_mirror_from, DEFAULT_SOURCES_MIRROR};
+        assert_eq!(sources_mirror_from(&|_: &str| None), DEFAULT_SOURCES_MIRROR);
+        assert_eq!(sources_mirror_from(&|_: &str| Some("  ".into())), DEFAULT_SOURCES_MIRROR, "empty is unset");
+        assert_eq!(sources_mirror_from(&|_: &str| Some("file:///srv/m/".into())), "file:///srv/m");
+
+        assert_eq!(fetch_order("https://up/a.tgz", "file:///m/a.tgz", false), vec!["https://up/a.tgz", "file:///m/a.tgz"]);
+        assert_eq!(fetch_order("https://up/a.tgz", "file:///m/a.tgz", true), vec!["file:///m/a.tgz"], "the profile never asks upstream");
+        assert_eq!(fetch_order("", "file:///m/a.tgz", false), vec!["file:///m/a.tgz"]);
+
+        let d = crate::safepath::test_base().join(format!("shk-mirror-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let src = d.join("a.tgz");
+        std::fs::write(&src, b"archive").unwrap();
+        let tmp = d.join("a.tgz.tmp");
+        assert!(fetch_to(&format!("file://{}", src.display()), &d, &tmp));
+        assert_eq!(std::fs::read(&tmp).unwrap(), b"archive");
+        // negative controls: a missing file and a path with .. are not fetched
+        assert!(!fetch_to(&format!("file://{}", d.join("missing.tgz").display()), &d, &d.join("m.tmp")));
+        assert!(!fetch_to(&format!("file://{}/../a.tgz", d.display()), &d, &d.join("x.tmp")));
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     /// A retried make must not destroy the evidence of the attempt it retries:
     /// the failed (and the unfinished) packages' logs are kept, the built ones

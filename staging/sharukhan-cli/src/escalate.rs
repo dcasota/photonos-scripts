@@ -74,9 +74,19 @@ pub fn ensure_schema(c: &Connection) -> Result<(), String> {
 
 /// Whether a stopped sync run is handed to the escalation by itself:
 /// MC_ESCALATE=auto (the default) or off. Anything else is an error, not off.
+/// Under the source-of-record profile it is off, whatever the setting says
+/// (crate::sor refuses an explicit `auto` before this is asked).
 pub fn enabled() -> Result<bool, String> {
+    if crate::sor::active() {
+        return Ok(false);
+    }
     parse_enabled(std::env::var("MC_ESCALATE").ok().as_deref())
 }
+
+/// The refusal of an escalation under the source-of-record profile: a
+/// model's answer is not reproducible, so a record run never asks for one.
+pub const REFUSED_UNDER_SOR: &str =
+    "escalation is refused under the source-of-record profile (SHARUKHAN_PROFILE=sor, U4)";
 
 pub fn parse_enabled(v: Option<&str>) -> Result<bool, String> {
     match v.map(str::trim) {
@@ -468,6 +478,9 @@ pub fn claude_args(prompt: &str, mcp_config: &Path, b: &Budget) -> Vec<String> {
 
 /// One escalation attempt. Returns what happened, as recorded in the ledger.
 pub fn escalate(cfg: &crate::config::Config, run: i64, pr: i64, log: &mut dyn FnMut(&str)) -> Result<String, String> {
+    if crate::sor::active() {
+        return Err(REFUSED_UNDER_SOR.to_string());
+    }
     let c = crate::job::open_rw(&cfg.memory_db)?;
     ensure_schema(&c)?;
     crate::watch::ensure_schema(&c)?;

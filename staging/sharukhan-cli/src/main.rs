@@ -64,6 +64,7 @@ mod runner;
 mod serial;
 mod sha512;
 mod sha256;
+mod sor;
 mod specdata;
 mod specparity;
 mod specresolve;
@@ -660,6 +661,30 @@ fn main() -> ExitCode {
     // `sharukhan wrapper ...` has its own option set; dispatch before the
     // permutation-matrix parser, which would reject its options.
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // `sharukhan --sor <command> ...`: the source-of-record profile (U4). It
+    // becomes the setting, so every child sharukhan starts inherits it, and the
+    // command is run as if the flag were not there.
+    if argv.first().map(String::as_str) == Some("--sor") {
+        use std::os::unix::process::CommandExt;
+        let exe = match std::env::current_exe() {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("sharukhan: --sor: cannot find this program: {e}");
+                return ExitCode::from(71);
+            }
+        };
+        let e = std::process::Command::new(exe).args(&argv[1..]).env(sor::SETTING, "sor").exec();
+        eprintln!("sharukhan: --sor: {e}");
+        return ExitCode::from(71);
+    }
+    // under the profile, every refused input stops the run before it acts
+    if let Err(findings) = sor::enforce(&argv) {
+        for f in &findings {
+            eprintln!("sharukhan: source-of-record profile: {f}");
+        }
+        eprintln!("sharukhan: {} input(s) refused under the source-of-record profile (see `sharukhan doctor`)", findings.len());
+        return ExitCode::from(78);
+    }
     if argv.first().map(String::as_str) == Some("wrapper") {
         return ExitCode::from(wrapper::cli::main(&argv[1..]));
     }
@@ -1189,6 +1214,22 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
         }
         println!("  [{}] {:<22} {}", mark(ok), label, detail);
     };
+
+    // the source-of-record profile (U4): whether it is on, and what it would
+    // refuse - listed here, where every other command stops on the first
+    if sor::active() {
+        println!("source-of-record profile (SHARUKHAN_PROFILE=sor)");
+        let findings = sor::check(&|k: &str| std::env::var(k).ok(), &["run".to_string()]);
+        if findings.is_empty() {
+            check("profile", true, "on: no override, no escalation, images by ID, mirror-only URLs".into());
+        }
+        for f in &findings {
+            check(&format!("profile: {}", f.rule), false, format!("{}={}: expected {}", f.setting, f.value, f.expected));
+        }
+    } else {
+        println!("source-of-record profile");
+        check("profile", true, "off (SHARUKHAN_PROFILE unset; `sharukhan --sor <command>` turns it on)".into());
+    }
 
     println!("environment");
     let t = cfg.photon_tree.exists();

@@ -278,6 +278,10 @@ fn n_or<T: std::str::FromStr + Copy>(get: Get, key: &str, default: T) -> T {
     }
 }
 
+/// `MC_PHOTON_REMOTE`'s default. Named so the source-of-record profile
+/// (crate::sor) can report it as the value it refuses.
+pub const DEFAULT_PHOTON_REMOTE: &str = "https://github.com/dcasota/photon.git";
+
 /// Settings the bash defined and nothing ever read. Accepted silently they
 /// would look like knobs; they are named instead.
 const NO_EFFECT: &[&str] = &["MC_BOOT_TIMEOUT_SEC", "MC_SSH_TIMEOUT_SEC", "MC_SAMPLE_SEC"];
@@ -342,7 +346,7 @@ impl Config {
             build_root: var_or(get, "MC_BUILD_ROOT", "/root"),
             build_common: s_or(get, "MC_BUILD_COMMON", "common"),
             release: s_or(get, "MC_RELEASE", "5.0"),
-            photon_remote: s_or(get, "MC_PHOTON_REMOTE", "https://github.com/dcasota/photon.git"),
+            photon_remote: s_or(get, "MC_PHOTON_REMOTE", DEFAULT_PHOTON_REMOTE),
             fork: s_or(get, "MC_FORK", "dcasota/photon"),
             upstream: s_or(get, "MC_UPSTREAM", "vmware/photon"),
             gate_repo: var_or(get, "MC_GATE_REPO", "/root/photon-mc/gate/photon.git"),
