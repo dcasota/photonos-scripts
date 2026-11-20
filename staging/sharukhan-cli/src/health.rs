@@ -7,8 +7,12 @@
 //! watcher whose heartbeat stopped, a laptop on battery. Every check here is
 //! read-only.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Windows PowerShell as WSL sees it on a default Windows install; `MC_POWERSHELL`
+/// names another (U6).
+pub const DEFAULT_POWERSHELL: &str = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
@@ -233,8 +237,18 @@ pub fn automation(cfg: &crate::config::Config, watch_interval_s: i64) -> Vec<Ite
         let h = (up / 3600.0) as i64;
         v.push(item("WSL uptime", Level::Ok, format!("{h}h {}m (a restart drops what the boot units do not restore)", ((up as i64) % 3600) / 60)));
     }
-    let ps = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
-    if Path::new(ps).exists() {
+    // a host tool, not a lab path: MC_POWERSHELL names it on another layout (U6);
+    // a malformed setting is reported, never used
+    let ps_path = match crate::safepath::env_path("MC_POWERSHELL") {
+        Ok(p) => p.unwrap_or_else(|| PathBuf::from(DEFAULT_POWERSHELL)),
+        Err(e) => {
+            v.push(item("Windows power", Level::Fail, format!("configuration error: {e}")));
+            PathBuf::new()
+        }
+    };
+    let ps = ps_path.to_string_lossy().into_owned();
+    let ps = ps.as_str();
+    if !ps.is_empty() && Path::new(ps).exists() {
         let s = out(
             "timeout",
             &["30", ps, "-NoProfile", "-NonInteractive", "-Command", "$b=Get-CimInstance Win32_Battery; if ($b) { $b.BatteryStatus } else { 'none' }"],

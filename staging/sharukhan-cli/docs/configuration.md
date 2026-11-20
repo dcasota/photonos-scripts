@@ -29,19 +29,37 @@ directory settings read elsewhere: `SHARUKHAN_WRAPPERS`,
 (`TMPDIR`), which must be sticky when it is world-writable; each one is new,
 has an unpredictable name and mode 0700.
 
+Two root settings carry the host layout, and every host-local default is
+derived from them. On a host that is not laid out like the lab host, set the
+two roots instead of one path per directory. A per-path setting still wins
+over its root.
+
+- `MC_ROOT` (default `/root/photon-mc`): the work root. It holds the results,
+  the logs, the work tree, the variant patches, the memory database, the gate
+  (`MC_GATE_REPO`, and the builder's `MC_BUILDER_SHARED_ROOT` and
+  `MC_BUILDER_DIR`) and the default notification file `events.log`.
+- `MC_WIN_ROOT` (default `/mnt/c/photon-mc`): the Windows-visible root, as its
+  WSL path. It holds the VMs and the ISO cache, which VMware must see.
+
+Both roots are path settings and are checked like every other one. With
+neither set, every default is exactly what it was before the roots existed.
+
 | Variable | Default |
 | --- | --- |
+| `MC_ROOT` | `/root/photon-mc` |
+| `MC_WIN_ROOT` | `/mnt/c/photon-mc` |
 | `PHOTON_TREE` | `/root/5.0` |
 | `POI_TREE` | `/root/photon-os-installer` |
 | `SHARUKHAN_MATRIX` | built in (`sharukhan-cli/config/permutations.tsv`) |
-| `SHARUKHAN_DB` | `/root/photon-mc/memory.db` |
-| `MC_RESULTS_DIR` | `/root/photon-mc/results` |
-| `MC_BUILD_LOG_DIR` | `/root/photon-mc/build-logs` |
-| `MC_RUN_LOG_DIR` | `/root/photon-mc/run-logs` |
-| `MC_WORK` | `/root/photon-mc/work` |
-| `MC_VARIANT_PATCH_DIR` | `/root/photon-mc/variant-patches` |
-| `MC_ISO_CACHE` | `/mnt/c/photon-mc/iso-cache` |
-| `MC_VM_ROOT_WSL` | `/mnt/c/photon-mc/vm` |
+| `SHARUKHAN_DB` | `<MC_ROOT>/memory.db` |
+| `MC_RESULTS_DIR` | `<MC_ROOT>/results` |
+| `MC_BUILD_LOG_DIR` | `<MC_ROOT>/build-logs` |
+| `MC_RUN_LOG_DIR` | `<MC_ROOT>/run-logs` |
+| `MC_WORK` | `<MC_ROOT>/work` |
+| `MC_VARIANT_PATCH_DIR` | `<MC_ROOT>/variant-patches` |
+| `MC_ISO_CACHE` | `<MC_WIN_ROOT>/iso-cache` |
+| `MC_VM_ROOT_WSL` | `<MC_WIN_ROOT>/vm` |
+| `MC_POWERSHELL` | `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` (`doctor`'s power check) |
 | `MC_DHCP_LEASES` | `/mnt/c/ProgramData/VMware/vmnetdhcp.leases` |
 | `VMRUN` | `/mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe` |
 | `VDISKMANAGER` | `/mnt/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe` |
@@ -109,11 +127,11 @@ left out of the services by accident.
 | `MC_UPSTREAM` | `vmware/photon` | the upstream repository of the fork |
 | `MC_FORK_INSTALLER` / `MC_UPSTREAM_INSTALLER` | `dcasota/photon-os-installer` / `vmware/photon-os-installer` | the same for the installer |
 | `MC_INSTALLER_BRANCH` | `master` | the installer branch |
-| `MC_GATE_REPO` | `/root/photon-mc/gate/photon.git` | the gate repository (bare) |
+| `MC_GATE_REPO` | `<MC_ROOT>/gate/photon.git` | the gate repository (bare) |
 | `MC_AUTHOR` | the gate repository's git `user.name` and `user.email` | `Name <mail>` of rebased commits and changelog entries; with neither, a sync refuses |
 | `MC_BUILDER` | `host` | `host` or `container`: where make and the spec tools run |
-| `MC_BUILDER_SHARED_ROOT` | `/root/photon-mc/gate` | the shared bind mount of the builder container |
-| `MC_BUILDER_DIR` | `/root/photon-mc/gate/builder` | the builder image's context |
+| `MC_BUILDER_SHARED_ROOT` | `<MC_ROOT>/gate` | the shared bind mount of the builder container |
+| `MC_BUILDER_DIR` | `<MC_ROOT>/gate/builder` | the builder image's context |
 | `MC_ISO_STORE` | none | where finished ISOs are moved; the cache keeps a link |
 | `SHARUKHAN_VARIANTS` | built in (`sharukhan-cli/config/variants.conf`) | installer variants and common branches |
 | `SHARUKHAN_CHECK_PRS` | built in (`sharukhan-cli/config/check-prs.tsv`) | check to PR attribution |
@@ -123,7 +141,7 @@ left out of the services by accident.
 | `MC_FASTLOOP_ROWS` | `k03 c03` | rows of a sync's FASTLOOP (minimal ISOs of the default variant) |
 | `MC_STAGED_ROWS` | `k11` | rows of a sync's STAGEVM |
 | `MC_PUBLISH_DCASOTA` | `auto` | `auto`, `approve` or `preview` (see the sync chapter) |
-| `MC_NOTIFY` | `file:/root/photon-mc/events.log` | notification channels |
+| `MC_NOTIFY` | `file:<MC_ROOT>/events.log` | notification channels |
 | `SHARUKHAN_SYNC_QUIET` | `7200` | seconds a base must be quiet before `sync auto` starts a run |
 | `SHARUKHAN_SYNC_EVERY` | `30min` | the sync timer's interval (service option) |
 | `SHARUKHAN_WATCH_INTERVAL` | `900` | the watcher's interval in seconds (service option) |
