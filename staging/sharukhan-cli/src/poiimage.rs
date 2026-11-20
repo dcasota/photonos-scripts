@@ -202,19 +202,11 @@ fn obtain(
         }
     }
     fs::create_dir_all(cache).map_err(|e| format!("{}: {e}", cache.display()))?;
-    let mirror = format!("{}/{archive}", crate::buildexec::SOURCES_MIRROR);
-    for src in [url, mirror.as_str()] {
-        if src.is_empty() {
-            continue;
-        }
+    let mirror = format!("{}/{archive}", crate::buildexec::sources_mirror());
+    for src in crate::buildexec::fetch_order(url, mirror.as_str(), crate::sor::active()) {
         let tmp = cache.join(format!("{archive}.tmp"));
         let _ = fs::remove_file(&tmp);
-        let got = Command::new("wget")
-            .args(["-q", src, "-O"])
-            .arg(&tmp)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let got = crate::buildexec::fetch_to(src, cache, &tmp);
         if got && crate::sha512::file(&tmp).ok().as_deref() == Some(sha) {
             let keep = cache.join(archive);
             fs::rename(&tmp, &keep).map_err(|e| format!("{}: {e}", keep.display()))?;

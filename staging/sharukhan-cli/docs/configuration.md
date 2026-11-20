@@ -130,6 +130,35 @@ left out of the services by accident.
 
 The escalation's settings are in its own chapter.
 
+### The source-of-record profile
+
+`sharukhan --sor <command> ...`, or `SHARUKHAN_PROFILE=sor` in the environment,
+runs a command under the source-of-record profile. It is for a host whose
+results are a record: every input must be one the record can name
+([ADR-0015](../specs/adr/0015-source-of-record-profile.md)). Before the command
+does anything, the profile refuses:
+
+| Rule | Refused | Expected |
+| --- | --- | --- |
+| override | `SHARUKHAN_MATRIX`, `SHARUKHAN_VARIANTS`, `SHARUKHAN_CHECK_PRS`, `SHARUKHAN_PR_DEFECTS`, `MC_VMX_TEMPLATE`, `SHARUKHAN_WRAPPERS`, `SHARUKHAN_WRAPPER_PROFILES`, `SHARUKHAN_SYSTEMD_PROFILES` set | unset: the copy built into sharukhan |
+| escalation | `MC_ESCALATE` set to anything but `off` | off or unset. The escalation is off under the profile in any case |
+| image | `MC_POI_BASE_IMAGE`, including its default `photon/installer:latest`, or `--builder-image` named by a tag | `sha256:<64 hex>` or `<name>@sha256:<64 hex>` |
+| network | `MC_PHOTON_REMOTE` or `MC_SOURCES_MIRROR` not `file://` | a `file://` URL of the mirror |
+| network | the commands `sync`, `watch`, `events`, `escalate`, `mcp`, `wrapper`, `systemd`, `pr-eligibility` | a command that reaches no remote |
+
+Each refusal names the setting, the measured value and what was expected, and
+sharukhan stops with exit status 78. `doctor` lists every finding instead of
+stopping; `help` and `settings` are not refused. Under the profile, a source
+archive is fetched from the mirror only, never from its declared upstream URL.
+A `file://` mirror is copied directly; wget is used only for remote mirrors.
+Any other value of `SHARUKHAN_PROFILE` than `default` or `sor` is a
+configuration error.
+
+| Variable | Default |
+| --- | --- |
+| `SHARUKHAN_PROFILE` | `default` (the profile off) |
+| `MC_SOURCES_MIRROR` | `https://packages.broadcom.com/photon/photon_sources/1.0`, the second place an archive is fetched from |
+
 ## The directory layout
 
 Each directory belongs to one setting; `sharukhan settings` prints the values
