@@ -1500,7 +1500,9 @@ fn sha512(p: &Path) -> Option<String> {
 /// Report the subrelease the tree will actually build at.
 ///
 /// Not decorative: `photon-subrelease` selects which SPECS/<n>/ overlay wins,
-/// and `photon-mainline` decides whether snapshots are used at all. A build
+/// and the snapshot list pins the remote package repository the build falls
+/// back to (common 9c623e1611: enforced at every subrelease unless
+/// SKIP_SNAPSHOT is set; before, never at the mainline one). A build
 /// that silently runs at a different subrelease than the operator believes
 /// produces packages from a different overlay - which is how a SELinux
 /// expectation was once written against the wrong one.
@@ -1527,6 +1529,8 @@ fn report_subrelease(c: &mut Ctx) -> Result<(), String> {
     c.say(&format!(
         "  upstream photon-subrelease: {sub} (mainline: {main})"
     ));
+    let common_cfg = fs::read_to_string(c.spec.tree(Tree::Common).join("build-config.json")).unwrap_or_default();
+    c.say(&format!("  {}", snapshot_line(&text, &common_cfg, &sub)));
     // In a dry run the pin was deliberately not written, so reading the
     // unpinned value is the correct observation rather than a fault.
     if let Subrelease::Pinned(n) = c.spec.subrelease {
@@ -1538,6 +1542,22 @@ fn report_subrelease(c: &mut Ctx) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// What build.py does with snapshots (common 9c623e1611): the release
+/// tree's `package-repo-snapshot-file-url` if it has one, else the common
+/// tree's, with SUBRELEASE replaced; it pins only the remote package
+/// repository (priority 90), the stage's own RPMs (priority 10) still win.
+pub fn snapshot_line(release_cfg: &str, common_cfg: &str, sub: &str) -> String {
+    let url = |text: &str| -> Option<String> {
+        let v: serde_json::Value = serde_json::from_str(text).ok()?;
+        v["photon-build-param"]["package-repo-snapshot-file-url"].as_str().map(str::to_string).filter(|s| !s.is_empty())
+            .or_else(|| v["package-repo-snapshot-file-url"].as_str().map(str::to_string).filter(|s| !s.is_empty()))
+    };
+    match url(release_cfg).or_else(|| url(common_cfg)) {
+        Some(u) => format!("snapshot: remote fallbacks pinned to {} (unless SKIP_SNAPSHOT=1)", u.replace("SUBRELEASE", sub)),
+        None => "snapshot: no package-repo-snapshot-file-url in build-config.json - build.py refuses to build unless SKIP_SNAPSHOT=1".to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5115,6 +5135,17 @@ mod tests {
         // a failing query is an error, not a guess
         let bad = |_: &str| -> Result<(Vec<String>, Vec<String>), String> { Err("rpm: broken".into()) };
         assert!(rescue_providers(&purge, &kept, &older, &bad).is_err());
+    }
+
+    #[test]
+    fn the_snapshot_report_names_the_list_build_py_uses() {
+        let common = r#"{"photon-build-param": {"package-repo-snapshot-file-url": "https://h/SUBRELEASE/snapshot-SUBRELEASE-latest.$basearch.list"}}"#;
+        let release = r#"{"photon-build-param": {"photon-subrelease": "92", "photon-mainline": "92"}}"#;
+        assert_eq!(snapshot_line(release, common, "92"), "snapshot: remote fallbacks pinned to https://h/92/snapshot-92-latest.$basearch.list (unless SKIP_SNAPSHOT=1)");
+        let own = r#"{"photon-build-param": {"package-repo-snapshot-file-url": "/local/snap.list"}}"#;
+        assert!(snapshot_line(own, common, "92").contains("/local/snap.list"), "the release tree's own wins");
+        assert!(snapshot_line(release, "{}", "92").contains("build.py refuses"));
+        assert!(snapshot_line("not json", "", "92").contains("build.py refuses"));
     }
 
     /// A NEVR an earlier, patched build recorded is checked against the spec
