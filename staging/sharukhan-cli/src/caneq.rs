@@ -458,9 +458,16 @@ pub fn cli(cfg: &crate::config::Config, args: &[String]) -> Result<(), String> {
     let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).cloned();
     let check = args.iter().any(|a| a == "--check");
     let repo = flag("--repo").map(PathBuf::from).unwrap_or_else(|| cfg.photon_tree.clone());
+    // the commit the photon tree is at: the sync checks the synced base out
+    // there by commit and never moves the tree's origin/<branch>, which can
+    // name an older base the variant patch does not apply to
     let base = match flag("--base") {
         Some(b) => b,
-        None => format!("origin/{}", crate::specresolve::branch_of(&repo)?),
+        None => {
+            let head = git(&repo, &["rev-parse", "--verify", "HEAD^{commit}"])?.trim().to_string();
+            println!("  base: {} at {}", repo.display(), &head[..head.len().min(12)]);
+            head
+        }
     };
     let dflt = crate::variants::load_file(&cfg.variants_file)?.default_variant().name.clone();
     let variant = flag("--variant").map(PathBuf::from).unwrap_or_else(|| cfg.variant_patches.join(format!("poi-{dflt}.patch")));
