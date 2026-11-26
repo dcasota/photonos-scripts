@@ -580,6 +580,76 @@ fn spec_text(ctx: &Ctx, c: &Copy, package: &str) -> Option<String> {
     crate::specresolve::git_reader(ctx.repo, ctx.rev, &c.dir, None)(&format!("{package}.spec"))
 }
 
+/// The copy's files by name, subdirectories included, as Photon stages a
+/// spec directory (SPECS/91/systemd/patches/0004-... is the source
+/// 0004-...). A name two different files share cannot be read: None.
+fn staged_reader(ctx: &Ctx, c: &Copy) -> impl Fn(&str) -> Option<String> {
+    let (repo, rev) = (ctx.repo.to_path_buf(), ctx.rev.to_string());
+    let listing = git(&repo, &["ls-tree", "-r", "--name-only", &rev, &c.dir]).unwrap_or_default();
+    let mut by: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for p in listing.lines() {
+        if let Some(name) = p.rsplit('/').next() {
+            by.entry(name.to_string()).or_default().push(p.to_string());
+        }
+    }
+    move |name: &str| {
+        let paths = by.get(name)?;
+        let texts: Vec<String> = paths.iter().filter_map(|p| git(&repo, &["show", &format!("{rev}:{p}")]).ok()).collect();
+        if texts.is_empty() || texts.iter().any(|x| x != &texts[0]) {
+            return None;
+        }
+        texts.into_iter().next()
+    }
+}
+
+/// The spec with the text of each `%include %{SOURCEn}` appended, the way
+/// the patch list of SPECS/91/systemd lives in systemd-patches.txt: two
+/// levels deep, enough for an include that includes one more.
+pub fn with_includes(spec: &str, read: &dyn Fn(&str) -> Option<String>) -> String {
+    // a Source value names its file through %{name} (systemd's is
+    // `%{name}-patches.txt`); any other macro leaves the name undecided
+    let name = crate::specresolve::field(spec, "Name:").unwrap_or_default();
+    let expand = |v: &str| -> Option<String> {
+        let v = v.replace("%{name}", &name);
+        (!name.is_empty() || !v.contains("%{name}")).then_some(())?;
+        (!v.contains('%')).then_some(v)
+    };
+    let mut out = spec.to_string();
+    let mut frontier = spec.to_string();
+    for _ in 0..2 {
+        let mut next = String::new();
+        let sources: BTreeMap<String, String> = frontier
+            .lines()
+            .chain(out.lines())
+            .filter_map(|l| {
+                let (tag, val) = l.split_once(':')?;
+                let n = tag.trim().strip_prefix("Source")?;
+                if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                Some((n.to_string(), expand(val.trim().rsplit('/').next().unwrap_or(""))?))
+            })
+            .collect();
+        for l in frontier.lines() {
+            let Some(rest) = l.trim().strip_prefix("%include") else { continue };
+            let arg = rest.trim().trim_start_matches("%{SOURCE").trim_start_matches("%SOURCE").trim_end_matches('}');
+            if let Some(name) = sources.get(arg) {
+                if let Some(text) = read(name) {
+                    next.push_str(&text);
+                    next.push('\n');
+                }
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        out.push('\n');
+        out.push_str(&next);
+        frontier = next;
+    }
+    out
+}
+
 /// The bare upstream clone for `url` under the cache, with `sha` present.
 fn upstream_repo(ctx: &mut Ctx, url: &str, sha: &str) -> Result<PathBuf, String> {
     if !url.starts_with("https://") || url.contains(char::is_whitespace) {
@@ -968,14 +1038,15 @@ fn overlap(ctx: &Ctx, c: &Copy, pkgs: &[String]) -> Result<Verdict, String> {
 pub fn probe(ctx: &mut Ctx, c: &Copy, package: &str, p: &Probe) -> Verdict {
     let r: Result<Verdict, String> = (|| match p {
         Probe::File { file, applies_if, present_if_all, present_if_none } => {
-            let text = crate::specresolve::git_reader(ctx.repo, ctx.rev, &c.dir, None)(file);
+            let text = staged_reader(ctx, c)(file);
             Ok(file_verdict(file, text.as_deref(), applies_if, present_if_all, present_if_none))
         }
         Probe::Upstream { commits } => {
             let (url, id) = source_commit(c)?;
             let dir = upstream_repo(ctx, &url, &id)?;
-            let read = crate::specresolve::git_reader(ctx.repo, ctx.rev, &c.dir, None);
-            let headers = listed_patch_headers(&spec_text(ctx, c, package).ok_or("the spec is unreadable")?, &read);
+            let read = staged_reader(ctx, c);
+            let spec = with_includes(&spec_text(ctx, c, package).ok_or("the spec is unreadable")?, &read);
+            let headers = listed_patch_headers(&spec, &read);
             let (mut n, mut picked, mut carried) = (0, 0, 0);
             for s in commits {
                 // a fix the source's repository refuses ("not our ref") is not
@@ -1582,6 +1653,22 @@ mod tests {
         assert!(matches!(upstream_verdict(1, 2, 3, "x"), Verdict::Absent(ref s) if s.contains("2 of 3")));
         assert!(matches!(upstream_verdict(0, 3, 3, "x"), Verdict::Absent(ref s) if s.contains("all 3") && s.contains("has none")));
         assert!(matches!(upstream_verdict(0, 2, 3, "x"), Verdict::Present(ref s) if s.contains("only 2 of 3")));
+    }
+
+    #[test]
+    fn an_included_patch_list_is_read_like_the_spec_itself() {
+        let files = |n: &str| match n {
+            "systemd-patches.txt" => Some("Patch0: 0001-a.patch\n%include %{SOURCE17}\n".to_string()),
+            "more.txt" => Some("Patch18: 0006-x.patch\n".to_string()),
+            _ => None,
+        };
+        let spec = "Name:           systemd\nSource16: %{name}-patches.txt\nSource17: more.txt\n%include %{SOURCE16}\n";
+        let all = with_includes(spec, &files);
+        assert!(all.contains("Patch0: 0001-a.patch"), "%{{name}} expanded: {all}");
+        assert!(all.contains("Patch18: 0006-x.patch"), "two levels: {all}");
+        let other = "Name: systemd\nSource16: %{version}-patches.txt\n%include %{SOURCE16}\n";
+        assert_eq!(with_includes(other, &files), other, "another macro: undecided, nothing read");
+        assert_eq!(with_includes("Patch1: a.patch\n", &files), "Patch1: a.patch\n");
     }
 
     #[test]
