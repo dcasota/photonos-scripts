@@ -46,6 +46,23 @@ pub const BASE_IMAGE: &str = "photon:5.0";
 pub const BASE_IMAGE_ID: &str =
     "sha256:549ea0b6a67da5fd9a4ddc4ddf5d7d479b30b75af9ae3d9c5936b470fb6be323";
 
+/// The pinned base image, found by its ID, never by the tag: `docker pull
+/// photon:5.0` (by anyone on the host) moves the tag to a newer image, and a
+/// builder made on that would be another builder under the same definition.
+/// The image the tag named when the builder was defined is still the base as
+/// long as an image with the pinned ID is present, whatever the tag names now.
+pub fn pinned_base() -> Result<String, String> {
+    match run("docker", &["image", "inspect", BASE_IMAGE_ID, "--format", "{{.Id}}"]) {
+        Ok(id) if id.trim() == BASE_IMAGE_ID => Ok(BASE_IMAGE_ID.to_string()),
+        _ => {
+            let now = run("docker", &["image", "inspect", BASE_IMAGE, "--format", "{{.Id}}"]).map(|s| s.trim().to_string()).unwrap_or_else(|_| "absent".into());
+            Err(format!(
+                "the pinned base image {BASE_IMAGE_ID} ({BASE_IMAGE} when the builder was defined) is not present; {BASE_IMAGE} is {now} now. Load the pinned image again; the builder is defined on that image only"
+            ))
+        }
+    }
+}
+
 /// The Photon release of the pinned base image (its tag), which the
 /// package lock resolves against.
 fn base_release() -> &'static str {
@@ -313,15 +330,7 @@ pub fn ensure(log: &mut dyn FnMut(&str)) -> Result<String, String> {
         format!("{} has no rpms.sha256: run `sharukhan builder lock` first", ctx.display())
     })?;
 
-    let base_id = run("docker", &["image", "inspect", BASE_IMAGE, "--format", "{{.Id}}"])
-        .map_err(|e| format!("the base image {BASE_IMAGE}: {e}"))?
-        .trim()
-        .to_string();
-    if base_id != BASE_IMAGE_ID {
-        return Err(format!(
-            "{BASE_IMAGE} is {base_id}, not the pinned {BASE_IMAGE_ID}: the builder is defined on that image only"
-        ));
-    }
+    let base_id = pinned_base()?;
     let hash = inputs_hash(&base_id, &rpms_lock, &wheels_lock);
     let tag = format!("sharukhan/photon-builder:{hash}");
     if label(&tag).as_deref() == Some(hash.as_str()) {
@@ -334,7 +343,7 @@ pub fn ensure(log: &mut dyn FnMut(&str)) -> Result<String, String> {
     fetch_wheels(&ctx, log)?;
     verify_dir(&ctx.join("wheels"), &parse_lock(&wheels_lock)?, ".whl")?;
     let base_tag = format!("sharukhan/photon-base:5.0-{}", &base_id[7..19]);
-    run("docker", &["tag", BASE_IMAGE, &base_tag])?;
+    run("docker", &["tag", &base_id, &base_tag])?;
     let out = Command::new("docker")
         .args(["build", "--network", "none", "--label", &format!("sharukhan.inputs={hash}")])
         .args(["--build-arg", &format!("BASE={base_tag}"), "-t", &tag])
@@ -363,13 +372,7 @@ pub fn current_image() -> Result<(String, bool), String> {
     let ctx = context_dir();
     let rpms_lock = fs::read_to_string(ctx.join("rpms.sha256"))
         .map_err(|_| format!("{} has no rpms.sha256: run `sharukhan builder lock`", ctx.display()))?;
-    let base_id = run("docker", &["image", "inspect", BASE_IMAGE, "--format", "{{.Id}}"])
-        .map_err(|e| format!("the base image {BASE_IMAGE}: {e}"))?
-        .trim()
-        .to_string();
-    if base_id != BASE_IMAGE_ID {
-        return Err(format!("{BASE_IMAGE} is {base_id}, not the pinned {BASE_IMAGE_ID}"));
-    }
+    let base_id = pinned_base()?;
     let hash = inputs_hash(&base_id, &rpms_lock, &wheels_sha256()?);
     let tag = format!("sharukhan/photon-builder:{hash}");
     let built = label(&tag).as_deref() == Some(hash.as_str());
