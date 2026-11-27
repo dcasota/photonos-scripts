@@ -737,6 +737,52 @@ pub fn unexplained(dirty: &[String], named: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Untracked paths of `git status --porcelain` ("?? path").
+pub fn untracked_paths(text: &str) -> Vec<String> {
+    text.lines().filter_map(|l| l.strip_prefix("?? ")).map(|p| p.trim_matches('"').to_string()).collect()
+}
+
+/// Of the untracked files in `dir`, those an earlier version of the tree's own
+/// top-level .gitignore ignored: output of the project's build, left behind
+/// when the project moved the rule (vmware 6f17d528a0 replaced
+/// `SPECS/kernels-drivers-intel/*.spec` by `SPECS/kernel-drivers/*.spec`, and
+/// the specs a build had generated there became untracked). Every version of
+/// the file reachable from HEAD counts; a tracked file never does.
+pub fn orphaned_outputs(dir: &Path, untracked: &[String]) -> Result<Vec<String>, String> {
+    if untracked.is_empty() {
+        return Ok(Vec::new());
+    }
+    let versions = git(dir, &["log", "--format=%H", "HEAD", "--", ".gitignore"])?;
+    let scratch = crate::safepath::private_tmp("sharukhan-ignore")?;
+    let mut hit = std::collections::BTreeSet::new();
+    let result = (|| -> Result<(), String> {
+        for c in versions.lines().filter(|l| !l.is_empty()) {
+            let Ok(text) = git(dir, &["show", &format!("{c}:.gitignore")]) else { continue };
+            let file = scratch.join("gitignore");
+            fs::write(&file, text).map_err(|e| format!("{}: {e}", file.display()))?;
+            let o = Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(["ls-files", "--others", "--ignored", "-z"])
+                .arg(format!("--exclude-from={}", file.display()))
+                .output()
+                .map_err(|e| format!("git ls-files: {e}"))?;
+            if !o.status.success() {
+                return Err(format!("git ls-files in {}: {}", dir.display(), String::from_utf8_lossy(&o.stderr).trim()));
+            }
+            for p in String::from_utf8_lossy(&o.stdout).split('\0').filter(|p| !p.is_empty()) {
+                if untracked.iter().any(|u| u == p) {
+                    hit.insert(p.to_string());
+                }
+            }
+        }
+        Ok(())
+    })();
+    let _ = fs::remove_dir_all(&scratch);
+    result?;
+    Ok(hit.into_iter().collect())
+}
+
 /// Verify the tree holds nothing but what a variant patch or sharukhan put
 /// there, then clean it and fast-forward it to `branch` of the gate repository.
 fn reset_build_tree(dir: &Path, patches: &Path, gate: &Path, branch: &str) -> Result<(), String> {
@@ -765,8 +811,22 @@ fn reset_build_tree(dir: &Path, patches: &Path, gate: &Path, branch: &str) -> Re
     if !o.status.success() {
         return Err(format!("git status in {}: {}", dir.display(), String::from_utf8_lossy(&o.stderr).trim()));
     }
-    let dirty = porcelain_paths(&String::from_utf8_lossy(&o.stdout));
-    let odd = unexplained(&dirty, &named);
+    let status = String::from_utf8_lossy(&o.stdout).to_string();
+    let dirty = porcelain_paths(&status);
+    let mut odd = unexplained(&dirty, &named);
+    if !odd.is_empty() {
+        let untracked: Vec<String> = untracked_paths(&status).into_iter().filter(|u| odd.contains(u)).collect();
+        let orphaned = orphaned_outputs(dir, &untracked)?;
+        if !orphaned.is_empty() {
+            eprintln!(
+                "{}: {} untracked file(s) an earlier .gitignore of the tree declared build output, cleaned with the rest, e.g. {}",
+                dir.display(),
+                orphaned.len(),
+                orphaned.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+        odd.retain(|d| !orphaned.contains(d));
+    }
     if !odd.is_empty() {
         return Err(format!(
             "{} has {} change(s) no variant patch or sharukhan fixup explains, e.g. {}: someone edited it; not cleaning",
@@ -2289,6 +2349,36 @@ pub fn cli(args: &[String]) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_an_earlier_gitignore_declared_is_explained_and_a_hand_edit_is_not() {
+        let d = crate::safepath::private_dir_in(&crate::safepath::test_base(), "orphan").unwrap();
+        let g = |a: &[&str]| assert!(Command::new("git").arg("-C").arg(&d).args(a).status().unwrap().success(), "{a:?}");
+        g(&["init", "-q"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        fs::create_dir_all(d.join("old")).unwrap();
+        fs::write(d.join(".gitignore"), "old/*.spec\n").unwrap();
+        fs::write(d.join("old/t.spec.in"), "x\n").unwrap();
+        g(&["add", "-A"]);
+        g(&["commit", "-q", "-m", "a"]);
+        fs::write(d.join("old/gen.spec"), "generated\n").unwrap();
+        // the project moves the rule; the generated file becomes untracked
+        fs::write(d.join(".gitignore"), "new/*.spec\n").unwrap();
+        g(&["add", ".gitignore"]);
+        g(&["commit", "-q", "-m", "b"]);
+        fs::write(d.join("old/hand.txt"), "edit\n").unwrap();
+        fs::write(d.join("old/t.spec.in"), "edited\n").unwrap();
+        let o = Command::new("git").arg("-C").arg(&d).args(["status", "--porcelain", "--untracked-files=all"]).output().unwrap();
+        let status = String::from_utf8_lossy(&o.stdout).to_string();
+        let mut u = untracked_paths(&status);
+        u.sort();
+        assert_eq!(u, vec!["old/gen.spec", "old/hand.txt"]);
+        assert_eq!(orphaned_outputs(&d, &u).unwrap(), vec!["old/gen.spec"]);
+        assert!(orphaned_outputs(&d, &[]).unwrap().is_empty());
+        assert!(!untracked_paths(&status).contains(&"old/t.spec.in".to_string()), "a tracked edit is never untracked output");
+        fs::remove_dir_all(&d).unwrap();
+    }
 
     fn db() -> Connection {
         let c = Connection::open_in_memory().unwrap();
